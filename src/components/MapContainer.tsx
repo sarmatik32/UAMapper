@@ -446,8 +446,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       url = url.replace('{key}', visicomKey || 'c3979ea05634e2b02e707e050304910a');
     }
 
-    // Always load 2x retina tiles for CartoDB to keep exports extremely sharp
-    url = url.replace('{r}', '@2x');
+    // Replace {r} with @2x on high-DPI screens, or empty string on standard screens
+    const isRetina = L.Browser.retina;
+    url = url.replace('{r}', isRetina ? '@2x' : '');
 
     // Create Leaflet TileLayer with appropriate settings
     const tileLayer = L.tileLayer(url, {
@@ -457,7 +458,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
       crossOrigin: 'anonymous', // Enable CORS for screenshots
-      detectRetina: true, // Automatically handle retina detection on high-DPI screens
+      detectRetina: false, // Prevent double-zoom on non-retina-supported tiles like OSM (fixes slow load & 404s)
     });
 
     tileLayer.addTo(map);
