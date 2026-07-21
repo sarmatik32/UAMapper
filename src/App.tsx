@@ -506,33 +506,6 @@ export default function App() {
         {/* Main Map Stage (Rendered FIRST to be on the left) */}
         <div className={`flex-1 relative flex flex-col transition-all duration-300 ${mobileView === 'map' ? 'h-full flex' : 'hidden md:flex md:h-full'}`}>
           
-          {/* Floating Header Banner for Keys status */}
-          {showAlert && activeTileLayer.requiresKey && !visicomKey && (
-            <div className={`absolute top-4 left-4 right-16 z-20 mx-auto max-w-lg border text-xs px-4 py-3.5 rounded-2xl shadow-2xl flex items-start gap-3 backdrop-blur-xl ${
-              theme === 'light' 
-                ? 'bg-white/95 border-slate-200 text-slate-800' 
-                : 'bg-slate-950/85 border-white/10 text-slate-200'
-            }`}>
-              <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5 drop-shadow-[0_0_4px_rgba(245,158,11,0.5)]" />
-              <div className="text-xs">
-                <p className={`font-bold mb-1 ${theme === 'light' ? 'text-slate-950' : 'text-slate-100'}`}>
-                  {language === 'uk' ? 'Використовується демо-ключ Visicom' : 'Using Demo Visicom Key'}
-                </p>
-                <p className={`leading-relaxed ${theme === 'light' ? 'text-slate-600' : 'text-slate-300'}`}>
-                  {language === 'uk' 
-                    ? 'Для роботи карти використовується стандартний демо-ключ. За бажанням ви можете вставити власний API-ключ у вкладці "Параметри" або тимчасово перемкнутися на карти OpenStreetMap у вкладці "Шари" без ключа.'
-                    : 'A default demo API key is active. If the map fails to load or tiles appear empty, configure your custom Visicom API key in the "Settings" tab, or choose OpenStreetMap in the "Layers" tab.'}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAlert(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-100 font-bold ml-auto text-sm transition-colors cursor-pointer"
-              >
-                ×
-              </button>
-            </div>
-          )}
-
           {/* Map stage */}
           <MapContainer
             ref={mapRef}

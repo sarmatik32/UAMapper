@@ -1045,49 +1045,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* 5. НАЛАШТУВАННЯ КЛЮЧА (SETTINGS) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
-          <button
-            onClick={() => toggleSection('settings')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Settings className="w-3.5 h-3.5 text-blue-500" />
-              <span>{isUa ? 'Параметри API' : 'API Settings'}</span>
-            </div>
-            {expandedSections.settings ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
-          </button>
 
-          {expandedSections.settings && (
-            <div className="p-3 space-y-2.5">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                {isUa ? 'API КЛЮЧ VISICOM' : 'VISICOM API KEY'}
-              </label>
-              <input
-                type="text"
-                value={visicomKey}
-                onChange={(e) => onUpdateVisicomKey(e.target.value)}
-                placeholder="Вставте ключ API..."
-                className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
-                  theme === 'light' 
-                    ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
-                    : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
-                }`}
-              />
-              <p className="text-[10px] text-slate-400 leading-normal font-medium">
-                {isUa 
-                  ? 'Для роботи шару Visicom потрібен ключ API. Якщо ключ не вказано, система використовує демо-версію.' 
-                  : 'Visicom tiles require an active API key. A demo key is used if left blank.'}
-              </p>
-            </div>
-          )}
-        </div>
 
       </div>
 
