@@ -1,0 +1,1165 @@
+import React, { useState, useEffect } from 'react';
+import { CustomMarker, TileLayerConfig, Language } from '../types';
+import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { 
+  Map, 
+  Settings, 
+  Layers, 
+  Trash2, 
+  Upload, 
+  Sliders, 
+  Check, 
+  Globe, 
+  ChevronRight,
+  ChevronDown,
+  MapPin,
+  Send,
+  RotateCcw,
+  Sun,
+  Moon,
+  CircleDot,
+  Compass,
+  Move,
+  Download,
+  Copy
+} from 'lucide-react';
+
+interface SidebarProps {
+  markers: CustomMarker[];
+  selectedMarkerId: string | null;
+  onSelectMarker: (id: string | null) => void;
+  onAddMarker: (lat?: number, lng?: number) => void;
+  onUpdateMarker: (marker: CustomMarker) => void;
+  onDeleteMarker: (id: string) => void;
+  onClearMarkers: () => void;
+  tileLayers: TileLayerConfig[];
+  activeTileLayer: TileLayerConfig;
+  onSelectTileLayer: (layer: TileLayerConfig) => void;
+  visicomKey: string;
+  onUpdateVisicomKey: (key: string) => void;
+  language: Language;
+  onToggleLanguage: () => void;
+  onImportMarkers: (imported: CustomMarker[]) => void;
+  interactionMode?: 'draw' | 'pan';
+  onSetInteractionMode?: (mode: 'draw' | 'pan') => void;
+  onUndo?: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
+  onExportPNG?: () => void;
+  onCopyPNG?: () => void;
+  activeStyle?: Partial<CustomMarker>;
+  onUpdateActiveStyle?: React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>;
+  watermarkText?: string;
+  onUpdateWatermarkText?: (text: string) => void;
+  showLegendOverlay?: boolean;
+  onUpdateShowLegendOverlay?: (show: boolean) => void;
+  legendOverlayText?: string;
+  onUpdateLegendOverlayText?: (text: string) => void;
+  showRadarOverlay?: boolean;
+  onUpdateShowRadarOverlay?: (show: boolean) => void;
+  blurMapOnExport?: boolean;
+  onUpdateBlurMapOnExport?: (blur: boolean) => void;
+  customIconTitles?: Record<string, string>;
+  onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  markers,
+  selectedMarkerId,
+  onSelectMarker,
+  onAddMarker,
+  onUpdateMarker,
+  onDeleteMarker,
+  onClearMarkers,
+  tileLayers,
+  activeTileLayer,
+  onSelectTileLayer,
+  visicomKey,
+  onUpdateVisicomKey,
+  language,
+  onToggleLanguage,
+  onImportMarkers,
+  interactionMode = 'draw',
+  onSetInteractionMode = (_mode) => {},
+  onUndo = () => {},
+  theme = 'dark',
+  onToggleTheme = () => {},
+  onExportPNG = () => {},
+  onCopyPNG = () => {},
+  activeStyle = {} as Partial<CustomMarker>,
+  onUpdateActiveStyle = (() => {}) as React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>,
+  watermarkText = 'UA Mapper',
+  onUpdateWatermarkText = (_text) => {},
+  showLegendOverlay = true,
+  onUpdateShowLegendOverlay = (_show) => {},
+  legendOverlayText = '',
+  onUpdateLegendOverlayText = (_text) => {},
+  showRadarOverlay = true,
+  onUpdateShowRadarOverlay = (_show) => {},
+  blurMapOnExport = false,
+  onUpdateBlurMapOnExport = (_blur) => {},
+  customIconTitles = {},
+  onUpdateCustomIconTitle = (_type, _val) => {},
+}) => {
+  const [importError, setImportError] = useState<string | null>(null);
+  const [customTileUrl, setCustomTileUrl] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Custom PNG Library State
+  const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_custom_library');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [expandedSections, setExpandedSections] = useState({
+    mode: false,
+    styles: false,
+    objects: false,
+    map: false,
+    overlays: false,
+    settings: false,
+  });
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => ({
+      ...prev,
+      [section]: !prev[section],
+    }));
+  };
+
+  const saveToLibrary = (name: string, dataUrl: string) => {
+    const newItem = {
+      id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      name,
+      dataUrl,
+    };
+    const updated = [...customLibrary, newItem];
+    setCustomLibrary(updated);
+    try {
+      localStorage.setItem('visicom_custom_library', JSON.stringify(updated));
+    } catch (e) {
+      console.error('LocalStorage write failed', e);
+    }
+    return newItem.dataUrl;
+  };
+
+  const deleteFromLibrary = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = customLibrary.filter((item) => item.id !== id);
+    setCustomLibrary(updated);
+    try {
+      localStorage.setItem('visicom_custom_library', JSON.stringify(updated));
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
+
+  // Localization
+  const isUa = language === 'uk';
+  const t = {
+    appName: isUa ? 'UA Mapper' : 'UA Mapper',
+    author: isUa ? 'by @krrig_alerts' : 'by @krrig_alerts',
+    
+    secMode: isUa ? 'Режим роботи' : 'Interactions',
+    btnDraw: isUa ? 'Малювання' : 'Draw',
+    btnPan: isUa ? 'Переміщення' : 'Move',
+
+    secStyles: isUa ? 'Стилі іконок' : 'Styles & Symbols',
+    lblPointIcon: isUa ? 'Іконка точки' : 'Point Icon',
+    lblPointColor: isUa ? 'Колір іконки' : 'Icon Color',
+    lblLineColor: isUa ? 'Колір обводки' : 'Outline Color',
+    btnNoColor: isUa ? 'Без кольору' : 'No Color',
+    lblEndPoint: isUa ? 'Кінцевий маркер' : 'End Decorator',
+    
+    lblTitle: isUa ? 'Назва точки' : 'Point Title',
+    lblSize: isUa ? 'Розмір іконки' : 'Icon Size',
+    lblRotation: isUa ? 'Обертання' : 'Rotation',
+    lblDraggable: isUa ? 'Перетягування' : 'Draggable',
+    lblShowLabel: isUa ? 'Показувати підпис' : 'Show Label',
+    lblCoordinates: isUa ? 'Координати' : 'Coordinates',
+
+    secObjects: isUa ? 'Список об\'єктів' : 'Objects List',
+    secMap: isUa ? 'Шар карти' : 'Map Layer',
+    lblMapUrl: isUa ? 'Власний URL карти' : 'Custom Map URL',
+    btnLoad: isUa ? 'Завантажити' : 'Load',
+    btnResetMap: isUa ? 'Скинути карту' : 'Reset Map',
+
+    btnSavePng: isUa ? 'Експорт PNG' : 'Export PNG',
+    btnShare: isUa ? 'Копіювати в буфер' : 'Copy to clipboard',
+    btnUndo: isUa ? 'Скасувати' : 'Undo',
+    btnClearAll: isUa ? 'Очистити все' : 'Clear All',
+    btnSupport: isUa ? 'ПІДТРИМКА' : 'SUPPORT',
+
+    noObjects: isUa ? 'Ще не створено жодного об\'єкта.' : 'No objects created yet.',
+    confirmClear: isUa ? 'Видалити всі маркери?' : 'Clear all markers?',
+    
+    // Zone strings
+    lblHasZone: isUa ? 'Зона навколо іконки' : 'Zone around Icon',
+    lblZoneColor: isUa ? 'Колір зони' : 'Zone Color',
+    lblZoneSize: isUa ? 'Розмір зони' : 'Zone Size',
+  };
+
+  // Helper to trigger custom PNG upload
+  const handlePngUploadClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png';
+    input.onchange = (event: any) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (readerEvent) => {
+          const base64 = readerEvent.target?.result as string;
+          const defaultName = file.name.replace(/\.[^/.]+$/, "");
+          const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
+          
+          const savedUrl = saveToLibrary(name, base64);
+          
+          handlePropsChange({
+            customIconUrl: savedUrl,
+            iconType: 'custom',
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
+
+  // Handle manual edits of properties (applies to selected marker or template activeStyle!)
+  const handlePropChange = (key: keyof CustomMarker, value: any) => {
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        [key]: value,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        [key]: value,
+      }));
+    }
+  };
+
+  const getDefaultIconName = (iconType: string) => {
+    const found = ICON_TYPES.find((t) => t.id === iconType);
+    if (found) {
+      return language === 'uk' ? found.nameUa : found.nameEn;
+    }
+    return language === 'uk' ? 'Маркер' : 'Marker';
+  };
+
+  const handlePropsChange = (updates: Partial<CustomMarker>) => {
+    if (selectedMarker) {
+      const newUpdates = { ...updates };
+      if (updates.iconType && updates.iconType !== selectedMarker.iconType) {
+        newUpdates.title = customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+      }
+      onUpdateMarker({
+        ...selectedMarker,
+        ...newUpdates,
+      });
+    } else {
+      const newUpdates = { ...updates };
+      if (updates.iconType && updates.iconType !== activeStyle.iconType) {
+        newUpdates.title = customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+      }
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...newUpdates,
+      }));
+    }
+  };
+
+  const handleLoadCustomTile = () => {
+    if (!customTileUrl) return;
+    onSelectTileLayer({
+      id: 'custom_url_' + Date.now(),
+      nameEn: 'Custom Layer',
+      nameUa: 'Власна карта',
+      url: customTileUrl,
+      tms: false,
+      maxZoom: 19,
+      attribution: 'Custom Tile Layer',
+      requiresKey: false
+    });
+  };
+
+  const handleResetTile = () => {
+    setCustomTileUrl('');
+    onSelectTileLayer(tileLayers[0]);
+  };
+
+  // Export properties representing either the selected marker or the pre-configured template activeStyle
+  const activeIconType = selectedMarker ? selectedMarker.iconType : (activeStyle.iconType || 'pin');
+  const activeCustomIconUrl = selectedMarker ? selectedMarker.customIconUrl : activeStyle.customIconUrl;
+  const activeColor = selectedMarker ? selectedMarker.color : (activeStyle.color || '#ef4444');
+  const activeBorderColor = selectedMarker ? selectedMarker.borderColor || '#ffffff' : (activeStyle.borderColor || '#ffffff');
+  const activeEndPointStyle = selectedMarker ? selectedMarker.endPointStyle || 'none' : (activeStyle.endPointStyle || 'none');
+  const activeTitle = selectedMarker ? selectedMarker.title : '';
+  const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
+  const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
+  const activeDraggable = selectedMarker ? selectedMarker.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true);
+  const activeLabelVisible = selectedMarker ? selectedMarker.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true);
+  
+  // Tactical zone properties
+  const activeHasZone = selectedMarker ? !!selectedMarker.hasZone : !!activeStyle.hasZone;
+  const activeZoneColor = selectedMarker ? selectedMarker.zoneColor || selectedMarker.color : activeStyle.zoneColor || activeStyle.color || '#ef4444';
+  const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
+
+  return (
+    <div className={`w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 ${
+      theme === 'light'
+        ? 'bg-white border-l border-slate-200 text-slate-700 shadow-xl'
+        : 'bg-[#161a22] border-l border-[#262c38] text-slate-300 shadow-2xl'
+    }`}>
+      
+      {/* Header section with App Branding */}
+      <div className={`p-2 sm:p-4 border-b flex justify-between items-center gap-1.5 sm:gap-3 ${
+        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/50 border-[#262c38]'
+      }`}>
+        <div className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-md transition-all select-none flex-shrink min-w-0 ${
+          theme === 'light' 
+            ? 'bg-slate-950/90 border-slate-900 text-white' 
+            : 'bg-white/90 border-white text-slate-950'
+        }`}>
+          <span 
+            className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[13px] leading-none flex items-center whitespace-nowrap"
+            style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
+          >
+            UA Mapper
+          </span>
+          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="telegram-watermark-sidebar" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#2AABEE" />
+                <stop offset="100%" stopColor="#229ED9" />
+              </linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="url(#telegram-watermark-sidebar)" />
+            <path d="M10.8 14.9L10.5 19.1C10.9 19.1 11.1 18.9 11.3 18.7L13.2 16.9L17.2 19.8C17.9 20.2 18.4 20.0 18.6 19.2L21.2 6.9C21.4 6.0 20.8 5.6 20.2 5.9L4.8 11.8C3.9 12.2 3.9 12.7 4.7 13.0L8.6 14.2L17.6 8.5C18.0 8.2 18.4 8.4 18.1 8.7L10.8 14.9Z" fill="white" />
+          </svg>
+          <span className={`inline-block w-[1px] h-2.5 self-center ${
+            theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
+          }`} />
+          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7px] sm:text-[8px] whitespace-nowrap ${
+            theme === 'light' ? 'text-white' : 'text-slate-950'
+          }`}>
+            BY @KRRIG_ALERTS
+          </span>
+        </div>
+
+        {/* Top-Right utility buttons */}
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+          {/* Theme Toggle Button */}
+          <button
+            onClick={onToggleTheme}
+            title={isUa ? 'Перемкнути світлу/темну тему' : 'Toggle light/dark theme'}
+            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+            }`}
+          >
+            {theme === 'light' ? <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />}
+          </button>
+
+          <button
+            onClick={onToggleLanguage}
+            title={isUa ? 'Switch to English' : 'Перемкнути на українську'}
+            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
+          </button>
+        </div>
+      </div>
+
+      {/* Accordion List wrapper */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+
+        {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
+        }`}>
+          <button
+            onClick={() => toggleSection('styles')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              theme === 'light' 
+                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Sliders className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secStyles}</span>
+            </div>
+            {expandedSections.styles ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.styles && (
+            <div className="p-3 space-y-3.5">
+              
+              {/* Editing Target Indicator */}
+              <div className="flex items-center justify-between pb-1 border-b border-dashed border-slate-200 dark:border-white/5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {isUa ? 'Ціль налаштування:' : 'Configuring target:'}
+                </span>
+                <span className="text-[10px] font-extrabold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-md">
+                  {selectedMarker 
+                    ? (isUa ? `Маркер: "${selectedMarker.title}"` : `Marker: "${selectedMarker.title}"`) 
+                    : (isUa ? 'Стиль за замовчуванням' : 'Active Symbol template')}
+                </span>
+              </div>
+
+              {/* Point shape selector */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  {t.lblPointIcon}
+                </label>
+                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto p-0.5 border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-500/5 mb-3.5">
+                  {ICON_TYPES.map((type) => {
+                    const isActive = activeIconType === type.id && !activeCustomIconUrl;
+                    return (
+                      <button
+                        key={type.id}
+                        onClick={() => {
+                          handlePropsChange({
+                            iconType: type.id,
+                            customIconUrl: undefined,
+                          });
+                        }}
+                        title={isUa ? type.nameUa : type.nameEn}
+                        className={`h-9 border rounded-xl transition-all flex items-center justify-center cursor-pointer ${
+                          isActive
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.35)] scale-105 z-10'
+                            : (theme === 'light' 
+                              ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700' 
+                              : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-200')
+                        }`}
+                      >
+                        <div 
+                          className="w-5 h-5 flex items-center justify-center"
+                          dangerouslySetInnerHTML={{ __html: getIconSvgContent(type.id, 'currentColor', theme === 'light' ? '#0f172a' : '#ffffff') }}
+                        />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Custom Upload PNG button */}
+                <button
+                  onClick={handlePngUploadClick}
+                  title={isUa ? 'Завантажити свій PNG' : 'Upload custom PNG'}
+                  className={`w-full py-2 px-3 border rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-xs font-bold ${
+                    activeCustomIconUrl
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.25)]'
+                      : (theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' 
+                        : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{isUa ? 'Додати власний PNG малюнок' : 'Upload custom PNG marker'}</span>
+                </button>
+
+                {/* Uploaded custom library thumbnails */}
+                {customLibrary.length > 0 && (
+                  <div className="mt-3.5 space-y-2">
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      {isUa ? 'Власна бібліотека' : 'Custom Library'}
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                      {customLibrary.map((item) => {
+                        const isActive = activeCustomIconUrl === item.dataUrl;
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => {
+                              handlePropsChange({
+                                customIconUrl: item.dataUrl,
+                                iconType: 'custom',
+                              });
+                            }}
+                            className={`group p-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer ${
+                              isActive
+                                ? 'border-blue-500 bg-blue-600/10 text-blue-600 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.15)]'
+                                : (theme === 'light' 
+                                  ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700' 
+                                  : 'border-white/5 bg-[#181d28]/40 hover:border-white/10 text-slate-300')
+                            }`}
+                          >
+                            <div className="w-6 h-6 p-0.5 rounded-lg bg-[#1c2230] border border-white/5 flex items-center justify-center flex-shrink-0">
+                              <img src={item.dataUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                            </div>
+                            <span className="text-[10px] truncate flex-1 font-semibold" title={item.name}>
+                              {item.name}
+                            </span>
+                            <button
+                              onClick={(e) => deleteFromLibrary(item.id, e)}
+                              className="text-slate-500 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title={isUa ? 'Видалити іконку' : 'Delete icon'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Color selectors side-by-side */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Fill color */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    {t.lblPointColor}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={activeColor === 'transparent' ? '#ef4444' : activeColor}
+                      onChange={(e) => handlePropChange('color', e.target.value)}
+                      disabled={activeColor === 'transparent'}
+                      className="w-10 h-10 bg-transparent cursor-pointer rounded-xl border border-white/10 overflow-hidden p-0"
+                    />
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                      {activeColor === 'transparent' ? 'None' : activeColor}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Border/Line color */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    {t.lblLineColor}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={activeBorderColor}
+                      onChange={(e) => handlePropChange('borderColor', e.target.value)}
+                      className="w-10 h-10 bg-transparent cursor-pointer rounded-xl border border-white/10 overflow-hidden p-0"
+                    />
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                      {activeBorderColor}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* No Color & Preset Colors Row */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => handlePropChange('color', 'transparent')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                      activeColor === 'transparent'
+                        ? 'bg-blue-600/15 border-blue-500 text-blue-500 dark:text-blue-400'
+                        : (theme === 'light' 
+                          ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50' 
+                          : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-300')
+                    }`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{t.btnNoColor}</span>
+                  </button>
+
+                  {/* Quick Color Presets */}
+                  <div className="flex gap-1">
+                    {['#eab308', '#ef4444', '#3b82f6', '#ffffff'].map((hex) => (
+                      <button
+                        key={hex}
+                        onClick={() => handlePropChange('color', hex)}
+                        style={{ backgroundColor: hex }}
+                        className={`w-5 h-5 rounded-full border border-white/10 hover:scale-110 transition-transform ${
+                          activeColor === hex ? 'ring-2 ring-blue-500' : ''
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* End Point selector */}
+              <div className="pt-1.5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  {t.lblEndPoint}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['line', 'explosion', 'none'].map((style) => (
+                    <button
+                      key={style}
+                      onClick={() => handlePropChange('endPointStyle', style)}
+                      className={`py-2 px-1 border rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer truncate ${
+                        activeEndPointStyle === style
+                          ? 'bg-blue-600/20 border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold shadow-[0_0_8px_rgba(59,130,246,0.1)]'
+                          : (theme === 'light' 
+                            ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50' 
+                            : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-200')
+                      }`}
+                      title={
+                        style === 'line' ? (isUa ? 'Полоса' : 'Dashed Line') :
+                        style === 'explosion' ? (isUa ? 'Вибух 💥' : 'Explosion 💥') :
+                        (isUa ? 'Ні' : 'None')
+                      }
+                    >
+                      {
+                        style === 'line' ? (isUa ? 'Полоса' : 'Line') :
+                        style === 'explosion' ? (isUa ? 'Вибух 💥' : 'Explosion') :
+                        (isUa ? 'Ні' : 'None')
+                      }
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* TACTICAL ZONE CONTROLS */}
+              <div className="pt-2 border-t border-slate-200 dark:border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeHasZone}
+                      onChange={(e) => handlePropChange('hasZone', e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblHasZone}</span>
+                  </label>
+                </div>
+
+                {activeHasZone && (
+                  <div className="space-y-3 pl-1.5 border-l-2 border-blue-500/30 animate-fade-in">
+                    {/* Zone Color */}
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1.5">
+                        <span>{t.lblZoneColor}</span>
+                        <span className="font-mono text-blue-500">{activeZoneColor}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={activeZoneColor}
+                          onChange={(e) => handlePropChange('zoneColor', e.target.value)}
+                          className="w-8 h-8 bg-transparent cursor-pointer rounded-lg border border-white/10 overflow-hidden p-0"
+                        />
+                        <div className="flex gap-1 flex-1 justify-end">
+                          {['#eab308', '#ef4444', '#3b82f6', '#22c55e'].map((hex) => (
+                            <button
+                              key={hex}
+                              onClick={() => handlePropChange('zoneColor', hex)}
+                              style={{ backgroundColor: hex }}
+                              className={`w-4 h-4 rounded-full border border-white/10 hover:scale-110 transition-transform ${
+                                activeZoneColor === hex ? 'ring-2 ring-blue-500' : ''
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Zone Size */}
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{t.lblZoneSize}</span>
+                        <span className="font-mono text-blue-500">{activeZoneSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="300"
+                        value={activeZoneSize}
+                        onChange={(e) => handlePropChange('zoneSize', Number(e.target.value))}
+                        className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Marker detail sliders */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-white/5">
+                {/* Title (Always editable - either for the selected point or the active style/icon type template) */}
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    {selectedMarker ? t.lblTitle : (isUa ? 'Назва для іконки' : 'Icon Name/Label')}
+                  </span>
+                  <input
+                    type="text"
+                    value={selectedMarker ? activeTitle : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (selectedMarker) {
+                        handlePropChange('title', val);
+                      } else {
+                        onUpdateCustomIconTitle(activeIconType, val);
+                      }
+                    }}
+                    placeholder="..."
+                    className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                      theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-800' 
+                        : 'bg-[#181d28] border-white/5 text-slate-200'
+                    }`}
+                  />
+                </div>
+
+                {/* Size slider */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    <span>{t.lblSize}</span>
+                    <span className="font-mono text-blue-500">{activeSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="16"
+                    max="64"
+                    value={activeSize}
+                    onChange={(e) => handlePropChange('size', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Rotation slider */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    <span>{t.lblRotation}</span>
+                    <span className="font-mono text-blue-500">{activeRotation}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="359"
+                    value={activeRotation}
+                    onChange={(e) => handlePropChange('rotation', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Toggles */}
+                <div className="grid grid-cols-2 gap-2 pt-1.5">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeDraggable}
+                      onChange={(e) => handlePropChange('draggable', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblDraggable}</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeLabelVisible}
+                      onChange={(e) => handlePropChange('labelVisible', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblShowLabel}</span>
+                  </label>
+                </div>
+
+                {/* Delete Current Selected Marker button */}
+                {selectedMarker && (
+                  <button
+                    onClick={() => onDeleteMarker(selectedMarker.id)}
+                    className="w-full py-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 text-xs font-bold rounded-xl border border-red-500/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Видалити точку' : 'Delete Point'}</span>
+                  </button>
+                )}
+              </div>
+
+            </div>
+          )}
+        </div>
+
+        {/* 3. ОБ'ЄКТИ (OBJECTS) */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
+        }`}>
+          <button
+            onClick={() => toggleSection('objects')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              theme === 'light' 
+                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secObjects} ({markers.length})</span>
+            </div>
+            {expandedSections.objects ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.objects && (
+            <div className="p-3 space-y-2">
+              {markers.length === 0 ? (
+                <div className="text-center py-4 text-xs text-slate-500">
+                  {t.noObjects}
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {markers.map((m) => (
+                    <div
+                      key={m.id}
+                      onClick={() => onSelectMarker(m.id)}
+                      className={`p-2 rounded-xl border text-xs flex items-center justify-between transition-all cursor-pointer ${
+                        selectedMarkerId === m.id
+                          ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-white font-semibold'
+                          : (theme === 'light'
+                            ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            : 'bg-[#181d28]/60 border-white/5 text-slate-300 hover:bg-white/5')
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          style={{ backgroundColor: m.color === 'transparent' ? '#ffffff' : m.color }}
+                          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${m.color === 'transparent' ? 'border border-dashed border-slate-300' : ''}`}
+                        ></span>
+                        <span className="font-semibold truncate">
+                          {m.title || (isUa ? 'Без назви' : 'Untitled')}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteMarker(m.id);
+                        }}
+                        className="text-slate-400 hover:text-red-500 p-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 4. КАРТА (MAP) */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
+        }`}>
+          <button
+            onClick={() => toggleSection('map')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              theme === 'light' 
+                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Map className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secMap}</span>
+            </div>
+            {expandedSections.map ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.map && (
+            <div className="p-3 space-y-3">
+              
+              {/* Tile Layer selector */}
+              <div className="space-y-1.5">
+                {tileLayers.map((layer) => (
+                  <button
+                    key={layer.id}
+                    onClick={() => onSelectTileLayer(layer)}
+                    className={`w-full text-left p-2 px-3 border rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                      activeTileLayer.id === layer.id
+                        ? 'bg-blue-600/10 border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold'
+                        : (theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          : 'bg-[#181d28]/60 border-white/5 text-slate-300 hover:bg-white/5')
+                    }`}
+                  >
+                    <span className="text-xs font-bold">
+                      {isUa ? layer.nameUa : layer.nameEn}
+                    </span>
+                    {activeTileLayer.id === layer.id && <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* Load Custom URL Map */}
+              <div className="space-y-1.5 pt-2.5 border-t border-slate-200 dark:border-white/5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  {t.lblMapUrl}
+                </label>
+                <input
+                  type="text"
+                  value={customTileUrl}
+                  onChange={(e) => setCustomTileUrl(e.target.value)}
+                  placeholder="Вставте URL.."
+                  className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                    theme === 'light' 
+                      ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                      : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                  }`}
+                />
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleLoadCustomTile}
+                    className={`flex-1 py-1.5 px-3 border text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                        : 'bg-[#1c2230] hover:bg-[#232a3c] border-white/5 text-slate-300'
+                    }`}
+                  >
+                    {t.btnLoad}
+                  </button>
+                  <button
+                    onClick={handleResetTile}
+                    className={`py-1.5 px-3 border text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-500'
+                        : 'bg-[#1c2230] hover:bg-[#232a3c] border-white/5 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* MAP OVERLAYS SECTION */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' 
+            ? 'bg-white border-slate-200' 
+            : 'bg-[#181d28]/60 border-white/5'
+        }`}>
+          <button
+            onClick={() => toggleSection('overlays')}
+            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all ${
+              expandedSections.overlays
+                ? (theme === 'light' ? 'bg-slate-50 text-slate-900 border-b border-slate-100' : 'bg-white/5 text-white border-b border-white/5')
+                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Compass className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'Накладки на мапі' : 'Map Overlays'}</span>
+            </div>
+            {expandedSections.overlays ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.overlays && (
+            <div className="p-3 space-y-3.5">
+              {/* Watermark Input */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  {isUa ? 'Текст водяного знаку' : 'Watermark Text'}
+                </label>
+                <input
+                  type="text"
+                  value={watermarkText}
+                  onChange={(e) => onUpdateWatermarkText(e.target.value)}
+                  placeholder={isUa ? 'Наприклад, UA Mapper...' : 'E.g., UA Mapper...'}
+                  className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                    theme === 'light' 
+                      ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                      : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                  }`}
+                />
+              </div>
+
+              {/* Show Legend toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Показувати легенду' : 'Show Map Legend'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Картка-роз\'яснення збоку' : 'Map explanation card'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={showLegendOverlay} 
+                    onChange={(e) => onUpdateShowLegendOverlay(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Blur Map on Export Toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Розмиття карти при експорті' : 'Blur map on export'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Робить фон карти м\'яким' : 'Softens background map on export'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={blurMapOnExport} 
+                    onChange={(e) => onUpdateBlurMapOnExport(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Legend Warning Textarea (only if legend enabled) */}
+              {showLegendOverlay && (
+                <div className="space-y-1.5 pt-1.5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Текст роз\'яснення легенди' : 'Legend Warning Text'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={legendOverlayText}
+                    onChange={(e) => onUpdateLegendOverlayText(e.target.value)}
+                    placeholder={isUa ? 'Напишіть кастомне попередження...' : 'Write custom warning...'}
+                    className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 resize-none leading-relaxed ${
+                      theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                        : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                    }`}
+                  />
+                  <button
+                    onClick={() => onUpdateLegendOverlayText('')}
+                    className="text-[9px] font-bold text-blue-500 hover:text-blue-400 transition-colors uppercase tracking-wider block"
+                  >
+                    {isUa ? 'Скинути до стандартного' : 'Reset to default'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 5. НАЛАШТУВАННЯ КЛЮЧА (SETTINGS) */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
+        }`}>
+          <button
+            onClick={() => toggleSection('settings')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              theme === 'light' 
+                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'Параметри API' : 'API Settings'}</span>
+            </div>
+            {expandedSections.settings ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.settings && (
+            <div className="p-3 space-y-2.5">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                {isUa ? 'API КЛЮЧ VISICOM' : 'VISICOM API KEY'}
+              </label>
+              <input
+                type="text"
+                value={visicomKey}
+                onChange={(e) => onUpdateVisicomKey(e.target.value)}
+                placeholder="Вставте ключ API..."
+                className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                  theme === 'light' 
+                    ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                    : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                }`}
+              />
+              <p className="text-[10px] text-slate-400 leading-normal font-medium">
+                {isUa 
+                  ? 'Для роботи шару Visicom потрібен ключ API. Якщо ключ не вказано, система використовує демо-версію.' 
+                  : 'Visicom tiles require an active API key. A demo key is used if left blank.'}
+              </p>
+            </div>
+          )}
+        </div>
+
+      </div>
+
+      {/* Action panel at the bottom (Interface actions matching the screenshot) */}
+      <div className={`p-4 border-t space-y-3 ${
+        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/80 border-[#262c38] backdrop-blur-md'
+      }`}>
+        <div className="grid grid-cols-2 gap-2">
+          {/* Save as PNG */}
+          <button
+            onClick={onExportPNG}
+            className={`w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
+              theme === 'light'
+                ? 'bg-[#0057B7] hover:bg-[#004494] text-white border-[#0057B7]/20 shadow-[#0057B7]/10'
+                : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/20 shadow-blue-600/10'
+            }`}
+          >
+            <Download className="w-4 h-4 flex-shrink-0 text-white" />
+            <span className="leading-tight text-center">{t.btnSavePng}</span>
+          </button>
+
+          {/* Share */}
+          <button
+            onClick={onCopyPNG}
+            className={`w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
+              theme === 'light'
+                ? 'bg-[#FFD700] hover:bg-[#E6C200] text-slate-900 border-[#FFD700]/30 shadow-[#FFD700]/10'
+                : 'bg-slate-900/50 border-[#FFD700]/40 text-[#FFD700] hover:bg-[#FFD700]/10 shadow-[#FFD700]/5'
+            }`}
+          >
+            <Copy className={`w-4 h-4 flex-shrink-0 ${theme === 'light' ? 'text-slate-900' : 'text-[#FFD700]'}`} />
+            <span className="leading-tight text-center">{t.btnShare}</span>
+          </button>
+
+          {/* Undo */}
+          <button
+            onClick={onUndo}
+            className={`w-full h-[52px] px-2 font-bold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                : 'bg-[#181d28] border-white/5 hover:bg-white/5 text-slate-300 hover:text-white'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 flex-shrink-0" />
+            <span className="leading-tight text-center">{t.btnUndo}</span>
+          </button>
+
+          {/* Clear All */}
+          <button
+            onClick={onClearMarkers}
+            className="w-full h-[52px] px-2 bg-red-600 hover:bg-red-500 active:scale-[0.97] hover:scale-[1.01] text-white font-extrabold text-xs rounded-xl shadow-lg shadow-red-600/10 transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-red-500/10"
+          >
+            <Trash2 className="w-4 h-4 flex-shrink-0" />
+            <span className="leading-tight text-center">{t.btnClearAll}</span>
+          </button>
+        </div>
+
+        {/* Support Banner & Footer */}
+        <div className="flex items-center justify-center gap-3 pt-1.5 text-[11px] text-slate-500 font-mono">
+          <a
+            href="https://t.me/krrig_alerts"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1 bg-[#24A1DE]/10 hover:bg-[#24A1DE]/20 text-[#24A1DE] font-bold rounded-lg border border-[#24A1DE]/10 transition-all text-xs"
+          >
+            <Send className="w-3 h-3 fill-current" />
+            <span>{t.btnSupport}</span>
+          </a>
+          <span className="font-bold">v3.0</span>
+        </div>
+      </div>
+
+    </div>
+  );
+};

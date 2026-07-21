@@ -1,0 +1,1508 @@
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import L from 'leaflet';
+import { toPng, toBlob } from 'html-to-image';
+import { Check, Loader2, Search, X, MapPin } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language } from '../types';
+import { createMarkerHtml } from './IconLibrary';
+
+export interface MapContainerRef {
+  exportPNG: () => void;
+  copyPNG: () => void;
+}
+
+interface SearchedArea {
+  id: string;
+  name: string;
+  lat: string;
+  lon: string;
+  geojson: any;
+  districtId?: string;
+}
+
+const QUICK_DISTRICTS = [
+  { id: 'saksahanskyi', label: 'Саксаганський', query: 'Саксаганський район' },
+  { id: 'ternivskyi', label: 'Терновський', query: 'Тернівський район' },
+  { id: 'metalurhiinyi', label: 'Металургійний', query: 'Металургійний район' },
+  { id: 'inhuletskyi', label: 'Інгулецький', query: 'Інгулецький район' },
+  { id: 'pokrovskyi', label: 'Покровський', query: 'Покровський район' },
+  { id: 'dolhintsevskyi', label: 'Долгінцевський', query: 'Довгинцівський район' },
+  { id: 'tsentralno_miskyi', label: 'Центрально-Міський', query: 'Центрально-Міський район' }
+];
+
+interface MapContainerProps {
+  markers: CustomMarker[];
+  selectedMarkerId: string | null;
+  onSelectMarker: (id: string | null) => void;
+  onUpdateMarkerPosition: (id: string, lat: number, lng: number) => void;
+  onAddMarker: (lat: number, lng: number) => void;
+  activeTileLayer: TileLayerConfig;
+  visicomKey: string;
+  language: Language;
+  interactionMode?: 'draw' | 'pan';
+  theme?: 'dark' | 'light';
+  onUpdateMarker?: (marker: CustomMarker) => void;
+  watermarkText?: string;
+  showLegendOverlay?: boolean;
+  legendOverlayText?: string;
+  showRadarOverlay?: boolean;
+  blurMapOnExport?: boolean;
+}
+
+export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
+  markers,
+  selectedMarkerId,
+  onSelectMarker,
+  onUpdateMarkerPosition,
+  onAddMarker,
+  activeTileLayer,
+  visicomKey,
+  language,
+  interactionMode = 'draw',
+  theme = 'dark',
+  onUpdateMarker,
+  watermarkText = 'UA Mapper',
+  showLegendOverlay = true,
+  legendOverlayText = '',
+  showRadarOverlay = true,
+  blurMapOnExport = false,
+}, ref) => {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
+  const markersRef = useRef<{ [id: string]: L.Marker }>({});
+  const linesRef = useRef<{ [id: string]: L.Polyline }>({});
+  const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  
+  // Highlighted areas state (with localStorage persistence)
+  const [searchedAreas, setSearchedAreas] = useState<SearchedArea[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_searched_areas');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const geojsonLayersRef = useRef<{ [id: string]: L.GeoJSON }>({});
+
+  // Search handler
+  const handleSearch = async (queryText: string) => {
+    if (!queryText.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    setShowDropdown(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          queryText
+        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=8`,
+        {
+          headers: {
+            'User-Agent': 'UA-Mapper-App'
+          }
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        // Filter out places with valid polygon geometries first, fallback to all if empty
+        const filtered = data.filter(
+          (item: any) =>
+            item.geojson &&
+            (item.geojson.type === 'Polygon' ||
+              item.geojson.type === 'MultiPolygon')
+        );
+        setSearchResults(filtered.length > 0 ? filtered : data);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (e) {
+      console.error('Error searching:', e);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Debounce search input
+  useEffect(() => {
+    const delayDebounce = setTimeout(() => {
+      if (searchQuery.trim().length >= 3) {
+        handleSearch(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 600);
+
+    return () => clearTimeout(delayDebounce);
+  }, [searchQuery]);
+
+  // Handle outside clicks to close search dropdown
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const [loadingDistrict, setLoadingDistrict] = useState<string | null>(null);
+
+  const handleToggleDistrict = async (district: typeof QUICK_DISTRICTS[0]) => {
+    // Check if it's already highlighted
+    const existing = searchedAreas.find((area) => area.districtId === district.id);
+    if (existing) {
+      handleRemoveArea(existing.id);
+      return;
+    }
+
+    setLoadingDistrict(district.id);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          district.query
+        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`,
+        {
+          headers: {
+            'User-Agent': 'UA-Mapper-App'
+          }
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          // Find the first result with a polygon geometry that is in Dnipropetrovsk oblast or Kryvyi Rih
+          const item = data.find(
+            (it: any) =>
+              it.geojson &&
+              (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon') &&
+              (it.display_name.includes('Крив') || it.display_name.includes('Дніпро'))
+          ) || data.find(
+            (it: any) =>
+              it.geojson &&
+              (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+          ) || data[0];
+
+          const map = mapInstanceRef.current;
+          if (map) {
+            const newArea: SearchedArea = {
+              id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
+              name: district.label,
+              lat: item.lat,
+              lon: item.lon,
+              geojson: item.geojson,
+              districtId: district.id
+            };
+
+            setSearchedAreas((prev) => {
+              if (prev.some((a) => a.id === newArea.id)) return prev;
+              return [...prev, newArea];
+            });
+
+            try {
+              const tempLayer = L.geoJSON(item.geojson);
+              const bounds = tempLayer.getBounds();
+              if (bounds.isValid()) {
+                map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+              } else {
+                map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+              }
+            } catch (e) {
+              map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching district:', e);
+    } finally {
+      setLoadingDistrict(null);
+    }
+  };
+
+  const handleSelectArea = (item: any) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const newArea: SearchedArea = {
+      id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
+      name: item.display_name.split(',')[0] || item.display_name,
+      lat: item.lat,
+      lon: item.lon,
+      geojson: item.geojson
+    };
+
+    setSearchedAreas((prev) => {
+      if (prev.some((a) => a.id === newArea.id)) return prev;
+      return [...prev, newArea];
+    });
+
+    try {
+      const tempLayer = L.geoJSON(item.geojson);
+      const bounds = tempLayer.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+      } else {
+        map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+      }
+    } catch (e) {
+      map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+    }
+
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+  };
+
+  const handleRemoveArea = (id: string) => {
+    setSearchedAreas((prev) => prev.filter((area) => area.id !== id));
+  };
+
+  const handleClearAllAreas = () => {
+    setSearchedAreas([]);
+  };
+
+  const formatDisplayName = (fullName: string) => {
+    const parts = fullName.split(',');
+    if (parts.length <= 2) return fullName;
+    return parts.slice(0, 3).join(',');
+  };
+
+  // Synchronize Searched/Highlighted Polygons to Leaflet
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Remove old layers
+    const currentAreaIds = new Set(searchedAreas.map((area) => area.id));
+    Object.keys(geojsonLayersRef.current).forEach((id) => {
+      if (!currentAreaIds.has(id)) {
+        geojsonLayersRef.current[id].remove();
+        delete geojsonLayersRef.current[id];
+      }
+    });
+
+    // Add new layers
+    searchedAreas.forEach((area) => {
+      if (!geojsonLayersRef.current[area.id] && area.geojson) {
+        const geojsonLayer = L.geoJSON(area.geojson, {
+          style: {
+            color: '#ef4444',      // Red contour
+            fillColor: '#ef4444',  // Red fill
+            fillOpacity: 0.15,     // 85% transparency (15% opacity)
+            weight: 2,             // Three times thinner (2 instead of 6)
+            opacity: 1,            // Stroke opacity
+          }
+        });
+
+        // Custom Popup Content
+        const popupContent = document.createElement('div');
+        popupContent.className = 'p-1.5 font-sans text-xs flex flex-col gap-1 text-slate-800';
+        
+        const title = document.createElement('p');
+        title.className = 'font-bold text-slate-900 border-b border-slate-100 pb-1';
+        title.innerText = area.name;
+        popupContent.appendChild(title);
+
+        const coords = document.createElement('p');
+        coords.className = 'text-[10px] text-slate-500 font-mono';
+        coords.innerText = `lat: ${parseFloat(area.lat).toFixed(4)}, lng: ${parseFloat(area.lon).toFixed(4)}`;
+        popupContent.appendChild(coords);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'mt-1 w-full px-2 py-1 bg-red-500 hover:bg-red-600 text-white rounded text-[10px] font-bold cursor-pointer transition-colors';
+        deleteBtn.innerText = language === 'uk' ? 'Видалити виділення' : 'Remove highlight';
+        deleteBtn.onclick = () => {
+          handleRemoveArea(area.id);
+          map.closePopup();
+        };
+        popupContent.appendChild(deleteBtn);
+
+        geojsonLayer.bindPopup(popupContent, {
+          closeButton: true,
+          className: 'custom-polygon-popup'
+        });
+
+        geojsonLayer.addTo(map);
+        geojsonLayersRef.current[area.id] = geojsonLayer;
+      }
+    });
+
+    try {
+      localStorage.setItem('visicom_searched_areas', JSON.stringify(searchedAreas));
+    } catch (e) {
+      console.error(e);
+    }
+  }, [searchedAreas, language]);
+
+  // Clean up geojson layers on unmount
+  useEffect(() => {
+    return () => {
+      Object.keys(geojsonLayersRef.current).forEach((id) => {
+        if (geojsonLayersRef.current[id]) {
+          geojsonLayersRef.current[id].remove();
+        }
+      });
+      geojsonLayersRef.current = {};
+    };
+  }, []);
+  
+  const interactionModeRef = useRef(interactionMode);
+  useEffect(() => {
+    interactionModeRef.current = interactionMode;
+  }, [interactionMode]);
+
+  const onAddMarkerRef = useRef(onAddMarker);
+  const onSelectMarkerRef = useRef(onSelectMarker);
+
+  useEffect(() => {
+    onAddMarkerRef.current = onAddMarker;
+  }, [onAddMarker]);
+
+  useEffect(() => {
+    onSelectMarkerRef.current = onSelectMarker;
+  }, [onSelectMarker]);
+  
+  // Create or update map instance
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+
+    // Initialize map if it doesn't exist
+    if (!mapInstanceRef.current) {
+      // Always load in Kryvyi Rih
+      const defaultCenter: [number, number] = [47.9105, 33.3918];
+      const defaultZoom = 11;
+
+      const map = L.map(mapContainerRef.current, {
+        center: defaultCenter,
+        zoom: defaultZoom,
+        zoomControl: false, // We'll add our own styled zoom control or position it beautifully
+      });
+
+      // Add a styled zoom control at top-right
+      L.control.zoom({ position: 'topright' }).addTo(map);
+
+      // Handle map clicks to add markers OR deselect current marker
+      map.on('click', (e: L.LeafletMouseEvent) => {
+        // Only add marker if we didn't click on an existing marker
+        const originalEvent = e.originalEvent;
+        // Check if clicked element was a marker
+        let target = originalEvent.target as HTMLElement;
+        let clickedMarker = false;
+        while (target && target !== mapContainerRef.current) {
+          if (target.classList.contains('leaflet-marker-icon')) {
+            clickedMarker = true;
+            break;
+          }
+          target = target.parentElement as HTMLElement;
+        }
+
+        if (!clickedMarker) {
+          // If a marker was selected, click on map deselects it.
+          // If no marker was selected, and in draw mode, click on map creates a new one!
+          onSelectMarkerRef.current(null);
+          if (interactionModeRef.current === 'draw') {
+            onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
+          }
+        }
+      });
+
+      mapInstanceRef.current = map;
+    }
+
+    return () => {
+      // Component unmount clean-up is handled below if needed
+    };
+  }, []);
+
+  // Handle Tile Layer changes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Remove existing tile layer if any
+    if (tileLayerInstanceRef.current) {
+      map.removeLayer(tileLayerInstanceRef.current);
+    }
+
+    // Format tile URL
+    let url = activeTileLayer.url;
+    if (activeTileLayer.requiresKey) {
+      url = url.replace('{key}', visicomKey || 'c3979ea05634e2b02e707e050304910a');
+    }
+
+    // Always load 2x retina tiles for CartoDB to keep exports extremely sharp
+    url = url.replace('{r}', '@2x');
+
+    // Create Leaflet TileLayer with appropriate settings
+    const tileLayer = L.tileLayer(url, {
+      tms: activeTileLayer.tms,
+      maxZoom: activeTileLayer.maxZoom,
+      maxNativeZoom: activeTileLayer.maxZoom || 19,
+      attribution: activeTileLayer.attribution,
+      subdomains: activeTileLayer.subdomains || 'abc',
+      crossOrigin: 'anonymous', // Enable CORS for screenshots
+      detectRetina: true, // Automatically handle retina detection on high-DPI screens
+    });
+
+    tileLayer.addTo(map);
+    tileLayerInstanceRef.current = tileLayer;
+  }, [activeTileLayer, visicomKey]);
+
+  // Synchronize Markers (Add, Update, Remove)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // 1. Identify and remove deleted markers, lines, and handles
+    const currentMarkerIds = new Set(markers.map((m) => m.id));
+    Object.keys(markersRef.current).forEach((id) => {
+      if (!currentMarkerIds.has(id)) {
+        markersRef.current[id].remove();
+        delete markersRef.current[id];
+
+        if (linesRef.current[id]) {
+          linesRef.current[id].remove();
+          delete linesRef.current[id];
+        }
+        if (endMarkersRef.current[id]) {
+          endMarkersRef.current[id].remove();
+          delete endMarkersRef.current[id];
+        }
+      }
+    });
+
+    // 2. Add or update current markers
+    markers.forEach((markerData) => {
+      const { 
+        id, lat, lng, title, color, borderColor, endPointStyle, size, rotation, 
+        iconType, draggable, labelVisible, customIconUrl, hasZone, zoneColor, zoneSize,
+        endLat, endLng
+      } = markerData;
+      const isSelected = id === selectedMarkerId;
+
+      // Generate the custom HTML/SVG string
+      const htmlContent = createMarkerHtml(
+        title,
+        color,
+        size,
+        rotation,
+        iconType,
+        labelVisible,
+        isSelected,
+        customIconUrl,
+        borderColor || '#ffffff',
+        endPointStyle || 'none',
+        hasZone,
+        zoneColor,
+        zoneSize
+      );
+
+      // Create a Leaflet custom DivIcon
+      const customIcon = L.divIcon({
+        className: 'custom-leaflet-div-icon', // remove default white box
+        html: htmlContent,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2], // center of the icon
+      });
+
+      const existingMarker = markersRef.current[id];
+      let markerInstance: L.Marker;
+
+      if (existingMarker) {
+        existingMarker.setLatLng([lat, lng]);
+        existingMarker.setIcon(customIcon);
+        if (draggable) {
+          existingMarker.dragging?.enable();
+        } else {
+          existingMarker.dragging?.disable();
+        }
+        if (isSelected) {
+          existingMarker.setZIndexOffset(1000);
+        } else {
+          existingMarker.setZIndexOffset(0);
+        }
+        markerInstance = existingMarker;
+      } else {
+        const newMarker = L.marker([lat, lng], {
+          icon: customIcon,
+          draggable: draggable,
+          zIndexOffset: isSelected ? 1000 : 0,
+        }).addTo(map);
+
+        newMarker.on('click', (e) => {
+          L.DomEvent.stopPropagation(e);
+          onSelectMarker(id);
+        });
+
+        markersRef.current[id] = newMarker;
+        markerInstance = newMarker;
+      }
+
+      // Re-bind drag events dynamically to capture correct markerData variables
+      markerInstance.off('dragstart drag dragend');
+
+      const hasEndPoint = endPointStyle && endPointStyle !== 'none';
+      const hasEndHandle = (endPointStyle === 'explosion') || 
+                           (endPointStyle === 'line') || 
+                           (endPointStyle === 'none' && isSelected);
+      let dragStartLatLng: L.LatLng | null = null;
+      let originalEndLat = endLat;
+      let originalEndLng = endLng;
+
+      markerInstance.on('dragstart', (e) => {
+        dragStartLatLng = e.target.getLatLng();
+        originalEndLat = markerData.endLat;
+        originalEndLng = markerData.endLng;
+      });
+
+      markerInstance.on('drag', (e) => {
+        const currentLatLng = e.target.getLatLng();
+        if (hasEndPoint || hasEndHandle) {
+          let finalEndLat = originalEndLat;
+          let finalEndLng = originalEndLng;
+          if (finalEndLat === undefined || finalEndLng === undefined) {
+            const angleRad = ((rotation - 9) * Math.PI) / 180;
+            finalEndLat = lat + Math.cos(angleRad) * 0.003;
+            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+          }
+          if (dragStartLatLng) {
+            const dLat = currentLatLng.lat - dragStartLatLng.lat;
+            const dLng = currentLatLng.lng - dragStartLatLng.lng;
+            const tempEndLat = finalEndLat + dLat;
+            const tempEndLng = finalEndLng + dLng;
+            if (hasEndPoint && linesRef.current[id]) {
+              linesRef.current[id].setLatLngs([[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]]);
+            }
+            if (endMarkersRef.current[id]) {
+              endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
+            }
+          }
+        }
+      });
+
+      markerInstance.on('dragend', (e) => {
+        const position = e.target.getLatLng();
+        if ((hasEndPoint || hasEndHandle) && dragStartLatLng) {
+          let finalEndLat = originalEndLat;
+          let finalEndLng = originalEndLng;
+          if (finalEndLat === undefined || finalEndLng === undefined) {
+            const angleRad = ((rotation - 9) * Math.PI) / 180;
+            finalEndLat = lat + Math.cos(angleRad) * 0.003;
+            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+          }
+          const dLat = position.lat - dragStartLatLng.lat;
+          const dLng = position.lng - dragStartLatLng.lng;
+          const updatedEndLat = finalEndLat + dLat;
+          const updatedEndLng = finalEndLng + dLng;
+
+          if (onUpdateMarker) {
+            onUpdateMarker({
+              ...markerData,
+              lat: position.lat,
+              lng: position.lng,
+              endLat: updatedEndLat,
+              endLng: updatedEndLng,
+            });
+          } else {
+            onUpdateMarkerPosition(id, position.lat, position.lng);
+          }
+        } else {
+          // Even if the endpoint line is currently disabled ('none'), keep endLat and endLng updated
+          // so that if the user toggles the line back on, it points correctly relative to the new position!
+          if (onUpdateMarker) {
+            let updatedEndLat = originalEndLat;
+            let updatedEndLng = originalEndLng;
+            if (updatedEndLat !== undefined && updatedEndLng !== undefined && dragStartLatLng) {
+              const dLat = position.lat - dragStartLatLng.lat;
+              const dLng = position.lng - dragStartLatLng.lng;
+              updatedEndLat = updatedEndLat + dLat;
+              updatedEndLng = updatedEndLng + dLng;
+            } else {
+              // Calculate default offset end position if none exists
+              const angleRad = ((rotation - 9) * Math.PI) / 180;
+              updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
+              updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
+            }
+            onUpdateMarker({
+              ...markerData,
+              lat: position.lat,
+              lng: position.lng,
+              endLat: updatedEndLat,
+              endLng: updatedEndLng,
+            });
+          } else {
+            onUpdateMarkerPosition(id, position.lat, position.lng);
+          }
+        }
+      });
+
+      // Render line if should draw line
+      if (hasEndPoint) {
+        let finalEndLat = endLat;
+        let finalEndLng = endLng;
+
+        if (finalEndLat === undefined || finalEndLng === undefined) {
+          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          finalEndLat = lat + Math.cos(angleRad) * 0.003;
+          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+        }
+
+        const lineCoords: [number, number][] = [[lat, lng], [finalEndLat, finalEndLng]];
+        const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
+        const lineStyle = {
+          color: polylineColor,
+          weight: 3,
+          dashArray: '10, 5, 2, 5', // Dash-dotted style ("штрих пунктир")
+          opacity: isSelected ? 0.95 : 0.6,
+        };
+
+        if (linesRef.current[id]) {
+          linesRef.current[id].setLatLngs(lineCoords);
+          linesRef.current[id].setStyle(lineStyle);
+        } else {
+          linesRef.current[id] = L.polyline(lineCoords, lineStyle).addTo(map);
+        }
+      } else {
+        if (linesRef.current[id]) {
+          linesRef.current[id].remove();
+          delete linesRef.current[id];
+        }
+      }
+
+      // Render direction control point / handle if hasEndHandle is true
+      if (hasEndHandle) {
+        let finalEndLat = endLat;
+        let finalEndLng = endLng;
+
+        if (finalEndLat === undefined || finalEndLng === undefined) {
+          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          finalEndLat = lat + Math.cos(angleRad) * 0.003;
+          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+        }
+
+        const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
+        let endMarkerIcon: L.DivIcon;
+
+        if (endPointStyle === 'explosion') {
+          const explosionHtml = `
+            <div class="flex items-center justify-center" style="
+              width: ${size}px;
+              height: ${size}px;
+              font-size: ${size * 0.95}px;
+              line-height: 1;
+              filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+              cursor: ${isSelected ? 'move' : 'default'};
+            ">
+              💥
+            </div>
+          `;
+          endMarkerIcon = L.divIcon({
+            className: 'custom-end-explosion',
+            html: explosionHtml,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+          });
+        } else if (endPointStyle === 'line') {
+          // Arrowhead pointing in the direction of the line (rotation - 9)
+          const arrowRotation = (rotation - 9) % 360;
+          const arrowHtml = `
+            <div class="flex items-center justify-center" style="
+              width: 32px;
+              height: 32px;
+              cursor: ${isSelected ? 'move' : 'default'};
+              filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6));
+            ">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="transform: rotate(${arrowRotation}deg); overflow: visible;">
+                <path d="M12 2L3 21L12 16.5L21 21L12 2Z" fill="${polylineColor}" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
+                ${isSelected ? `
+                  <circle cx="12" cy="14" r="3" fill="#ffffff" />
+                ` : ''}
+              </svg>
+            </div>
+          `;
+          endMarkerIcon = L.divIcon({
+            className: 'custom-end-arrow',
+            html: arrowHtml,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16],
+          });
+        } else {
+          // endPointStyle === 'none', only show white handle when selected
+          endMarkerIcon = L.divIcon({
+            className: 'custom-end-handle',
+            html: `
+              <div class="flex items-center justify-center" style="
+                width: 14px;
+                height: 14px;
+                background: #ffffff;
+                border: 3px solid ${polylineColor};
+                border-radius: 50%;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+                cursor: move;
+              "></div>
+            `,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7],
+          });
+        }
+
+        let endMarkerInstance = endMarkersRef.current[id];
+
+        if (endMarkerInstance) {
+          endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
+          endMarkerInstance.setIcon(endMarkerIcon);
+          if (isSelected) {
+            endMarkerInstance.dragging?.enable();
+          } else {
+            endMarkerInstance.dragging?.disable();
+          }
+          if (!map.hasLayer(endMarkerInstance)) {
+            endMarkerInstance.addTo(map);
+          }
+        } else {
+          endMarkerInstance = L.marker([finalEndLat, finalEndLng], {
+            icon: endMarkerIcon,
+            draggable: isSelected,
+            zIndexOffset: 1100,
+          }).addTo(map);
+          endMarkersRef.current[id] = endMarkerInstance;
+        }
+
+        // Re-bind end marker drag events dynamically on every render
+        endMarkerInstance.off('drag dragend');
+
+        endMarkerInstance.on('drag', (e) => {
+          const endPosition = e.target.getLatLng();
+          const dy = endPosition.lat - lat;
+          const dx = endPosition.lng - lng;
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (angleDeg < 0) angleDeg += 360;
+
+          if (linesRef.current[id]) {
+            linesRef.current[id].setLatLngs([[lat, lng], [endPosition.lat, endPosition.lng]]);
+          }
+
+          // Update rotation real-time inside DOM (with 9 degrees shift)
+          const mainMarkerEl = markersRef.current[id]?.getElement();
+          if (mainMarkerEl) {
+            const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]');
+            if (rotatingDiv) {
+              (rotatingDiv as HTMLElement).style.transform = `rotate(${(angleDeg + 9) % 360}deg)`;
+            }
+          }
+        });
+
+        endMarkerInstance.on('dragend', (e) => {
+          const endPosition = e.target.getLatLng();
+          const dy = endPosition.lat - lat;
+          const dx = endPosition.lng - lng;
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (angleDeg < 0) angleDeg += 360;
+          angleDeg = Math.round(angleDeg);
+
+          if (onUpdateMarker) {
+            onUpdateMarker({
+              ...markerData,
+              endLat: endPosition.lat,
+              endLng: endPosition.lng,
+              rotation: Math.round((angleDeg + 9) % 360),
+            });
+          }
+        });
+      } else {
+        // Remove the end marker from map if it shouldn't be shown
+        if (endMarkersRef.current[id]) {
+          endMarkersRef.current[id].remove();
+          delete endMarkersRef.current[id];
+        }
+      }
+    });
+
+    // Clean up unused lines and end markers
+    Object.keys(linesRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      const hasEndPoint = marker && marker.endPointStyle && marker.endPointStyle !== 'none';
+      if (!hasEndPoint) {
+        if (linesRef.current[id]) {
+          linesRef.current[id].remove();
+          delete linesRef.current[id];
+        }
+      }
+    });
+
+    Object.keys(endMarkersRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      const isSelected = id === selectedMarkerId;
+      const hasEndHandle = marker && (
+        (marker.endPointStyle === 'explosion') ||
+        (marker.endPointStyle === 'line' && isSelected) ||
+        (marker.endPointStyle === 'none' && isSelected)
+      );
+      if (!hasEndHandle) {
+        if (endMarkersRef.current[id]) {
+          endMarkersRef.current[id].remove();
+          delete endMarkersRef.current[id];
+        }
+      }
+    });
+  }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker]);
+
+  // Center map on selected marker when it changes (or coordinates manual edits)
+  const lastSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !selectedMarkerId) {
+      lastSelectedIdRef.current = selectedMarkerId;
+      return;
+    }
+
+    // Only auto-pan to marker if the selectedMarkerId actually changed
+    if (selectedMarkerId !== lastSelectedIdRef.current) {
+      const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
+      if (selectedMarker) {
+        map.panTo([selectedMarker.lat, selectedMarker.lng], { animate: true });
+      }
+      lastSelectedIdRef.current = selectedMarkerId;
+    }
+  }, [selectedMarkerId, markers]);
+
+  // Clean-up on unmount
+  useEffect(() => {
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Screenshot / Copy Logic
+  const [isExporting, setIsExporting] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
+  const [screenshotStatus, setScreenshotStatus] = useState<string | null>(null);
+
+  const handleExportPNG = async () => {
+    const mapElement = document.getElementById('map-stage-wrapper');
+    if (!mapElement) return;
+    mapElement.classList.add('exporting-map');
+    if (theme === 'dark') {
+      mapElement.classList.add('exporting-dark-map');
+    }
+    if (blurMapOnExport) {
+      mapElement.classList.add('exporting-map-blur');
+    }
+    setIsExporting(true);
+    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (4x Ultra HQ)...' : 'Preparing map (4x Ultra HQ)...');
+    
+    try {
+      // Hide standard Leaflet UI controls briefly
+      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle');
+      elementsToHide.forEach((el) => {
+        (el as HTMLElement).style.opacity = '0';
+      });
+
+      // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
+      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
+      elementsWithTransform.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const transform = htmlEl.style.transform;
+        if (transform && transform.includes('translate3d')) {
+          const newTransform = transform.replace(/translate3d\(([^,]+),\s*([^,]+),\s*[^)]+\)/g, 'translate($1, $2)');
+          htmlEl.setAttribute('data-original-transform', transform);
+          htmlEl.style.transform = newTransform;
+        }
+      });
+
+      // Wait 600ms for browser layout repaint, tile rendering stability, and CSS class application
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      setScreenshotStatus(language === 'uk' ? 'Генерація зображення...' : 'Generating image...');
+
+      const captureOptions = {
+        cacheBust: true,
+        backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
+        pixelRatio: 2, // 2x high-DPI crisp quality without browser canvas limit degradation
+        skipFonts: true, // Prevent loading errors blocking rendering
+        fontEmbedCSS: '', // Standardize safe local font usage
+        style: {
+          transform: 'scale(1)',
+        }
+      };
+
+      // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
+      await toPng(mapElement, captureOptions);
+      
+      setScreenshotStatus(language === 'uk' ? 'Формування PNG...' : 'Assembling PNG...');
+      const dataUrl = await toPng(mapElement, captureOptions);
+
+      // Restore elements
+      elementsToHide.forEach((el) => {
+        (el as HTMLElement).style.opacity = '1';
+      });
+
+      const link = document.createElement('a');
+      link.download = `tactical_map_${Date.now()}.png`;
+      link.href = dataUrl;
+      link.click();
+
+      setScreenshotStatus(language === 'uk' ? 'Зображення завантажено!' : 'Map downloaded successfully!');
+      setTimeout(() => setScreenshotStatus(null), 3000);
+    } catch (err) {
+      console.error('Export error', err);
+      setScreenshotStatus(language === 'uk' ? 'Помилка експорту' : 'Export failed');
+      setTimeout(() => setScreenshotStatus(null), 3000);
+    } finally {
+      // Restore CSS transforms
+      const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
+      elementsWithTransform.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const origTransform = htmlEl.getAttribute('data-original-transform');
+        if (origTransform) {
+          htmlEl.style.transform = origTransform;
+          htmlEl.removeAttribute('data-original-transform');
+        }
+      });
+
+      mapElement.classList.remove('exporting-map');
+      mapElement.classList.remove('exporting-dark-map');
+      mapElement.classList.remove('exporting-map-blur');
+      setIsExporting(false);
+    }
+  };
+
+  const handleCopyPNG = async () => {
+    const mapElement = document.getElementById('map-stage-wrapper');
+    if (!mapElement) return;
+    mapElement.classList.add('exporting-map');
+    if (theme === 'dark') {
+      mapElement.classList.add('exporting-dark-map');
+    }
+    if (blurMapOnExport) {
+      mapElement.classList.add('exporting-map-blur');
+    }
+    setIsCopying(true);
+    setScreenshotStatus(language === 'uk' ? 'Підготовка карти до копіювання (4x Ultra HQ)...' : 'Preparing map for copy (4x Ultra HQ)...');
+    
+    try {
+      // Hide standard UI controls
+      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle');
+      elementsToHide.forEach((el) => {
+        (el as HTMLElement).style.opacity = '0';
+      });
+
+      // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
+      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
+      elementsWithTransform.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const transform = htmlEl.style.transform;
+        if (transform && transform.includes('translate3d')) {
+          const newTransform = transform.replace(/translate3d\(([^,]+),\s*([^,]+),\s*[^)]+\)/g, 'translate($1, $2)');
+          htmlEl.setAttribute('data-original-transform', transform);
+          htmlEl.style.transform = newTransform;
+        }
+      });
+
+      // Wait 600ms for browser layout repaint, tile rendering stability, and CSS class application
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      setScreenshotStatus(language === 'uk' ? 'Рендеринг високої якості...' : 'High quality rendering...');
+
+      const captureOptions = {
+        cacheBust: true,
+        backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
+        pixelRatio: 2, // 2x high-DPI crisp quality without browser canvas limit degradation
+        skipFonts: true,
+        fontEmbedCSS: '',
+        style: {
+          transform: 'scale(1)',
+        }
+      };
+
+      // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
+      await toPng(mapElement, captureOptions);
+      
+      setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер...' : 'Copying to clipboard...');
+      const dataUrl = await toPng(mapElement, captureOptions);
+
+      // Restore elements
+      elementsToHide.forEach((el) => {
+        (el as HTMLElement).style.opacity = '1';
+      });
+
+      if (!dataUrl) {
+        throw new Error('PNG generation returned empty data');
+      }
+
+      // Manual base64 to Blob conversion (extremely robust)
+      const parts = dataUrl.split(',');
+      const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      const blob = new Blob([u8arr], { type: mime });
+
+      if (blob) {
+        if (navigator.clipboard && window.ClipboardItem) {
+          try {
+            await navigator.clipboard.write([
+              new ClipboardItem({
+                'image/png': blob
+              })
+            ]);
+            setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
+          } catch (clipErr) {
+            console.warn('Clipboard write blocked, using fallback download:', clipErr);
+            // Automatic fallback to download
+            const link = document.createElement('a');
+            link.download = `tactical_map_${Date.now()}.png`;
+            link.href = dataUrl;
+            link.click();
+            setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
+          }
+        } else {
+          // Fallback: trigger download when ClipboardItem is not supported
+          const link = document.createElement('a');
+          link.download = `tactical_map_${Date.now()}.png`;
+          link.href = dataUrl;
+          link.click();
+          setScreenshotStatus(language === 'uk' ? 'Завантажено (копіювання недоступне)' : 'Downloaded (copy unavailable)');
+        }
+      } else {
+        throw new Error('Blob creation failed');
+      }
+      setTimeout(() => setScreenshotStatus(null), 3000);
+    } catch (err) {
+      console.error('Clipboard copy error', err);
+      setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
+      setTimeout(() => setScreenshotStatus(null), 3000);
+    } finally {
+      // Restore CSS transforms
+      const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
+      elementsWithTransform.forEach((el) => {
+        const htmlEl = el as HTMLElement;
+        const origTransform = htmlEl.getAttribute('data-original-transform');
+        if (origTransform) {
+          htmlEl.style.transform = origTransform;
+          htmlEl.removeAttribute('data-original-transform');
+        }
+      });
+
+      mapElement.classList.remove('exporting-map');
+      mapElement.classList.remove('exporting-dark-map');
+      mapElement.classList.remove('exporting-map-blur');
+      setIsCopying(false);
+    }
+  };
+
+  // Expose methods to parent
+  useImperativeHandle(ref, () => ({
+    exportPNG: handleExportPNG,
+    copyPNG: handleCopyPNG,
+    centerOnLocation: (lat: number, lng: number, zoom?: number) => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.setView([lat, lng], zoom || 13, { animate: true });
+      }
+    }
+  }));
+
+  // Setup dynamic watermark tiling background
+  const watermarkTextFill = theme === 'light' ? '#000000' : '#ffffff';
+  const displayWatermarkText = watermarkText || 'UA Mapper';
+  const watermarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="220" height="150"><text x="20" y="90" fill="${watermarkTextFill}" font-size="14" font-family="system-ui, sans-serif" font-weight="900" transform="rotate(-30 20 90)" opacity="0.10">${displayWatermarkText}</text></svg>`;
+  const watermarkUrl = `url("data:image/svg+xml;utf8,${encodeURIComponent(watermarkSvg)}")`;
+
+  return (
+    <div className="relative w-full h-full">
+      <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`}>
+        {/* Actual Map Container */}
+        <div 
+          id="visicom-leaflet-map"
+          ref={mapContainerRef} 
+          className={`w-full h-full z-10 ${theme === 'dark' ? 'dark-map' : ''}`}
+        />
+
+        {/* Floating Search Panel */}
+        {!(isExporting || isCopying) && (
+          <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-64 sm:w-80 flex flex-col gap-2">
+            <div className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
+              theme === 'light' 
+                ? 'bg-white/95 border-slate-200 text-slate-800' 
+                : 'bg-slate-950/90 border-white/10 text-slate-200'
+            }`}>
+              <Search className="absolute left-3.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                placeholder={language === 'uk' ? 'Пошук населених пунктів...' : 'Search populated areas...'}
+                className="w-full pl-10 pr-9 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSearchResults([]);
+                  }}
+                  className="absolute right-3 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Quick District Buttons */}
+            <div className="flex flex-wrap gap-1.5 py-0.5">
+              {QUICK_DISTRICTS.map((dist) => {
+                const isHighlighted = searchedAreas.some(
+                  (area) => area.districtId === dist.id || area.name === dist.label
+                );
+                const isLoading = loadingDistrict === dist.id;
+                
+                return (
+                  <button
+                    key={dist.id}
+                    onClick={() => !isLoading && handleToggleDistrict(dist)}
+                    disabled={isLoading}
+                    className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
+                      isHighlighted
+                        ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm'
+                        : theme === 'light'
+                          ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                          : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
+                    }`}
+                  >
+                    {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
+                    <span>{dist.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Suggestions Dropdown */}
+            {showDropdown && (searchQuery || isSearching || searchResults.length > 0) && (
+              <div className={`border rounded-2xl shadow-2xl max-h-60 overflow-y-auto z-30 transition-all ${
+                theme === 'light' 
+                  ? 'bg-white/95 border-slate-200 text-slate-800' 
+                  : 'bg-slate-950/95 border-white/10 text-slate-200'
+              }`}>
+                {isSearching ? (
+                  <div className="flex items-center gap-2 p-4 text-xs font-medium text-slate-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                    <span>{language === 'uk' ? 'Пошук...' : 'Searching...'}</span>
+                  </div>
+                ) : searchResults.length === 0 ? (
+                  searchQuery.length >= 3 && (
+                    <div className="p-4 text-xs font-medium text-slate-400 text-center">
+                      {language === 'uk' ? 'Нічого не знайдено' : 'No results found'}
+                    </div>
+                  )
+                ) : (
+                  <div className="flex flex-col py-1">
+                    {searchResults.map((item, idx) => (
+                      <button
+                        key={item.place_id || idx}
+                        onClick={() => handleSelectArea(item)}
+                        className={`w-full text-left px-4 py-2.5 text-xs flex items-start gap-2.5 transition-colors border-b last:border-0 cursor-pointer ${
+                          theme === 'light' 
+                            ? 'hover:bg-slate-100 border-slate-100 text-slate-900' 
+                            : 'hover:bg-white/5 border-white/5 text-slate-100'
+                        }`}
+                      >
+                        <MapPin className="w-3.5 h-3.5 mt-0.5 text-red-500 flex-shrink-0" />
+                        <div className="flex flex-col">
+                          <span className="font-bold">{item.display_name.split(',')[0]}</span>
+                          <span className="text-[10px] text-slate-400 mt-0.5">{formatDisplayName(item.display_name)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* List of active highlighted areas */}
+            {searchedAreas.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-1">
+                {searchedAreas.map((area) => (
+                  <div
+                    key={area.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border bg-red-500/10 border-red-500/30 text-red-400 shadow-sm"
+                  >
+                    <span>{area.name}</span>
+                    <button
+                      onClick={() => handleRemoveArea(area.id)}
+                      className="hover:text-red-200 transition-colors cursor-pointer"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                ))}
+                
+                {/* Clear All pill */}
+                {searchedAreas.length > 1 && (
+                  <button
+                    onClick={handleClearAllAreas}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
+                        : 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-300'
+                    }`}
+                  >
+                    {language === 'uk' ? 'Очистити все' : 'Clear all'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tiled watermark */}
+        <div 
+          className="absolute inset-0 pointer-events-none z-[12]" 
+          style={{ 
+            backgroundImage: watermarkUrl,
+            backgroundRepeat: 'repeat',
+            backgroundSize: '220px 150px'
+          }} 
+        />
+
+        {/* Tactical Legend Box - captured in PNG */}
+        {showLegendOverlay && (
+          <div className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
+            (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
+          }`}>
+            <div className={`tactical-legend-wrapper px-4 py-2 md:px-6 md:py-1.5 border rounded-2xl md:rounded-full shadow-2xl transition-all flex items-center justify-center max-w-[92vw] sm:max-w-[85vw] pointer-events-auto ${
+              theme === 'light' 
+                ? 'bg-slate-950/50 border-slate-900/30 text-slate-100' 
+                : 'bg-white/50 border-white/20 text-slate-950'
+            }`}>
+              <p 
+                className="tactical-legend-text font-aptos text-[7.5px] sm:text-[8px] md:text-[9px] font-bold opacity-95 text-center whitespace-normal md:whitespace-nowrap leading-relaxed"
+              >
+                {legendOverlayText !== undefined && legendOverlayText !== '' 
+                  ? legendOverlayText 
+                  : (language === 'uk' 
+                    ? 'Ця карта має інформаційний характер, не є офіційним джерелом. Дані які відображені на карті сформовані виключно на основі інформації з каналу @krrig_alerts' 
+                    : 'This map is for informational purposes only and is not an official source. The data displayed on the map is formed solely on the basis of information from the @krrig_alerts channel')}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Watermark branding overlay for Кривий Ріг Alerts and @krrig_alerts - NOT blurred, background/border 50% transparent */}
+        <div className="tactical-logo-container-outer absolute top-4 left-0 right-0 z-20 pointer-events-none select-none flex justify-center">
+          <div className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
+            theme === 'light' 
+              ? 'bg-slate-950/50 border-slate-900/30' 
+              : 'bg-white/50 border-white/20'
+          }`}>
+            <span 
+              className="tactical-logo-title font-sans font-bold tracking-tight text-[15.5px] sm:text-[18.5px] leading-none flex items-center"
+              style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
+            >
+              UA Mapper
+            </span>
+            <span className={`inline-block w-[1px] h-3.5 mx-0.5 sm:mx-1 self-center ${
+              theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
+            }`} />
+            <span className={`tactical-logo-author font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[8.5px] sm:text-[9.5px] ${
+              theme === 'light' ? 'text-white' : 'text-slate-950'
+            }`}>
+              BY @KRRIG_ALERTS
+            </span>
+            <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 ml-0.5 flex-shrink-0" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="telegram-watermark-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#2AABEE" />
+                  <stop offset="100%" stopColor="#229ED9" />
+                </linearGradient>
+              </defs>
+              <circle cx="14" cy="14" r="13" fill="url(#telegram-watermark-gradient)" />
+              <path d="M10.8 14.9L10.5 19.1C10.9 19.1 11.1 18.9 11.3 18.7L13.2 16.9L17.2 19.8C17.9 20.2 18.4 20.0 18.6 19.2L21.2 6.9C21.4 6.0 20.8 5.6 20.2 5.9L4.8 11.8C3.9 12.2 3.9 12.7 4.7 13.0L8.6 14.2L17.6 8.5C18.0 8.2 18.4 8.4 18.1 8.7L10.8 14.9Z" fill="white" />
+            </svg>
+          </div>
+        </div>
+
+        {/* Embedded style tag to override default Leaflet white box and borders around DivIcon */}
+        <style>{`
+          .custom-leaflet-div-icon {
+            background: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            overflow: visible !important;
+          }
+          .leaflet-container {
+            font-family: inherit;
+          }
+          /* Theme map filter */
+          .dark-map .leaflet-tile-pane {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+          }
+          /* Keep map colors identical to the screen during export to prevent color shifting and quality degradation */
+          .exporting-map .leaflet-tile-pane {
+            filter: none !important;
+          }
+          .exporting-dark-map .leaflet-tile-pane {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
+          }
+          /* Prevent blur of map tiles during export by using high contrast sharpness */
+          .exporting-map .leaflet-tile-pane img {
+            image-rendering: -webkit-optimize-contrast !important;
+            image-rendering: auto !important;
+          }
+          .exporting-map img, .exporting-map svg, .exporting-map canvas {
+            -webkit-font-smoothing: antialiased !important;
+            -moz-osx-font-smoothing: grayscale !important;
+          }
+          /* Style standard Leaflet popups beautifully */
+          .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            padding: 4px;
+          }
+          .leaflet-popup-tip-container {
+            margin-top: -1px;
+          }
+          /* Hide selected marker outline and box-shadow during image export/copy */
+          .exporting-map .selected-marker-highlight {
+            outline: none !important;
+            box-shadow: none !important;
+          }
+          /* Perfect baseline/vertical centering for the tactical watermark badge elements */
+          .tactical-logo-container {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            vertical-align: middle !important;
+          }
+          .tactical-logo-container span {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            line-height: 1 !important;
+          }
+          /* Custom overrides during image export on all screen sizes to keep layout pristine */
+          .exporting-map .tactical-logo-container-outer {
+            top: 20px !important;
+            left: 0 !important;
+            right: 0 !important;
+            transform: none !important;
+            width: auto !important;
+            display: flex !important;
+            justify-content: center !important;
+          }
+          .exporting-map .tactical-logo-container {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding: 8px 18px !important;
+            gap: 10px !important;
+            white-space: nowrap !important;
+            max-width: 90% !important;
+          }
+          .exporting-map .tactical-logo-title {
+            font-size: 18.5px !important;
+          }
+          .exporting-map .tactical-logo-author {
+            font-size: 9.5px !important;
+          }
+          .exporting-map .tactical-logo-container svg {
+            width: 15px !important;
+            height: 15px !important;
+          }
+          .exporting-map .tactical-legend-container {
+            bottom: 24px !important;
+            left: 0 !important;
+            right: 0 !important;
+            transform: none !important;
+            width: auto !important;
+            display: flex !important;
+            justify-content: center !important;
+          }
+          .exporting-map .tactical-legend-wrapper {
+            padding: 10px 20px !important;
+            border-radius: 9999px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            max-width: 88% !important;
+          }
+          .exporting-map .tactical-legend-text {
+            font-size: 10px !important;
+            line-height: 1.4 !important;
+            white-space: normal !important;
+            text-align: center !important;
+            max-width: 100% !important;
+          }
+          /* On extremely narrow exports, scale text down slightly so it fits on 1-2 lines gracefully */
+          @media (max-width: 480px) {
+            .exporting-map .tactical-legend-text {
+              font-size: 9px !important;
+              line-height: 1.35 !important;
+            }
+            .exporting-map .tactical-logo-container {
+              padding: 6px 14px !important;
+              gap: 8px !important;
+            }
+            .exporting-map .tactical-logo-title {
+              font-size: 15px !important;
+            }
+            .exporting-map .tactical-logo-author {
+              font-size: 8px !important;
+            }
+          }
+          /* Hide logo and legend on mobile screens, but show them when exporting/copying */
+          @media (max-width: 767px) {
+            .tactical-logo-container-outer,
+            .tactical-legend-container {
+              display: none !important;
+            }
+            .exporting-map .tactical-logo-container-outer,
+            .exporting-map .tactical-legend-container {
+              display: flex !important;
+            }
+          }
+        `}</style>
+      </div>
+
+      {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}
+      {screenshotStatus && (
+        <div className="absolute top-4 left-4 z-40 bg-slate-900/95 border border-white/15 px-3.5 py-2 rounded-xl text-[11px] text-slate-200 shadow-xl flex items-center gap-2 animate-pulse font-semibold tracking-wider uppercase font-mono transition-all">
+          <Loader2 className="w-3.5 h-3.5 text-blue-400 animate-spin flex-shrink-0" />
+          <span>{screenshotStatus}</span>
+        </div>
+      )}
+    </div>
+  );
+});
+
+MapContainer.displayName = 'MapContainer';
