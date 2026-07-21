@@ -510,7 +510,7 @@ export default function App() {
   const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
 
   return (
-    <div className={`flex flex-col h-screen w-screen overflow-hidden relative font-sans transition-colors duration-300 ${
+    <div className={`flex flex-col h-screen h-[100dvh] w-screen overflow-hidden relative font-sans transition-colors duration-300 ${
       theme === 'light' ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-200'
     }`}>
       
@@ -576,7 +576,7 @@ export default function App() {
 
           {/* Mobile Bottom Floating Action Bar (When no marker is selected) */}
           {selectedMarkerId === null && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white md:hidden animate-fade-in">
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white md:hidden animate-fade-in">
               {/* Interaction Mode Toggle (No label) */}
               <button
                 onClick={() => setInteractionMode(interactionMode === 'draw' ? 'pan' : 'draw')}
@@ -646,7 +646,7 @@ export default function App() {
 
           {/* Quick Mobile Editor Panel (When a marker is selected) */}
           {selectedMarker && mobileView === 'map' && (
-            <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-sm px-4 py-4 border rounded-3xl shadow-2xl flex flex-col gap-3 backdrop-blur-xl bg-slate-900/95 border-white/10 text-white md:hidden animate-slide-up">
+            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-sm px-4 py-4 border rounded-3xl shadow-2xl flex flex-col gap-3 backdrop-blur-xl bg-slate-900/95 border-white/10 text-white md:hidden animate-slide-up">
               {/* Header: Title edit & Delete */}
               <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2">
                 <input
