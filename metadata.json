@@ -1,5 +1,5 @@
 {
-  "name": "Конструктор Маркерів Візіком",
+  "name": "UAMapper by @krrig_alerts",
   "description": "Додаток для створення, редагування, переміщення та налаштування власних маркерів на карті Visicom з можливістю регулювання кольору, розміру, напрямку та форми.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
