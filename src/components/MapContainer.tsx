@@ -137,8 +137,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const [lastAutoZoneName, setLastAutoZoneName] = useState<string | null>(null);
 
   const autoHighlightZoneRef = useRef(autoHighlightZone);
+  const nominatimQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   useEffect(() => {
     autoHighlightZoneRef.current = autoHighlightZone;
+    if (autoHighlightZone) {
+      // Automatically highlight zones for all existing markers and their direction handles
+      markers.forEach((m) => {
+        handleAutoHighlightZoneAt(m.lat, m.lng, m.id);
+
+        let endLat = m.endLat;
+        let endLng = m.endLng;
+        if (endLat === undefined || endLng === undefined) {
+          const angleRad = (((m.rotation || 0) - 9) * Math.PI) / 180;
+          endLat = m.lat + Math.cos(angleRad) * 0.003;
+          endLng = m.lng + Math.sin(angleRad) * 0.005;
+        }
+        handleAutoHighlightZoneAt(endLat, endLng, `${m.id}_end`);
+      });
+    }
   }, [autoHighlightZone]);
 
   // Format city/municipality name cleanly for display
@@ -155,75 +172,90 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return '';
   };
 
-  // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas)
-  const handleAutoHighlightZoneAt = async (lat: number, lng: number, markerId?: string) => {
-    try {
-      // 1. Try zoom=14 for city district / suburb / borough level (e.g. Саксаганський, Металургійний, Покровський)
-      let url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=14&accept-language=uk`;
-      let response = await fetch(url);
-      let data = response.ok ? await response.json() : null;
+  // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas, rural areas)
+  const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
+    nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
+      // Throttle queue: wait 350ms between reverse-geocode requests to strictly satisfy Nominatim rate limits
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
-      // Check if data has a valid boundary Polygon/MultiPolygon
-      if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
-        // 2. Fallback to zoom=12 (city / hromada level)
-        url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=12&accept-language=uk`;
-        response = await fetch(url);
-        data = response.ok ? await response.json() : null;
-      }
+      try {
+        const zoomLevels = [14, 12, 10, 8, 18];
+        let data: any = null;
 
-      if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
-        // 3. Fallback to default (zoom=18)
-        url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`;
-        response = await fetch(url);
-        data = response.ok ? await response.json() : null;
-      }
+        for (const zoom of zoomLevels) {
+          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk`;
 
-      if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
-        const address = data.address || {};
-        const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district;
-        const cityName = formatCityName(address);
-
-        let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
-        if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
-          placeName = `${districtOrSuburb} (${cityName})`;
-        }
-
-        const geojson = data.geojson;
-        const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-        const newArea: SearchedArea = {
-          id: zoneId,
-          markerId: markerId,
-          name: placeName,
-          lat: lat.toString(),
-          lon: lng.toString(),
-          geojson: geojson
-        };
-
-        setSearchedAreas((prev) => {
-          const filtered = prev.filter((a) => {
-            if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
-              return false;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const response = await fetch(url);
+              if (response.status === 429) {
+                // Rate limited: pause for 600ms before retry
+                await new Promise((resolve) => setTimeout(resolve, 600));
+                continue;
+              }
+              if (response.ok) {
+                const resData = await response.json();
+                if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
+                  data = resData;
+                  break;
+                }
+              }
+            } catch (err) {
+              console.warn(`Nominatim fetch error at zoom ${zoom}:`, err);
             }
-            if (a.id === zoneId) return false;
-            return true;
-          });
-          return [...filtered, newArea];
-        });
+            break;
+          }
 
-        setLastAutoZoneName(placeName);
-        setTimeout(() => setLastAutoZoneName(null), 3500);
-      } else {
-        // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
-        if (markerId) {
-          setSearchedAreas((prev) =>
-            prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
-          );
+          if (data) break; // Found valid boundary polygon!
         }
+
+        if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+          const address = data.address || {};
+          const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
+          const cityName = formatCityName(address);
+
+          let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
+          if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
+            placeName = `${districtOrSuburb} (${cityName})`;
+          }
+
+          const geojson = data.geojson;
+          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+          const newArea: SearchedArea = {
+            id: zoneId,
+            markerId: markerId,
+            name: placeName,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            geojson: geojson
+          };
+
+          setSearchedAreas((prev) => {
+            const filtered = prev.filter((a) => {
+              if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+                return false;
+              }
+              if (a.id === zoneId) return false;
+              return true;
+            });
+            return [...filtered, newArea];
+          });
+
+          setLastAutoZoneName(placeName);
+          setTimeout(() => setLastAutoZoneName(null), 3500);
+        } else {
+          // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
+          if (markerId) {
+            setSearchedAreas((prev) =>
+              prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
+            );
+          }
+        }
+      } catch (e) {
+        console.error('Error auto-highlighting zone:', e);
       }
-    } catch (e) {
-      console.error('Error auto-highlighting zone:', e);
-    }
+    });
   };
 
   // Search state
@@ -628,8 +660,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           } else if (mode === 'draw') {
             onSelectMarkerRef.current(null);
             const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
-            if (autoHighlightZoneRef.current) {
-              handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, typeof newMarkerId === 'string' ? newMarkerId : undefined);
+            if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
+              handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
+
+              // Auto-highlight direction end point for the new marker
+              const angleRad = -9 * Math.PI / 180; // default initial rotation is 0deg (-9deg shift)
+              const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
+              const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
+              handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
             }
           } else {
             onSelectMarkerRef.current(null);
