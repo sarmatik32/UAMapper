@@ -174,89 +174,101 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas, rural areas)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
-    nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
-      // Throttle queue: wait 350ms between reverse-geocode requests to strictly satisfy Nominatim rate limits
-      await new Promise((resolve) => setTimeout(resolve, 350));
+  // guard: skip invalid coordinates
+  if (!isFinite(lat) || !isFinite(lng)) return;
 
-      try {
-        const zoomLevels = [14, 12, 10, 8, 18];
-        let data: any = null;
+  nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
+    // Always wait a bit to be polite to Nominatim
+    await new Promise((r) => setTimeout(r, 350));
 
-        for (const zoom of zoomLevels) {
-          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk`;
+    try {
+      const zoomLevels = [14, 12, 10, 8, 18];
+      let data: any = null;
 
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const response = await fetch(url);
-              if (response.status === 429) {
-                // Rate limited: pause for 600ms before retry
-                await new Promise((resolve) => setTimeout(resolve, 600));
-                continue;
-              }
-              if (response.ok) {
-                const resData = await response.json();
-                if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
-                  data = resData;
-                  break;
-                }
-              }
-            } catch (err) {
-              console.warn(`Nominatim fetch error at zoom ${zoom}:`, err);
+      // Optional: set your contact email here to be polite to Nominatim (or pass via props/env)
+      const contactEmail = (window as any).__NOMINATIM_EMAIL__ || 'your@email.example';
+
+      for (const zoom of zoomLevels) {
+        const urlBase = `https://nominatim.openstreetmap.org/reverse`;
+        const url = `${urlBase}?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk&email=${encodeURIComponent(contactEmail)}`;
+
+        // Try a few times per zoom in case of transient 429/network errors
+        let attempt = 0;
+        const maxAttempts = 3;
+        while (attempt < maxAttempts) {
+          attempt++;
+          try {
+            const response = await fetch(url);
+            // Rate limited
+            if (response.status === 429) {
+              const backoffMs = 500 * attempt; // 500ms, 1000ms, 1500ms
+              console.warn(`Nominatim 429 at zoom ${zoom}, attempt ${attempt} — backing off ${backoffMs}ms`);
+              await new Promise((r) => setTimeout(r, backoffMs));
+              continue; // retry
             }
-            break;
-          }
+            if (!response.ok) {
+              console.warn(`Nominatim returned ${response.status} at zoom ${zoom} (attempt ${attempt})`);
+              break; // don't retry non-rate-limit errors at this zoom
+            }
 
-          if (data) break; // Found valid boundary polygon!
-        }
-
-        if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
-          const address = data.address || {};
-          const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
-          const cityName = formatCityName(address);
-
-          let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
-          if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
-            placeName = `${districtOrSuburb} (${cityName})`;
-          }
-
-          const geojson = data.geojson;
-          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-          const newArea: SearchedArea = {
-            id: zoneId,
-            markerId: markerId,
-            name: placeName,
-            lat: lat.toString(),
-            lon: lng.toString(),
-            geojson: geojson
-          };
-
-          setSearchedAreas((prev) => {
-            const filtered = prev.filter((a) => {
-              if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
-                return false;
-              }
-              if (a.id === zoneId) return false;
-              return true;
-            });
-            return [...filtered, newArea];
-          });
-
-          setLastAutoZoneName(placeName);
-          setTimeout(() => setLastAutoZoneName(null), 3500);
-        } else {
-          // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
-          if (markerId) {
-            setSearchedAreas((prev) =>
-              prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
-            );
+            const resData = await response.json();
+            if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
+              data = resData;
+              break; // got what we need for this zoom
+            } else {
+              // no polygon at this zoom — try next zoom level
+              break;
+            }
+          } catch (err) {
+            console.warn(`Nominatim fetch error at zoom ${zoom} attempt ${attempt}:`, err);
+            // transient network error — wait a bit and retry
+            await new Promise((r) => setTimeout(r, 400 * attempt));
+            continue;
           }
         }
-      } catch (e) {
-        console.error('Error auto-highlighting zone:', e);
+
+        if (data) break; // found polygon, stop zoom loop
       }
-    });
-  };
+
+      if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+        const address = data.address || {};
+        const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
+        const cityName = formatCityName(address);
+
+        let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
+        if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
+          placeName = `${districtOrSuburb} (${cityName})`;
+        }
+
+        const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+        setSearchedAreas((prev) => {
+          // remove previous zone for this markerId (if any) and any exact same zoneId
+          const filtered = prev.filter((a) => {
+            if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+              return false;
+            }
+            if (a.id === zoneId) return false;
+            return true;
+          });
+          return [...filtered, { id: zoneId, markerId: markerId, name: placeName, lat: lat.toString(), lon: lng.toString(), geojson: data.geojson }];
+        });
+
+        setLastAutoZoneName(placeName);
+        setTimeout(() => setLastAutoZoneName(null), 3500);
+      } else {
+        // no polygon found — if this was an end marker cleanup previous autozone for this marker
+        if (markerId) {
+          setSearchedAreas((prev) =>
+            prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Error auto-highlighting zone:', e);
+    }
+  });
+};
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
