@@ -918,6 +918,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       markerInstance.on('dragend', (e) => {
         const position = e.target.getLatLng();
+        let updatedEndLat: number | undefined;
+        let updatedEndLng: number | undefined;
+
         if ((hasEndPoint || hasEndHandle) && dragStartLatLng) {
           let finalEndLat = originalEndLat;
           let finalEndLng = originalEndLng;
@@ -928,8 +931,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
           const dLat = position.lat - dragStartLatLng.lat;
           const dLng = position.lng - dragStartLatLng.lng;
-          const updatedEndLat = finalEndLat + dLat;
-          const updatedEndLng = finalEndLng + dLng;
+          updatedEndLat = finalEndLat + dLat;
+          updatedEndLng = finalEndLng + dLng;
 
           if (onUpdateMarker) {
             onUpdateMarker({
@@ -946,8 +949,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           // Even if the endpoint line is currently disabled ('none'), keep endLat and endLng updated
           // so that if the user toggles the line back on, it points correctly relative to the new position!
           if (onUpdateMarker) {
-            let updatedEndLat = originalEndLat;
-            let updatedEndLng = originalEndLng;
+            updatedEndLat = originalEndLat;
+            updatedEndLng = originalEndLng;
             if (updatedEndLat !== undefined && updatedEndLng !== undefined && dragStartLatLng) {
               const dLat = position.lat - dragStartLatLng.lat;
               const dLng = position.lng - dragStartLatLng.lng;
@@ -973,10 +976,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (autoHighlightZoneRef.current) {
           handleAutoHighlightZoneAt(position.lat, position.lng, id);
+          if ((hasEndPoint || hasEndHandle) && updatedEndLat !== undefined && updatedEndLng !== undefined) {
+            handleAutoHighlightZoneAt(updatedEndLat, updatedEndLng, `${id}_end`);
+          }
         } else {
           const hasExistingZone = searchedAreasRef.current.some((a) => a.markerId === id || a.id === `autozone_marker_${id}`);
           if (hasExistingZone) {
             handleAutoHighlightZoneAt(position.lat, position.lng, id);
+          }
+          const hasExistingEndZone = searchedAreasRef.current.some((a) => a.markerId === `${id}_end` || a.id === `autozone_marker_${id}_end`);
+          if (hasExistingEndZone && (hasEndPoint || hasEndHandle) && updatedEndLat !== undefined && updatedEndLng !== undefined) {
+            handleAutoHighlightZoneAt(updatedEndLat, updatedEndLng, `${id}_end`);
           }
         }
       });
@@ -1155,7 +1165,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
 
           if (autoHighlightZoneRef.current) {
-            handleAutoHighlightZoneAt(lat, lng, id);
+            handleAutoHighlightZoneAt(endPosition.lat, endPosition.lng, `${id}_end`);
+          } else {
+            const hasExistingEndZone = searchedAreasRef.current.some((a) => a.markerId === `${id}_end` || a.id === `autozone_marker_${id}_end`);
+            if (hasExistingEndZone) {
+              handleAutoHighlightZoneAt(endPosition.lat, endPosition.lng, `${id}_end`);
+            }
           }
         });
       } else {
