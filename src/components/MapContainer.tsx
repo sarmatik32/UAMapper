@@ -903,6 +903,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         markersRef.current[id] = newMarker;
         markerInstance = newMarker;
+
+        if (autoHighlightZoneRef.current) {
+          handleAutoHighlightZoneAt(lat, lng, id);
+
+          let effectiveTargetEndLat = endLat;
+          let effectiveTargetEndLng = endLng;
+          if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
+            const angleRad = (((rotation || 0) - 9) * Math.PI) / 180;
+            effectiveTargetEndLat = lat + Math.cos(angleRad) * 0.003;
+            effectiveTargetEndLng = lng + Math.sin(angleRad) * 0.005;
+          }
+          handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
+        }
       }
 
       // Re-bind drag events dynamically to capture correct markerData variables
