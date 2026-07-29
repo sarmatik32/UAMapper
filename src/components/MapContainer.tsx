@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language } from '../types';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 
 export interface MapContainerRef {
   exportPNG: () => void;
   copyPNG: () => void;
+  centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
+  highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
 }
 
 interface SearchedArea {
@@ -17,28 +19,74 @@ interface SearchedArea {
   lon: string;
   geojson: any;
   districtId?: string;
+  markerId?: string;
 }
 
 const QUICK_DISTRICTS = [
-  { id: 'saksahanskyi', label: 'Саксаганський', query: 'Саксаганський район' },
-  { id: 'ternivskyi', label: 'Терновський', query: 'Тернівський район' },
-  { id: 'metalurhiinyi', label: 'Металургійний', query: 'Металургійний район' },
-  { id: 'inhuletskyi', label: 'Інгулецький', query: 'Інгулецький район' },
-  { id: 'pokrovskyi', label: 'Покровський', query: 'Покровський район' },
-  { id: 'dolhintsevskyi', label: 'Долгінцевський', query: 'Довгинцівський район' },
-  { id: 'tsentralno_miskyi', label: 'Центрально-Міський', query: 'Центрально-Міський район' }
+  { id: 'kryvorizkyi_raion', label: 'Криворізький район', query: 'Криворізький район, Дніпропетровська область' },
+  { id: 'kryvyi_rih_city', label: 'м. Кривий Ріг', query: 'Кривий Ріг, Дніпропетровська область' },
+  { id: 'saksahanskyi', label: 'Саксаганський р-н', query: 'Саксаганський район, Кривий Ріг' },
+  { id: 'ternivskyi', label: 'Тернівський р-н', query: 'Тернівський район, Кривий Ріг' },
+  { id: 'metalurhiinyi', label: 'Металургійний р-н', query: 'Металургійний район, Кривий Ріг' },
+  { id: 'inhuletskyi', label: 'Інгулецький р-н', query: 'Інгулецький район, Кривий Ріг' },
+  { id: 'pokrovskyi', label: 'Покровський р-н', query: 'Покровський район, Кривий Ріг' },
+  { id: 'dolhintsevskyi', label: 'Довгинцівський р-н', query: 'Довгинцівський район, Кривий Ріг' },
+  { id: 'tsentralno_miskyi', label: 'Центрально-Міський р-н', query: 'Центрально-Міський район, Кривий Ріг' },
+  { id: 'radushne', label: 'смт Радушне', query: 'Радушне, Дніпропетровська область' },
+  { id: 'apostolove', label: 'м. Апостолове', query: 'Апостолове, Дніпропетровська область' },
+  { id: 'shyroke', label: 'смт Широке', query: 'Широке, Дніпропетровська область' },
+  { id: 'sofiivka', label: 'смт Софіївка', query: 'Софіївка, Криворізький район' },
+  { id: 'zelenodolsk', label: 'м. Зеленодольськ', query: 'Зеленодольськ, Дніпропетровська область' },
+  { id: 'lozuravatka', label: 'с. Лозуватка', query: 'Лозуватка, Криворізький район' },
+  { id: 'heikivka', label: 'смт Гейківка', query: 'Гейківка, Криворізький район' },
 ];
+
+function calculateDistanceMeters(p1: { lat: number; lng: number }, p2: { lat: number; lng: number }) {
+  return L.latLng(p1.lat, p1.lng).distanceTo(L.latLng(p2.lat, p2.lng));
+}
+
+function formatDistance(meters: number): string {
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(2)} км`;
+  }
+  return `${Math.round(meters)} м`;
+}
+
+function createCircleGeoJson(centerLat: number, centerLng: number, radiusMeters: number, numPoints = 36) {
+  const coords: [number, number][] = [];
+  const earthRadius = 6371000;
+
+  for (let i = 0; i <= numPoints; i++) {
+    const angle = (i * 360) / numPoints;
+    const rad = (angle * Math.PI) / 180;
+    const dx = radiusMeters * Math.cos(rad);
+    const dy = radiusMeters * Math.sin(rad);
+
+    const lat = centerLat + (dy / earthRadius) * (180 / Math.PI);
+    const lng = centerLng + (dx / (earthRadius * Math.cos((centerLat * Math.PI) / 180))) * (180 / Math.PI);
+
+    coords.push([lng, lat]);
+  }
+
+  return {
+    type: 'Polygon',
+    coordinates: [coords]
+  };
+}
 
 interface MapContainerProps {
   markers: CustomMarker[];
   selectedMarkerId: string | null;
   onSelectMarker: (id: string | null) => void;
   onUpdateMarkerPosition: (id: string, lat: number, lng: number) => void;
-  onAddMarker: (lat: number, lng: number) => void;
+  onAddMarker: (lat: number, lng: number) => string | void;
   activeTileLayer: TileLayerConfig;
   visicomKey: string;
   language: Language;
-  interactionMode?: 'draw' | 'pan';
+  interactionMode?: InteractionMode;
+  onSelectInteractionMode?: (mode: InteractionMode) => void;
+  autoHighlightZone?: boolean;
+  onToggleAutoHighlightZone?: (enabled: boolean) => void;
   theme?: 'dark' | 'light';
   onUpdateMarker?: (marker: CustomMarker) => void;
   watermarkText?: string;
@@ -58,6 +106,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   visicomKey,
   language,
   interactionMode = 'draw',
+  onSelectInteractionMode,
+  autoHighlightZone = false,
+  onToggleAutoHighlightZone,
   theme = 'dark',
   onUpdateMarker,
   watermarkText = 'UA Mapper',
@@ -73,6 +124,107 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   
+  // Measurement Tool State & Refs
+  const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
+  const measurePolylineRef = useRef<L.Polyline | null>(null);
+  const measureMarkersRef = useRef<L.Marker[]>([]);
+  const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
+
+  // Red Zone Loading state
+  const [isAddingRedZone, setIsAddingRedZone] = useState<boolean>(false);
+
+  // Auto-highlight Zone Toast notification state
+  const [lastAutoZoneName, setLastAutoZoneName] = useState<string | null>(null);
+
+  const autoHighlightZoneRef = useRef(autoHighlightZone);
+  useEffect(() => {
+    autoHighlightZoneRef.current = autoHighlightZone;
+  }, [autoHighlightZone]);
+
+  // Format city/municipality name cleanly for display
+  const formatCityName = (address: any) => {
+    if (address.city) return address.city;
+    if (address.town) return address.town;
+    if (address.village) return address.village;
+    if (address.municipality) {
+      if (address.municipality.includes('Криворізька')) return 'Кривий Ріг';
+      if (address.municipality.includes('Київська')) return 'Київ';
+      if (address.municipality.includes('Дніпровська')) return 'Дніпро';
+      return address.municipality.replace(' міська громада', '').replace(' сільська громада', '').replace(' селищна громада', '');
+    }
+    return '';
+  };
+
+  // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas)
+  const handleAutoHighlightZoneAt = async (lat: number, lng: number, markerId?: string) => {
+    try {
+      // 1. Try zoom=14 for city district / suburb / borough level (e.g. Саксаганський, Металургійний, Покровський)
+      let url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=14&accept-language=uk`;
+      let response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+      let data = response.ok ? await response.json() : null;
+
+      // Check if data has a valid boundary Polygon/MultiPolygon
+      if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
+        // 2. Fallback to zoom=12 (city / hromada level)
+        url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=12&accept-language=uk`;
+        response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+        data = response.ok ? await response.json() : null;
+      }
+
+      if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
+        // 3. Fallback to default (zoom=18)
+        url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`;
+        response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+        data = response.ok ? await response.json() : null;
+      }
+
+      if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+        const address = data.address || {};
+        const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district;
+        const cityName = formatCityName(address);
+
+        let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
+        if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
+          placeName = `${districtOrSuburb} (${cityName})`;
+        }
+
+        const geojson = data.geojson;
+        const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+        const newArea: SearchedArea = {
+          id: zoneId,
+          markerId: markerId,
+          name: placeName,
+          lat: lat.toString(),
+          lon: lng.toString(),
+          geojson: geojson
+        };
+
+        setSearchedAreas((prev) => {
+          const filtered = prev.filter((a) => {
+            if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+              return false;
+            }
+            if (a.id === zoneId) return false;
+            return true;
+          });
+          return [...filtered, newArea];
+        });
+
+        setLastAutoZoneName(placeName);
+        setTimeout(() => setLastAutoZoneName(null), 3500);
+      } else {
+        // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
+        if (markerId) {
+          setSearchedAreas((prev) =>
+            prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Error auto-highlighting zone:', e);
+    }
+  };
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,7 +243,66 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   });
 
-  const geojsonLayersRef = useRef<{ [id: string]: L.GeoJSON }>({});
+  const searchedAreasRef = useRef<SearchedArea[]>(searchedAreas);
+  useEffect(() => {
+    searchedAreasRef.current = searchedAreas;
+  }, [searchedAreas]);
+
+  const geojsonLayersRef = useRef<{ [id: string]: { layer: L.GeoJSON; geojson: any } }>({});
+
+  // Total distance calculation for measurement tool
+  const totalMeasureDistance = React.useMemo(() => {
+    if (measurePoints.length < 2) return 0;
+    let total = 0;
+    for (let i = 0; i < measurePoints.length - 1; i++) {
+      total += calculateDistanceMeters(measurePoints[i], measurePoints[i + 1]);
+    }
+    return total;
+  }, [measurePoints]);
+
+  // Handle Red Zone creation by clicking on map coordinates
+  const handleCreateRedZoneAt = async (lat: number, lng: number) => {
+    setIsAddingRedZone(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`,
+        {
+          headers: { 'User-Agent': 'UA-Mapper-App' }
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const placeName = data.address?.village || data.address?.town || data.address?.city || data.address?.suburb || data.display_name?.split(',')[0] || 'Червона зона';
+        const geojson = data.geojson;
+
+        if (geojson && (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon')) {
+          const newArea: SearchedArea = {
+            id: `redzone_${Date.now()}`,
+            name: `${placeName} (Червона зона)`,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            geojson: geojson
+          };
+          setSearchedAreas((prev) => [...prev, newArea]);
+        } else {
+          // Fallback to circular 2.5km danger zone polygon
+          const circleGeojson = createCircleGeoJson(lat, lng, 2500);
+          const newArea: SearchedArea = {
+            id: `redzone_circle_${Date.now()}`,
+            name: `${placeName} (Зона 2.5 км)`,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            geojson: circleGeojson
+          };
+          setSearchedAreas((prev) => [...prev, newArea]);
+        }
+      }
+    } catch (e) {
+      console.error('Error reverse geocoding red zone:', e);
+    } finally {
+      setIsAddingRedZone(false);
+    }
+  };
 
   // Search handler
   const handleSearch = async (queryText: string) => {
@@ -235,33 +446,38 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  const handleSelectArea = (item: any) => {
+  const handleSelectArea = async (item: any) => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    const newArea: SearchedArea = {
-      id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
-      name: item.display_name.split(',')[0] || item.display_name,
-      lat: item.lat,
-      lon: item.lon,
-      geojson: item.geojson
-    };
+    if (item.geojson && (item.geojson.type === 'Polygon' || item.geojson.type === 'MultiPolygon')) {
+      const newArea: SearchedArea = {
+        id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
+        name: item.display_name.split(',')[0] || item.display_name,
+        lat: item.lat,
+        lon: item.lon,
+        geojson: item.geojson
+      };
 
-    setSearchedAreas((prev) => {
-      if (prev.some((a) => a.id === newArea.id)) return prev;
-      return [...prev, newArea];
-    });
+      setSearchedAreas((prev) => {
+        if (prev.some((a) => a.id === newArea.id)) return prev;
+        return [...prev, newArea];
+      });
 
-    try {
-      const tempLayer = L.geoJSON(item.geojson);
-      const bounds = tempLayer.getBounds();
-      if (bounds.isValid()) {
-        map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-      } else {
+      try {
+        const tempLayer = L.geoJSON(item.geojson);
+        const bounds = tempLayer.getBounds();
+        if (bounds.isValid()) {
+          map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+        } else {
+          map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+        }
+      } catch (e) {
         map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
       }
-    } catch (e) {
-      map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+    } else {
+      await handleAutoHighlightZoneAt(parseFloat(item.lat), parseFloat(item.lon));
+      map.setView([parseFloat(item.lat), parseFloat(item.lon)], 13, { animate: true });
     }
 
     setSearchQuery('');
@@ -288,11 +504,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Remove old layers
-    const currentAreaIds = new Set(searchedAreas.map((area) => area.id));
+    const currentAreasMap = new Map<string, SearchedArea>(searchedAreas.map((area) => [area.id, area]));
+
+    // Remove old layers or layers whose GeoJSON data changed
     Object.keys(geojsonLayersRef.current).forEach((id) => {
-      if (!currentAreaIds.has(id)) {
-        geojsonLayersRef.current[id].remove();
+      const area = currentAreasMap.get(id);
+      const existing = geojsonLayersRef.current[id];
+      if (!area || existing.geojson !== area.geojson) {
+        existing.layer.remove();
         delete geojsonLayersRef.current[id];
       }
     });
@@ -305,7 +524,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             color: '#ef4444',      // Red contour
             fillColor: '#ef4444',  // Red fill
             fillOpacity: 0.15,     // 85% transparency (15% opacity)
-            weight: 2,             // Three times thinner (2 instead of 6)
+            weight: 2,             // Stroke width
             opacity: 1,            // Stroke opacity
           }
         });
@@ -339,7 +558,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         });
 
         geojsonLayer.addTo(map);
-        geojsonLayersRef.current[area.id] = geojsonLayer;
+        geojsonLayersRef.current[area.id] = { layer: geojsonLayer, geojson: area.geojson };
       }
     });
 
@@ -355,7 +574,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return () => {
       Object.keys(geojsonLayersRef.current).forEach((id) => {
         if (geojsonLayersRef.current[id]) {
-          geojsonLayersRef.current[id].remove();
+          geojsonLayersRef.current[id].layer.remove();
         }
       });
       geojsonLayersRef.current = {};
@@ -397,15 +616,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Add a styled zoom control at top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
-      // Handle map clicks to add markers OR deselect current marker
+      // Handle map clicks based on active interaction mode
       map.on('click', (e: L.LeafletMouseEvent) => {
-        // Only add marker if we didn't click on an existing marker
         const originalEvent = e.originalEvent;
-        // Check if clicked element was a marker
         let target = originalEvent.target as HTMLElement;
         let clickedMarker = false;
         while (target && target !== mapContainerRef.current) {
-          if (target.classList.contains('leaflet-marker-icon')) {
+          if (
+            target.classList.contains('leaflet-marker-icon') ||
+            target.classList.contains('measure-node-icon')
+          ) {
             clickedMarker = true;
             break;
           }
@@ -413,11 +633,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         if (!clickedMarker) {
-          // If a marker was selected, click on map deselects it.
-          // If no marker was selected, and in draw mode, click on map creates a new one!
-          onSelectMarkerRef.current(null);
-          if (interactionModeRef.current === 'draw') {
-            onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
+          const mode = interactionModeRef.current;
+          if (mode === 'measure') {
+            setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
+          } else if (mode === 'redzone') {
+            handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
+          } else if (mode === 'draw') {
+            onSelectMarkerRef.current(null);
+            const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
+            if (autoHighlightZoneRef.current) {
+              handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, typeof newMarkerId === 'string' ? newMarkerId : undefined);
+            }
+          } else {
+            onSelectMarkerRef.current(null);
           }
         }
       });
@@ -426,9 +654,93 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
 
     return () => {
-      // Component unmount clean-up is handled below if needed
+      // Component unmount clean-up
     };
   }, []);
+
+  // Synchronize Measurement Tool Graphics on Map
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    // Clear old graphics
+    if (measurePolylineRef.current) {
+      measurePolylineRef.current.remove();
+      measurePolylineRef.current = null;
+    }
+    measureMarkersRef.current.forEach((m) => m.remove());
+    measureMarkersRef.current = [];
+    measureSegmentTooltipsRef.current.forEach((m) => m.remove());
+    measureSegmentTooltipsRef.current = [];
+
+    if (measurePoints.length === 0) return;
+
+    const latLngs = measurePoints.map((p) => [p.lat, p.lng] as [number, number]);
+
+    // Draw connecting polyline
+    if (latLngs.length >= 2) {
+      measurePolylineRef.current = L.polyline(latLngs, {
+        color: '#facc15', // Bright yellow ruler line
+        weight: 3.5,
+        dashArray: '6, 6',
+        opacity: 0.95,
+        lineCap: 'round',
+        lineJoin: 'round',
+      }).addTo(map);
+
+      // Render segment distance badges
+      for (let i = 0; i < measurePoints.length - 1; i++) {
+        const p1 = measurePoints[i];
+        const p2 = measurePoints[i + 1];
+        const dist = calculateDistanceMeters(p1, p2);
+        const midLat = (p1.lat + p2.lat) / 2;
+        const midLng = (p1.lng + p2.lng) / 2;
+
+        const badgeHtml = `<div class="bg-slate-900/95 text-yellow-400 font-mono font-bold text-[10px] px-2 py-0.5 rounded-full border border-yellow-400/50 shadow-md whitespace-nowrap">${formatDistance(dist)}</div>`;
+
+        const badgeIcon = L.divIcon({
+          className: 'measure-badge-icon',
+          html: badgeHtml,
+          iconSize: [60, 20],
+          iconAnchor: [30, 10],
+        });
+
+        const badgeMarker = L.marker([midLat, midLng], {
+          icon: badgeIcon,
+          interactive: false,
+          zIndexOffset: 1200,
+        }).addTo(map);
+
+        measureSegmentTooltipsRef.current.push(badgeMarker);
+      }
+    }
+
+    // Render node markers
+    measurePoints.forEach((pt, index) => {
+      const isLast = index === measurePoints.length - 1;
+      const nodeHtml = `
+        <div class="w-6 h-6 rounded-full ${isLast ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-slate-900'} border-2 border-yellow-400 text-yellow-400 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg">
+          ${index + 1}
+        </div>
+      `;
+
+      const nodeIcon = L.divIcon({
+        className: 'measure-node-icon',
+        html: nodeHtml,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      });
+
+      const marker = L.marker([pt.lat, pt.lng], {
+        icon: nodeIcon,
+        interactive: false,
+        zIndexOffset: 1500,
+      }).addTo(map);
+
+      measureMarkersRef.current.push(marker);
+    });
+  }, [measurePoints]);
+
 
   // Handle Tile Layer changes
   useEffect(() => {
@@ -443,7 +755,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Format tile URL
     let url = activeTileLayer.url;
     if (activeTileLayer.requiresKey) {
-      url = url.replace('{key}', visicomKey || 'c3979ea05634e2b02e707e050304910a');
+      url = url.replace('{key}', visicomKey || '');
     }
 
     // Replace {r} with @2x on high-DPI screens, or empty string on standard screens
@@ -486,6 +798,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           delete endMarkersRef.current[id];
         }
       }
+    });
+
+    // Clean up auto-highlighted zones for markers that were deleted
+    setSearchedAreas((prev) => {
+      const hasOrphaned = prev.some((a) => a.markerId && !currentMarkerIds.has(a.markerId));
+      if (!hasOrphaned) return prev;
+      return prev.filter((a) => !a.markerId || currentMarkerIds.has(a.markerId));
     });
 
     // 2. Add or update current markers
@@ -649,6 +968,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             });
           } else {
             onUpdateMarkerPosition(id, position.lat, position.lng);
+          }
+        }
+
+        if (autoHighlightZoneRef.current) {
+          handleAutoHighlightZoneAt(position.lat, position.lng, id);
+        } else {
+          const hasExistingZone = searchedAreasRef.current.some((a) => a.markerId === id || a.id === `autozone_marker_${id}`);
+          if (hasExistingZone) {
+            handleAutoHighlightZoneAt(position.lat, position.lng, id);
           }
         }
       });
@@ -825,6 +1153,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               rotation: Math.round((angleDeg + 9) % 360),
             });
           }
+
+          if (autoHighlightZoneRef.current) {
+            handleAutoHighlightZoneAt(lat, lng, id);
+          }
         });
       } else {
         // Remove the end marker from map if it shouldn't be shown
@@ -919,7 +1251,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       });
 
       // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
-      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
+      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-pane, .leaflet-layer, .leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
       elementsWithTransform.forEach((el) => {
         const htmlEl = el as HTMLElement;
         const transform = htmlEl.style.transform;
@@ -935,15 +1267,33 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       setScreenshotStatus(language === 'uk' ? 'Генерація зображення...' : 'Generating image...');
 
+      const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
+      const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
+
+      // Scale factor for true ultra-HD vector/font rasterization (2x or device ratio)
+      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const scaledWidth = Math.round(sourceWidth * scale);
+      const scaledHeight = Math.round(sourceHeight * scale);
+
       const captureOptions = {
         cacheBust: true,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        pixelRatio: 2, // 2x high-DPI crisp quality without browser canvas limit degradation
+        width: scaledWidth,
+        height: scaledHeight,
+        canvasWidth: scaledWidth,
+        canvasHeight: scaledHeight,
+        style: {
+          width: `${sourceWidth}px`,
+          height: `${sourceHeight}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          margin: '0',
+          padding: '0',
+        },
         skipFonts: true, // Prevent loading errors blocking rendering
         fontEmbedCSS: '', // Standardize safe local font usage
-        style: {
-          transform: 'scale(1)',
-        }
+        imagePlaceholder: undefined,
+        filter: () => true,
       };
 
       // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
@@ -1008,7 +1358,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       });
 
       // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
-      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
+      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-pane, .leaflet-layer, .leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
       elementsWithTransform.forEach((el) => {
         const htmlEl = el as HTMLElement;
         const transform = htmlEl.style.transform;
@@ -1024,15 +1374,32 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       setScreenshotStatus(language === 'uk' ? 'Рендеринг високої якості...' : 'High quality rendering...');
 
+      const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
+      const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
+
+      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const scaledWidth = Math.round(sourceWidth * scale);
+      const scaledHeight = Math.round(sourceHeight * scale);
+
       const captureOptions = {
         cacheBust: true,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        pixelRatio: 2, // 2x high-DPI crisp quality without browser canvas limit degradation
+        width: scaledWidth,
+        height: scaledHeight,
+        canvasWidth: scaledWidth,
+        canvasHeight: scaledHeight,
+        style: {
+          width: `${sourceWidth}px`,
+          height: `${sourceHeight}px`,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+          margin: '0',
+          padding: '0',
+        },
         skipFonts: true,
         fontEmbedCSS: '',
-        style: {
-          transform: 'scale(1)',
-        }
+        imagePlaceholder: undefined,
+        filter: () => true,
       };
 
       // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
@@ -1122,6 +1489,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (mapInstanceRef.current) {
         mapInstanceRef.current.setView([lat, lng], zoom || 13, { animate: true });
       }
+    },
+    highlightZoneAt: (lat: number, lng: number, markerId?: string) => {
+      handleAutoHighlightZoneAt(lat, lng, markerId);
     }
   }));
 
@@ -1141,9 +1511,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           className={`w-full h-full z-10 ${theme === 'dark' ? 'dark-map' : ''}`}
         />
 
-        {/* Floating Search Panel */}
+        {/* Floating Search Panel & Mode Selector */}
         {!(isExporting || isCopying) && (
-          <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-64 sm:w-80 flex flex-col gap-2">
+          <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-72 sm:w-88 flex flex-col gap-2">
             <div className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
               theme === 'light' 
                 ? 'bg-white/95 border-slate-200 text-slate-800' 
@@ -1159,7 +1529,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                 }}
                 onFocus={() => setShowDropdown(true)}
                 placeholder={language === 'uk' ? 'Пошук населених пунктів...' : 'Search populated areas...'}
-                className="w-full pl-10 pr-9 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
+                className="w-full pl-10 pr-24 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
               />
               {searchQuery && (
                 <button
@@ -1167,15 +1537,57 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                     setSearchQuery('');
                     setSearchResults([]);
                   }}
-                  className="absolute right-3 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="absolute right-20 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
               )}
+
+              {/* Quick Mode Toggle Shortcuts next to Search Input */}
+              <div className="absolute right-2 flex items-center gap-1 border-l pl-2 border-slate-200 dark:border-white/10">
+                <button
+                  onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
+                  title={language === 'uk' 
+                    ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` 
+                    : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`
+                  }
+                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
+                    autoHighlightZone
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-1 ring-amber-400'
+                      : 'hover:bg-white/10 text-slate-400 hover:text-amber-400'
+                  }`}
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={() => onSelectInteractionMode?.(interactionMode === 'redzone' ? 'draw' : 'redzone')}
+                  title={language === 'uk' ? 'Червоні зони' : 'Red Zones'}
+                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
+                    interactionMode === 'redzone'
+                      ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
+                      : 'hover:bg-white/10 text-slate-400 hover:text-red-400'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={() => onSelectInteractionMode?.(interactionMode === 'measure' ? 'draw' : 'measure')}
+                  title={language === 'uk' ? 'Виміряти відстань' : 'Measure Distance'}
+                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
+                    interactionMode === 'measure'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30'
+                      : 'hover:bg-white/10 text-slate-400 hover:text-amber-400'
+                  }`}
+                >
+                  <Ruler className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            {/* Quick District Buttons */}
-            <div className="flex flex-wrap gap-1.5 py-0.5">
+            {/* Quick District & Settlement Buttons */}
+            <div className="flex flex-wrap gap-1.5 py-0.5 max-h-24 overflow-y-auto pr-1">
               {QUICK_DISTRICTS.map((dist) => {
                 const isHighlighted = searchedAreas.some(
                   (area) => area.districtId === dist.id || area.name === dist.label
@@ -1189,10 +1601,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                     disabled={isLoading}
                     className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
                       isHighlighted
-                        ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm'
-                        : theme === 'light'
-                          ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-                          : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
+                        ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm ring-1 ring-red-400/50'
+                        : dist.id === 'kryvorizkyi_raion'
+                          ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/40 text-red-400 dark:text-red-300 font-extrabold'
+                          : theme === 'light'
+                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                            : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
                     }`}
                   >
                     {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
@@ -1201,6 +1615,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                 );
               })}
             </div>
+
 
             {/* Suggestions Dropdown */}
             {showDropdown && (searchQuery || isSearching || searchResults.length > 0) && (
@@ -1313,7 +1728,95 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
+        {/* Active Mode Floating Banners (Distance Measurement / Red Zone) */}
+        {!(isExporting || isCopying) && interactionMode === 'measure' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-yellow-400/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <Ruler className="w-4 h-4 text-yellow-400 flex-shrink-0 animate-pulse" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Вимірювання відстані' : 'Distance Measurement'}
+              </span>
+              <span className="text-xs font-mono font-extrabold truncate">
+                {language === 'uk' ? 'Загальна:' : 'Total:'} <span className="text-yellow-300">{formatDistance(totalMeasureDistance)}</span> ({measurePoints.length} {language === 'uk' ? 'точок' : 'pts'})
+              </span>
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              {measurePoints.length > 0 && (
+                <button
+                  onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                >
+                  {language === 'uk' ? 'Скасувати' : 'Undo'}
+                </button>
+              )}
+              {measurePoints.length > 0 && (
+                <button
+                  onClick={() => setMeasurePoints([])}
+                  className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                >
+                  {language === 'uk' ? 'Очистити' : 'Clear'}
+                </button>
+              )}
+              <button
+                onClick={() => onSelectInteractionMode?.('draw')}
+                title={language === 'uk' ? 'Закрити лінійку' : 'Close ruler'}
+                className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!(isExporting || isCopying) && interactionMode === 'redzone' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-red-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            {isAddingRedZone ? (
+              <Loader2 className="w-4 h-4 text-red-500 animate-spin flex-shrink-0" />
+            ) : (
+              <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0 animate-bounce" />
+            )}
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Режим червоних зон' : 'Red Zone Mode'}
+              </span>
+              <span className="text-xs font-medium truncate">
+                {isAddingRedZone
+                  ? (language === 'uk' ? 'Завантаження населеного пункту...' : 'Loading settlement boundary...')
+                  : (language === 'uk' ? 'Клікніть на карті, щоб виділити населений пункт червоним' : 'Click anywhere on the map to mark red zone')}
+              </span>
+            </div>
+            <button
+              onClick={() => onSelectInteractionMode?.('draw')}
+              title={language === 'uk' ? 'Вийти з режиму' : 'Exit mode'}
+              className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {!(isExporting || isCopying) && lastAutoZoneName && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <Layers className="w-4 h-4 text-amber-400 animate-pulse flex-shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Підсвітка зон' : 'Zone Highlight'}
+              </span>
+              <span className="text-xs font-medium truncate">
+                {language === 'uk' ? 'Підсвічено зону:' : 'Highlighted zone:'} <strong className="text-amber-300">{lastAutoZoneName}</strong>
+              </span>
+            </div>
+            <button
+              onClick={() => setLastAutoZoneName(null)}
+              className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Watermark branding overlay for Кривий Ріг Alerts and @krrig_alerts - NOT blurred, background/border 50% transparent */}
+
         <div className="tactical-logo-container-outer absolute top-4 left-0 right-0 z-20 pointer-events-none select-none flex justify-center">
           <div className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
             theme === 'light' 
@@ -1380,6 +1883,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-map img, .exporting-map svg, .exporting-map canvas {
             -webkit-font-smoothing: antialiased !important;
             -moz-osx-font-smoothing: grayscale !important;
+            text-rendering: optimizeLegibility !important;
+          }
+          .exporting-map svg path,
+          .exporting-map svg line,
+          .exporting-map svg polygon,
+          .exporting-map svg polyline,
+          .exporting-map svg circle,
+          .exporting-map svg text {
+            shape-rendering: geometricPrecision !important;
+            text-rendering: geometricPrecision !important;
           }
           /* Style standard Leaflet popups beautifully */
           .leaflet-popup-content-wrapper {

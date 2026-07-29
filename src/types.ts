@@ -33,3 +33,5 @@ export interface TileLayerConfig {
 }
 
 export type Language = 'uk' | 'en';
+
+export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure';

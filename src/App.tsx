@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CustomMarker, TileLayerConfig, Language } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
+
 import { Sidebar } from './components/Sidebar';
 import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
@@ -192,8 +193,18 @@ export default function App() {
   });
 
   const [showAlert, setShowAlert] = useState<boolean>(true);
-  const [interactionMode, setInteractionMode] = useState<'draw' | 'pan'>('draw');
+  const [interactionMode, setInteractionMode] = useState<InteractionMode>('draw');
   const [mobileView, setMobileView] = useState<'map' | 'sidebar'>('map');
+
+  const [autoHighlightZone, setAutoHighlightZone] = useState<boolean>(() => {
+    return localStorage.getItem('visicom_auto_highlight_zone') === 'true';
+  });
+
+  const handleToggleAutoHighlightZone = (enabled: boolean) => {
+    setAutoHighlightZone(enabled);
+    localStorage.setItem('visicom_auto_highlight_zone', enabled ? 'true' : 'false');
+  };
+
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
   // GPS centering handler
@@ -401,6 +412,8 @@ export default function App() {
       zoneColor: newMarker.zoneColor || newMarker.color || '#ef4444',
       zoneSize: newMarker.zoneSize || 60,
     });
+
+    return newId;
   };
 
   // Listen for 'Delete' key to remove the selected marker
@@ -518,6 +531,9 @@ export default function App() {
             visicomKey={visicomKey}
             language={language}
             interactionMode={interactionMode}
+            onSelectInteractionMode={setInteractionMode}
+            autoHighlightZone={autoHighlightZone}
+            onToggleAutoHighlightZone={handleToggleAutoHighlightZone}
             theme={theme}
             onUpdateMarker={handleUpdateMarker}
             watermarkText={watermarkText}
@@ -526,6 +542,7 @@ export default function App() {
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
           />
+
 
           {/* Mobile Bottom Floating Action Bar (When no marker is selected) */}
           {selectedMarkerId === null && (

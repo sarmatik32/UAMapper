@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { 
   Map, 
@@ -21,7 +21,11 @@ import {
   Compass,
   Move,
   Download,
-  Copy
+  Copy,
+  Ruler,
+  ShieldAlert,
+  PenTool,
+  Hand
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -40,8 +44,8 @@ interface SidebarProps {
   language: Language;
   onToggleLanguage: () => void;
   onImportMarkers: (imported: CustomMarker[]) => void;
-  interactionMode?: 'draw' | 'pan';
-  onSetInteractionMode?: (mode: 'draw' | 'pan') => void;
+  interactionMode?: InteractionMode;
+  onSetInteractionMode?: (mode: InteractionMode) => void;
   onUndo?: () => void;
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
@@ -62,6 +66,7 @@ interface SidebarProps {
   customIconTitles?: Record<string, string>;
   onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
 }
+
 
 export const Sidebar: React.FC<SidebarProps> = ({
   markers,
@@ -383,7 +388,80 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Accordion List wrapper */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
+        {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
+        <div className={`border rounded-2xl overflow-hidden ${
+          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
+        }`}>
+          <button
+            onClick={() => toggleSection('mode')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              theme === 'light' 
+                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Move className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'Інструменти та режими' : 'Map Tools & Modes'}</span>
+            </div>
+            {expandedSections.mode ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.mode && (
+            <div className="p-3 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => onSetInteractionMode('draw')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  interactionMode === 'draw'
+                    ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                }`}
+              >
+                <PenTool className="w-4 h-4" />
+                <span className="text-[11px] font-bold">{isUa ? 'Малювання' : 'Draw Markers'}</span>
+              </button>
+
+              <button
+                onClick={() => onSetInteractionMode('pan')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  interactionMode === 'pan'
+                    ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                }`}
+              >
+                <Hand className="w-4 h-4" />
+                <span className="text-[11px] font-bold">{isUa ? 'Переміщення' : 'Pan Map'}</span>
+              </button>
+
+              <button
+                onClick={() => onSetInteractionMode('redzone')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  interactionMode === 'redzone'
+                    ? 'bg-red-500 text-white font-extrabold shadow-md shadow-red-500/20 border-red-400'
+                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                }`}
+              >
+                <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" />
+                <span className="text-[11px] font-bold">{isUa ? 'Червоні зони' : 'Red Zones'}</span>
+              </button>
+
+              <button
+                onClick={() => onSetInteractionMode('measure')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  interactionMode === 'measure'
+                    ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/20 border-amber-400'
+                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                }`}
+              >
+                <Ruler className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
+
         <div className={`border rounded-2xl overflow-hidden ${
           theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
         }`}>
