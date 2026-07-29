@@ -160,21 +160,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     try {
       // 1. Try zoom=14 for city district / suburb / borough level (e.g. Саксаганський, Металургійний, Покровський)
       let url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=14&accept-language=uk`;
-      let response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+      let response = await fetch(url);
       let data = response.ok ? await response.json() : null;
 
       // Check if data has a valid boundary Polygon/MultiPolygon
       if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
         // 2. Fallback to zoom=12 (city / hromada level)
         url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=12&accept-language=uk`;
-        response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+        response = await fetch(url);
         data = response.ok ? await response.json() : null;
       }
 
       if (!data?.geojson || (data.geojson.type !== 'Polygon' && data.geojson.type !== 'MultiPolygon')) {
         // 3. Fallback to default (zoom=18)
         url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`;
-        response = await fetch(url, { headers: { 'User-Agent': 'UA-Mapper-App' } });
+        response = await fetch(url);
         data = response.ok ? await response.json() : null;
       }
 
@@ -265,10 +265,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setIsAddingRedZone(true);
     try {
       const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`,
-        {
-          headers: { 'User-Agent': 'UA-Mapper-App' }
-        }
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`
       );
       if (response.ok) {
         const data = await response.json();
@@ -317,12 +314,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
           queryText
-        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=8`,
-        {
-          headers: {
-            'User-Agent': 'UA-Mapper-App'
-          }
-        }
+        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=8`
       );
       if (response.ok) {
         const data = await response.json();
@@ -387,12 +379,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const response = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
           district.query
-        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`,
-        {
-          headers: {
-            'User-Agent': 'UA-Mapper-App'
-          }
-        }
+        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`
       );
       if (response.ok) {
         const data = await response.json();
@@ -801,10 +788,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
 
     // Clean up auto-highlighted zones for markers that were deleted
+    const validMarkerIds = new Set<string>();
+    markers.forEach((m) => {
+      validMarkerIds.add(m.id);
+      validMarkerIds.add(`${m.id}_end`);
+    });
+
     setSearchedAreas((prev) => {
-      const hasOrphaned = prev.some((a) => a.markerId && !currentMarkerIds.has(a.markerId));
+      const hasOrphaned = prev.some((a) => a.markerId && !validMarkerIds.has(a.markerId));
       if (!hasOrphaned) return prev;
-      return prev.filter((a) => !a.markerId || currentMarkerIds.has(a.markerId));
+      return prev.filter((a) => !a.markerId || validMarkerIds.has(a.markerId));
     });
 
     // 2. Add or update current markers
@@ -974,10 +967,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
         }
 
+        let effectiveTargetEndLat = updatedEndLat;
+        let effectiveTargetEndLng = updatedEndLng;
+        if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
+          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          effectiveTargetEndLat = position.lat + Math.cos(angleRad) * 0.003;
+          effectiveTargetEndLng = position.lng + Math.sin(angleRad) * 0.005;
+        }
+
         if (autoHighlightZoneRef.current) {
           handleAutoHighlightZoneAt(position.lat, position.lng, id);
-          if ((hasEndPoint || hasEndHandle) && updatedEndLat !== undefined && updatedEndLng !== undefined) {
-            handleAutoHighlightZoneAt(updatedEndLat, updatedEndLng, `${id}_end`);
+          if (hasEndPoint || hasEndHandle) {
+            handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
           }
         } else {
           const hasExistingZone = searchedAreasRef.current.some((a) => a.markerId === id || a.id === `autozone_marker_${id}`);
@@ -985,8 +986,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             handleAutoHighlightZoneAt(position.lat, position.lng, id);
           }
           const hasExistingEndZone = searchedAreasRef.current.some((a) => a.markerId === `${id}_end` || a.id === `autozone_marker_${id}_end`);
-          if (hasExistingEndZone && (hasEndPoint || hasEndHandle) && updatedEndLat !== undefined && updatedEndLng !== undefined) {
-            handleAutoHighlightZoneAt(updatedEndLat, updatedEndLng, `${id}_end`);
+          if (hasExistingEndZone && (hasEndPoint || hasEndHandle)) {
+            handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
           }
         }
       });
