@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers } from 'lucide-react';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2 } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
 import { createMarkerHtml } from './IconLibrary';
+import { SETTLEMENTS, Settlement } from '../data/settlements';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -94,6 +95,14 @@ interface MapContainerProps {
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
   blurMapOnExport?: boolean;
+  showSettlementLabels?: boolean;
+  settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
+  onToggleSettlementLabels?: (show: boolean) => void;
+  onSetSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
+  customSettlements?: Settlement[];
+  onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
+  onEditSettlement?: (settlement: Settlement) => void;
+  onDeleteCustomSettlement?: (id: string) => void;
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -116,6 +125,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   legendOverlayText = '',
   showRadarOverlay = true,
   blurMapOnExport = false,
+  showSettlementLabels = true,
+  settlementLabelMode = 'all',
+  onToggleSettlementLabels,
+  onSetSettlementLabelMode,
+  customSettlements = [],
+  onAddCustomSettlementPoint,
+  onEditSettlement,
+  onDeleteCustomSettlement,
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -123,6 +140,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   
   // Measurement Tool State & Refs
   const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
@@ -155,6 +173,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
         handleAutoHighlightZoneAt(endLat, endLng, `${m.id}_end`);
       });
+    } else {
+      // Clean up auto-generated zones when feature is disabled
+      setSearchedAreas((prev) => prev.filter((a) => !a.id.startsWith('autozone_') && !a.markerId));
     }
   }, [autoHighlightZone]);
 
@@ -174,101 +195,89 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas, rural areas)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
-  // guard: skip invalid coordinates
-  if (!isFinite(lat) || !isFinite(lng)) return;
+    nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
+      // Throttle queue: wait 350ms between reverse-geocode requests to strictly satisfy Nominatim rate limits
+      await new Promise((resolve) => setTimeout(resolve, 350));
 
-  nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
-    // Always wait a bit to be polite to Nominatim
-    await new Promise((r) => setTimeout(r, 350));
+      try {
+        const zoomLevels = [14, 12, 10, 8, 18];
+        let data: any = null;
 
-    try {
-      const zoomLevels = [14, 12, 10, 8, 18];
-      let data: any = null;
+        for (const zoom of zoomLevels) {
+          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk`;
 
-      // Optional: set your contact email here to be polite to Nominatim (or pass via props/env)
-      const contactEmail = (window as any).__NOMINATIM_EMAIL__ || 'your@email.example';
-
-      for (const zoom of zoomLevels) {
-        const urlBase = `https://nominatim.openstreetmap.org/reverse`;
-        const url = `${urlBase}?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk&email=${encodeURIComponent(contactEmail)}`;
-
-        // Try a few times per zoom in case of transient 429/network errors
-        let attempt = 0;
-        const maxAttempts = 3;
-        while (attempt < maxAttempts) {
-          attempt++;
-          try {
-            const response = await fetch(url);
-            // Rate limited
-            if (response.status === 429) {
-              const backoffMs = 500 * attempt; // 500ms, 1000ms, 1500ms
-              console.warn(`Nominatim 429 at zoom ${zoom}, attempt ${attempt} — backing off ${backoffMs}ms`);
-              await new Promise((r) => setTimeout(r, backoffMs));
-              continue; // retry
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const response = await fetch(url);
+              if (response.status === 429) {
+                // Rate limited: pause for 600ms before retry
+                await new Promise((resolve) => setTimeout(resolve, 600));
+                continue;
+              }
+              if (response.ok) {
+                const resData = await response.json();
+                if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
+                  data = resData;
+                  break;
+                }
+              }
+            } catch (err) {
+              console.warn(`Nominatim fetch error at zoom ${zoom}:`, err);
             }
-            if (!response.ok) {
-              console.warn(`Nominatim returned ${response.status} at zoom ${zoom} (attempt ${attempt})`);
-              break; // don't retry non-rate-limit errors at this zoom
-            }
+            break;
+          }
 
-            const resData = await response.json();
-            if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
-              data = resData;
-              break; // got what we need for this zoom
-            } else {
-              // no polygon at this zoom — try next zoom level
-              break;
-            }
-          } catch (err) {
-            console.warn(`Nominatim fetch error at zoom ${zoom} attempt ${attempt}:`, err);
-            // transient network error — wait a bit and retry
-            await new Promise((r) => setTimeout(r, 400 * attempt));
-            continue;
+          if (data) break; // Found valid boundary polygon!
+        }
+
+        if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+          const address = data.address || {};
+          const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
+          const cityName = formatCityName(address);
+
+          let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
+          if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
+            placeName = `${districtOrSuburb} (${cityName})`;
+          }
+
+          const geojson = data.geojson;
+          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+          const newArea: SearchedArea = {
+            id: zoneId,
+            markerId: markerId,
+            name: placeName,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            geojson: geojson
+          };
+
+          setSearchedAreas((prev) => {
+            const filtered = prev.filter((a) => {
+              if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+                return false;
+              }
+              if (a.id === zoneId) return false;
+              return true;
+            });
+            return [...filtered, newArea];
+          });
+
+          setLastAutoZoneName(placeName);
+          setTimeout(() => setLastAutoZoneName(null), 3500);
+        } else {
+          // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
+          if (markerId) {
+            setSearchedAreas((prev) =>
+              prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
+            );
           }
         }
-
-        if (data) break; // found polygon, stop zoom loop
+      } catch (e) {
+        console.error('Error auto-highlighting zone:', e);
       }
-
-      if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
-        const address = data.address || {};
-        const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
-        const cityName = formatCityName(address);
-
-        let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
-        if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
-          placeName = `${districtOrSuburb} (${cityName})`;
-        }
-
-        const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-
-        setSearchedAreas((prev) => {
-          // remove previous zone for this markerId (if any) and any exact same zoneId
-          const filtered = prev.filter((a) => {
-            if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
-              return false;
-            }
-            if (a.id === zoneId) return false;
-            return true;
-          });
-          return [...filtered, { id: zoneId, markerId: markerId, name: placeName, lat: lat.toString(), lon: lng.toString(), geojson: data.geojson }];
-        });
-
-        setLastAutoZoneName(placeName);
-        setTimeout(() => setLastAutoZoneName(null), 3500);
-      } else {
-        // no polygon found — if this was an end marker cleanup previous autozone for this marker
-        if (markerId) {
-          setSearchedAreas((prev) =>
-            prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
-          );
-        }
-      }
-    } catch (e) {
-      console.error('Error auto-highlighting zone:', e);
-    }
-  });
-};
+    });
+  };
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -611,6 +620,161 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       geojsonLayersRef.current = {};
     };
   }, []);
+
+  // Render settlement and district label badges on the map
+  const renderSettlementLabels = useCallback(() => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    if (!settlementLayerRef.current) {
+      settlementLayerRef.current = L.layerGroup().addTo(map);
+    } else {
+      settlementLayerRef.current.clearLayers();
+    }
+
+    if (!showSettlementLabels) return;
+
+    const currentZoom = map.getZoom();
+
+    const customSettlementMap = new Map(customSettlements.map(s => [s.id, s]));
+    const allSettlements = SETTLEMENTS
+      .map(s => customSettlementMap.get(s.id) || s)
+      .filter(s => !(s as any).isDeleted);
+
+    customSettlements.forEach(s => {
+      if (!SETTLEMENTS.some(orig => orig.id === s.id) && !(s as any).isDeleted) {
+        allSettlements.push(s);
+      }
+    });
+
+    allSettlements.forEach((item) => {
+      const isCustom = item.id.startsWith('custom_') || customSettlementMap.has(item.id);
+
+      if (!isCustom) {
+        if (settlementLabelMode === 'districts_only' && item.type !== 'district') {
+          return;
+        }
+        if (settlementLabelMode === 'districts_cities' && item.type !== 'district' && item.type !== 'city') {
+          return;
+        }
+      }
+
+      let minZoom = 12;
+      if (isCustom) {
+        minZoom = 1; // Always visible if custom
+      } else if (item.type === 'district') {
+        minZoom = 6;
+      } else if (item.priority === 1) {
+        minZoom = 6.5;
+      } else if (item.priority === 2) {
+        minZoom = 8;
+      } else if (item.priority === 3) {
+        minZoom = 9.5;
+      } else if (item.priority === 4) {
+        minZoom = 11;
+      } else {
+        minZoom = 12;
+      }
+
+      if (currentZoom < minZoom) return;
+
+      let dotHtml = '';
+      let labelHtml = '';
+
+      if (item.type === 'district') {
+        dotHtml = `<span class="w-3.5 h-3.5 rounded-full bg-amber-400 ring-2 ring-amber-500/80 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse shrink-0"></span>`;
+        labelHtml = `
+          <div class="px-2 py-0.5 rounded-md bg-slate-950/90 text-amber-300 border border-amber-500/50 shadow-lg text-[11px] font-black tracking-widest uppercase whitespace-nowrap transition-transform group-hover:scale-105">
+            ${item.name}
+          </div>
+        `;
+      } else if (item.priority === 1) {
+        dotHtml = `<span class="w-3 h-3 rounded-full bg-cyan-400 ring-2 ring-blue-500/80 shadow-[0_0_10px_rgba(34,211,238,0.9)] shrink-0"></span>`;
+        labelHtml = `
+          <div class="px-1.5 py-0.5 rounded-md bg-slate-950/90 text-white border border-blue-400/40 shadow-md text-[11px] font-extrabold tracking-wide whitespace-nowrap transition-transform group-hover:scale-105">
+            ${item.name}
+          </div>
+        `;
+      } else if (item.priority === 2) {
+        dotHtml = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1.5 ring-emerald-500/70 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0"></span>`;
+        labelHtml = `
+          <div class="px-1.5 py-0.2 rounded bg-slate-950/90 text-slate-100 border border-white/15 shadow-sm text-[10px] font-bold whitespace-nowrap transition-transform group-hover:scale-105">
+            ${item.name}
+          </div>
+        `;
+      } else if (item.priority === 3) {
+        dotHtml = `<span class="w-2 h-2 rounded-full bg-sky-300 ring-1 ring-sky-400/60 shadow-[0_0_5px_rgba(186,230,253,0.7)] shrink-0"></span>`;
+        labelHtml = `
+          <div class="px-1 py-0.2 rounded bg-slate-950/90 text-slate-200 border border-white/10 shadow-xs text-[9px] font-medium whitespace-nowrap transition-transform group-hover:scale-105">
+            ${item.name}
+          </div>
+        `;
+      } else {
+        dotHtml = `<span class="w-1.5 h-1.5 rounded-full bg-slate-200 ring-1 ring-slate-400/50 shadow-[0_0_4px_rgba(255,255,255,0.5)] shrink-0"></span>`;
+        labelHtml = `
+          <div class="px-1 py-0.2 rounded bg-slate-950/85 text-slate-300 border border-white/10 shadow-xs text-[8.5px] font-normal whitespace-nowrap transition-transform group-hover:scale-105">
+            ${item.name}
+          </div>
+        `;
+      }
+
+      const htmlContent = `
+        <div class="relative flex items-center cursor-pointer select-none group pointer-events-auto">
+          <div class="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
+            ${dotHtml}
+            <div class="absolute left-full ml-1.5 top-1/2 -translate-y-1/2">
+              ${labelHtml}
+            </div>
+          </div>
+        </div>
+      `;
+
+      const customDivIcon = L.divIcon({
+        className: 'settlement-label-marker',
+        html: htmlContent,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+
+      const marker = L.marker([item.lat, item.lng], {
+        icon: customDivIcon,
+        interactive: true,
+        zIndexOffset: item.type === 'district' ? 1000 : (item.priority === 1 ? 800 : 400),
+      });
+
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        if (interactionModeRef.current === 'settlement' && onEditSettlementRef.current) {
+          onEditSettlementRef.current(item);
+        } else {
+          handleAutoHighlightZoneAt(item.lat, item.lng, `settlement_${item.id}`);
+        }
+      });
+
+      if (settlementLayerRef.current) {
+        marker.addTo(settlementLayerRef.current);
+      }
+    });
+  }, [showSettlementLabels, settlementLabelMode, customSettlements]);
+
+  useEffect(() => {
+    renderSettlementLabels();
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+
+    const handleMapMove = () => {
+      renderSettlementLabels();
+    };
+
+    map.on('zoomend', handleMapMove);
+    map.on('moveend', handleMapMove);
+
+    return () => {
+      map.off('zoomend', handleMapMove);
+      map.off('moveend', handleMapMove);
+    };
+  }, [renderSettlementLabels]);
   
   const interactionModeRef = useRef(interactionMode);
   useEffect(() => {
@@ -619,6 +783,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const onAddMarkerRef = useRef(onAddMarker);
   const onSelectMarkerRef = useRef(onSelectMarker);
+  const onAddCustomSettlementPointRef = useRef(onAddCustomSettlementPoint);
+  const onEditSettlementRef = useRef(onEditSettlement);
 
   useEffect(() => {
     onAddMarkerRef.current = onAddMarker;
@@ -627,6 +793,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useEffect(() => {
     onSelectMarkerRef.current = onSelectMarker;
   }, [onSelectMarker]);
+
+  useEffect(() => {
+    onAddCustomSettlementPointRef.current = onAddCustomSettlementPoint;
+  }, [onAddCustomSettlementPoint]);
+
+  useEffect(() => {
+    onEditSettlementRef.current = onEditSettlement;
+  }, [onEditSettlement]);
   
   // Create or update map instance
   useEffect(() => {
@@ -669,6 +843,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
           } else if (mode === 'redzone') {
             handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
+          } else if (mode === 'settlement') {
+            onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
           } else if (mode === 'draw') {
             onSelectMarkerRef.current(null);
             const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
@@ -1341,21 +1517,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       });
 
-      // Wait 600ms for browser layout repaint, tile rendering stability, and CSS class application
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      // Fast layout sync delay
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       setScreenshotStatus(language === 'uk' ? 'Генерація зображення...' : 'Generating image...');
 
       const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
       const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
 
-      // Scale factor for true ultra-HD vector/font rasterization (2x or device ratio)
-      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const scale = Math.min(2, window.devicePixelRatio || 2);
       const scaledWidth = Math.round(sourceWidth * scale);
       const scaledHeight = Math.round(sourceHeight * scale);
 
       const captureOptions = {
-        cacheBust: true,
+        cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         width: scaledWidth,
         height: scaledHeight,
@@ -1369,16 +1544,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           margin: '0',
           padding: '0',
         },
-        skipFonts: true, // Prevent loading errors blocking rendering
-        fontEmbedCSS: '', // Standardize safe local font usage
+        skipFonts: true,
+        fontEmbedCSS: '',
         imagePlaceholder: undefined,
         filter: () => true,
       };
 
-      // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
-      await toPng(mapElement, captureOptions);
-      
-      setScreenshotStatus(language === 'uk' ? 'Формування PNG...' : 'Assembling PNG...');
       const dataUrl = await toPng(mapElement, captureOptions);
 
       // Restore elements
@@ -1392,11 +1563,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       link.click();
 
       setScreenshotStatus(language === 'uk' ? 'Зображення завантажено!' : 'Map downloaded successfully!');
-      setTimeout(() => setScreenshotStatus(null), 3000);
+      setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
       console.error('Export error', err);
       setScreenshotStatus(language === 'uk' ? 'Помилка експорту' : 'Export failed');
-      setTimeout(() => setScreenshotStatus(null), 3000);
+      setTimeout(() => setScreenshotStatus(null), 2500);
     } finally {
       // Restore CSS transforms
       const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
@@ -1427,7 +1598,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       mapElement.classList.add('exporting-map-blur');
     }
     setIsCopying(true);
-    setScreenshotStatus(language === 'uk' ? 'Підготовка карти до копіювання (4x Ultra HQ)...' : 'Preparing map for copy (4x Ultra HQ)...');
+    setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер...' : 'Copying to clipboard...');
     
     try {
       // Hide standard UI controls
@@ -1448,20 +1619,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       });
 
-      // Wait 600ms for browser layout repaint, tile rendering stability, and CSS class application
-      await new Promise((resolve) => setTimeout(resolve, 600));
-
-      setScreenshotStatus(language === 'uk' ? 'Рендеринг високої якості...' : 'High quality rendering...');
+      // Fast 50ms layout sync delay
+      await new Promise((resolve) => setTimeout(resolve, 50));
 
       const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
       const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
 
-      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const scale = Math.min(2, window.devicePixelRatio || 2);
       const scaledWidth = Math.round(sourceWidth * scale);
       const scaledHeight = Math.round(sourceHeight * scale);
 
       const captureOptions = {
-        cacheBust: true,
+        cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         width: scaledWidth,
         height: scaledHeight,
@@ -1481,31 +1650,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         filter: () => true,
       };
 
-      // Workaround: render twice to force html-to-image cache warm-up (guarantees tiles/icons render on first export)
-      await toPng(mapElement, captureOptions);
-      
-      setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер...' : 'Copying to clipboard...');
-      const dataUrl = await toPng(mapElement, captureOptions);
+      // Direct single-pass Blob generation
+      const blob = await toBlob(mapElement, captureOptions);
 
       // Restore elements
       elementsToHide.forEach((el) => {
         (el as HTMLElement).style.opacity = '1';
       });
-
-      if (!dataUrl) {
-        throw new Error('PNG generation returned empty data');
-      }
-
-      // Manual base64 to Blob conversion (extremely robust)
-      const parts = dataUrl.split(',');
-      const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
-      const bstr = atob(parts[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
-      }
-      const blob = new Blob([u8arr], { type: mime });
 
       if (blob) {
         if (navigator.clipboard && window.ClipboardItem) {
@@ -1518,7 +1669,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
           } catch (clipErr) {
             console.warn('Clipboard write blocked, using fallback download:', clipErr);
-            // Automatic fallback to download
+            const dataUrl = await toPng(mapElement, captureOptions);
             const link = document.createElement('a');
             link.download = `tactical_map_${Date.now()}.png`;
             link.href = dataUrl;
@@ -1526,7 +1677,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
           }
         } else {
-          // Fallback: trigger download when ClipboardItem is not supported
+          const dataUrl = await toPng(mapElement, captureOptions);
           const link = document.createElement('a');
           link.download = `tactical_map_${Date.now()}.png`;
           link.href = dataUrl;
@@ -1536,11 +1687,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       } else {
         throw new Error('Blob creation failed');
       }
-      setTimeout(() => setScreenshotStatus(null), 3000);
+      setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
       console.error('Clipboard copy error', err);
       setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
-      setTimeout(() => setScreenshotStatus(null), 3000);
+      setTimeout(() => setScreenshotStatus(null), 2500);
     } finally {
       // Restore CSS transforms
       const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
@@ -1590,9 +1741,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           className={`w-full h-full z-10 ${theme === 'dark' ? 'dark-map' : ''}`}
         />
 
-        {/* Floating Search Panel & Mode Selector */}
+        {/* Floating Search Panel */}
         {!(isExporting || isCopying) && (
           <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-72 sm:w-88 flex flex-col gap-2">
+            
+            {/* Search Input Bar */}
             <div className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
               theme === 'light' 
                 ? 'bg-white/95 border-slate-200 text-slate-800' 
@@ -1608,7 +1761,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                 }}
                 onFocus={() => setShowDropdown(true)}
                 placeholder={language === 'uk' ? 'Пошук населених пунктів...' : 'Search populated areas...'}
-                className="w-full pl-10 pr-24 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
+                className="w-full pl-10 pr-10 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
               />
               {searchQuery && (
                 <button
@@ -1616,53 +1769,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                     setSearchQuery('');
                     setSearchResults([]);
                   }}
-                  className="absolute right-20 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="absolute right-3 p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
                 >
                   <X className="w-3 h-3" />
                 </button>
               )}
-
-              {/* Quick Mode Toggle Shortcuts next to Search Input */}
-              <div className="absolute right-2 flex items-center gap-1 border-l pl-2 border-slate-200 dark:border-white/10">
-                <button
-                  onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
-                  title={language === 'uk' 
-                    ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` 
-                    : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`
-                  }
-                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
-                    autoHighlightZone
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-1 ring-amber-400'
-                      : 'hover:bg-white/10 text-slate-400 hover:text-amber-400'
-                  }`}
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  onClick={() => onSelectInteractionMode?.(interactionMode === 'redzone' ? 'draw' : 'redzone')}
-                  title={language === 'uk' ? 'Червоні зони' : 'Red Zones'}
-                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
-                    interactionMode === 'redzone'
-                      ? 'bg-red-500 text-white shadow-md shadow-red-500/30'
-                      : 'hover:bg-white/10 text-slate-400 hover:text-red-400'
-                  }`}
-                >
-                  <ShieldAlert className="w-3.5 h-3.5" />
-                </button>
-
-                <button
-                  onClick={() => onSelectInteractionMode?.(interactionMode === 'measure' ? 'draw' : 'measure')}
-                  title={language === 'uk' ? 'Виміряти відстань' : 'Measure Distance'}
-                  className={`p-1.5 rounded-xl transition-all cursor-pointer ${
-                    interactionMode === 'measure'
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30'
-                      : 'hover:bg-white/10 text-slate-400 hover:text-amber-400'
-                  }`}
-                >
-                  <Ruler className="w-3.5 h-3.5" />
-                </button>
-              </div>
             </div>
 
             {/* Quick District & Settlement Buttons */}
@@ -1844,6 +1955,27 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                 <X className="w-4 h-4" />
               </button>
             </div>
+          </div>
+        )}
+
+        {!(isExporting || isCopying) && interactionMode === 'settlement' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-blue-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <MapPin className="w-4 h-4 text-blue-400 flex-shrink-0 animate-bounce" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Режим виставлення населених пунктів' : 'Settlement Placement Mode'}
+              </span>
+              <span className="text-xs font-medium truncate">
+                {language === 'uk' ? 'Клікніть на карті в потрібному місці, щоб додати точку та назву' : 'Click anywhere on the map to place a settlement dot & label'}
+              </span>
+            </div>
+            <button
+              onClick={() => onSelectInteractionMode?.('draw')}
+              title={language === 'uk' ? 'Вийти з режиму' : 'Exit mode'}
+              className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer flex-shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         )}
 

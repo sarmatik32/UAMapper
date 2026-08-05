@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
-
 import { Sidebar } from './components/Sidebar';
+import { AddSettlementModal } from './components/AddSettlementModal';
+import { Settlement } from './data/settlements';
 import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
@@ -12,6 +13,17 @@ const TILE_LAYERS: TileLayerConfig[] = [
     nameEn: 'CartoDB Dark (Night mode)',
     nameUa: 'CartoDB Темна (Без ключа)',
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    tms: false,
+    subdomains: 'abcd',
+    maxZoom: 20,
+    attribution: '© CartoDB, © OpenStreetMap',
+    requiresKey: false,
+  },
+  {
+    id: 'carto_voyager',
+    nameEn: 'CartoDB Voyager (Detailed with Roads/Towns)',
+    nameUa: 'CartoDB Детальна (Дороги та міста, без ключа)',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     tms: false,
     subdomains: 'abcd',
     maxZoom: 20,
@@ -30,14 +42,36 @@ const TILE_LAYERS: TileLayerConfig[] = [
     requiresKey: false,
   },
   {
+    id: 'osm_hot',
+    nameEn: 'OSM Humanitarian (High Settlement Density)',
+    nameUa: 'OSM Густа мережа населених пунктів (Без ключа)',
+    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: 'abc',
+    maxZoom: 19,
+    attribution: '© OpenStreetMap contributors, HOT',
+    requiresKey: false,
+  },
+  {
     id: 'osm',
-    nameEn: 'OpenStreetMap',
-    nameUa: 'OpenStreetMap (Без ключа)',
+    nameEn: 'OpenStreetMap (Standard)',
+    nameUa: 'OpenStreetMap Стандартна (Без ключа)',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     tms: false,
     subdomains: 'abc',
     maxZoom: 19,
     attribution: 'Map data © OpenStreetMap contributors',
+    requiresKey: false,
+  },
+  {
+    id: 'opentopomap',
+    nameEn: 'OpenTopoMap (Topographic + Villages)',
+    nameUa: 'OpenTopoMap Топографічна з селами (Без ключа)',
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: 'abc',
+    maxZoom: 17,
+    attribution: '© OpenStreetMap contributors, OpenTopoMap',
     requiresKey: false,
   },
 ];
@@ -179,6 +213,93 @@ export default function App() {
     const saved = localStorage.getItem('visicom_blur_map_on_export');
     return saved !== null ? saved === 'true' : false;
   });
+
+  const [showSettlementLabels, setShowSettlementLabels] = useState<boolean>(() => {
+    const saved = localStorage.getItem('visicom_show_settlement_labels');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [settlementLabelMode, setSettlementLabelMode] = useState<'all' | 'districts_cities' | 'districts_only'>(() => {
+    const saved = localStorage.getItem('visicom_settlement_label_mode');
+    return (saved as any) || 'all';
+  });
+
+  const handleToggleSettlementLabels = (show: boolean) => {
+    setShowSettlementLabels(show);
+    localStorage.setItem('visicom_show_settlement_labels', String(show));
+  };
+
+  const handleSetSettlementLabelMode = (mode: 'all' | 'districts_cities' | 'districts_only') => {
+    setSettlementLabelMode(mode);
+    localStorage.setItem('visicom_settlement_label_mode', mode);
+  };
+
+  const [customSettlements, setCustomSettlements] = useState<Settlement[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_custom_settlements');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [isAddSettlementModalOpen, setIsAddSettlementModalOpen] = useState(false);
+  const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null);
+  const [pendingSettlementLatLng, setPendingSettlementLatLng] = useState<{ lat: number; lng: number } | null>(null);
+
+  const handleAddCustomSettlementPoint = (lat: number, lng: number) => {
+    setEditingSettlement(null);
+    setPendingSettlementLatLng({ lat, lng });
+    setIsAddSettlementModalOpen(true);
+  };
+
+  const handleEditSettlement = (settlement: Settlement) => {
+    setEditingSettlement(settlement);
+    setPendingSettlementLatLng({ lat: settlement.lat, lng: settlement.lng });
+    setIsAddSettlementModalOpen(true);
+  };
+
+  const handleSaveCustomSettlement = (savedSettlement: Settlement) => {
+    setCustomSettlements((prev) => {
+      const existsIndex = prev.findIndex((s) => s.id === savedSettlement.id);
+      let updated: Settlement[];
+      if (existsIndex >= 0) {
+        updated = [...prev];
+        updated[existsIndex] = savedSettlement;
+      } else {
+        updated = [...prev, savedSettlement];
+      }
+      localStorage.setItem('visicom_custom_settlements', JSON.stringify(updated));
+      return updated;
+    });
+    setShowSettlementLabels(true);
+    localStorage.setItem('visicom_show_settlement_labels', 'true');
+  };
+
+  const handleDeleteCustomSettlement = (id: string) => {
+    setCustomSettlements((prev) => {
+      let updated: Settlement[];
+      if (id.startsWith('custom_')) {
+        updated = prev.filter((s) => s.id !== id);
+      } else {
+        const existsIndex = prev.findIndex((s) => s.id === id);
+        const deletedMarker = { id, name: '', type: 'village', lat: 0, lng: 0, priority: 5, isDeleted: true } as Settlement;
+        if (existsIndex >= 0) {
+          updated = [...prev];
+          updated[existsIndex] = deletedMarker;
+        } else {
+          updated = [...prev, deletedMarker];
+        }
+      }
+      localStorage.setItem('visicom_custom_settlements', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleClearAllCustomSettlements = () => {
+    setCustomSettlements([]);
+    localStorage.removeItem('visicom_custom_settlements');
+  };
 
   const [visicomKey, setVisicomKey] = useState<string>(() => {
     return localStorage.getItem('visicom_api_key') || '';
@@ -541,6 +662,14 @@ export default function App() {
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
+            showSettlementLabels={showSettlementLabels}
+            settlementLabelMode={settlementLabelMode}
+            onToggleSettlementLabels={handleToggleSettlementLabels}
+            onSetSettlementLabelMode={handleSetSettlementLabelMode}
+            customSettlements={customSettlements}
+            onAddCustomSettlementPoint={handleAddCustomSettlementPoint}
+            onEditSettlement={handleEditSettlement}
+            onDeleteCustomSettlement={handleDeleteCustomSettlement}
           />
 
 
@@ -764,6 +893,17 @@ export default function App() {
                 setBlurMapOnExport(val);
                 localStorage.setItem('visicom_blur_map_on_export', val ? 'true' : 'false');
               }}
+              showSettlementLabels={showSettlementLabels}
+              onUpdateShowSettlementLabels={handleToggleSettlementLabels}
+              autoHighlightZone={autoHighlightZone}
+              onToggleAutoHighlightZone={handleToggleAutoHighlightZone}
+              settlementLabelMode={settlementLabelMode}
+              onUpdateSettlementLabelMode={handleSetSettlementLabelMode}
+              customSettlements={customSettlements}
+              onEnableSettlementMode={() => setInteractionMode('settlement')}
+              onEditSettlement={handleEditSettlement}
+              onDeleteCustomSettlement={handleDeleteCustomSettlement}
+              onClearAllCustomSettlements={handleClearAllCustomSettlements}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
             />
@@ -781,6 +921,16 @@ export default function App() {
         </div>
       </div>
 
+      {/* Add / Edit Settlement Modal */}
+      <AddSettlementModal
+        isOpen={isAddSettlementModalOpen}
+        latLng={pendingSettlementLatLng}
+        editingSettlement={editingSettlement}
+        onClose={() => setIsAddSettlementModalOpen(false)}
+        onSave={handleSaveCustomSettlement}
+        onDelete={handleDeleteCustomSettlement}
+        language={language}
+      />
     </div>
   );
 }

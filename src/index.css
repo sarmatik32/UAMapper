@@ -105,3 +105,11 @@
   filter: blur(2px) brightness(0.95) contrast(1.05) !important;
   transition: filter 0.3s ease;
 }
+
+/* Settlement and district label markers */
+.settlement-label-marker {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  pointer-events: auto !important;
+}

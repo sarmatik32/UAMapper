@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
+import { Settlement } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { 
   Map, 
@@ -22,10 +23,12 @@ import {
   Move,
   Download,
   Copy,
+  Edit3,
   Ruler,
   ShieldAlert,
   PenTool,
-  Hand
+  Hand,
+  Building2
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -63,6 +66,17 @@ interface SidebarProps {
   onUpdateShowRadarOverlay?: (show: boolean) => void;
   blurMapOnExport?: boolean;
   onUpdateBlurMapOnExport?: (blur: boolean) => void;
+  showSettlementLabels?: boolean;
+  onUpdateShowSettlementLabels?: (show: boolean) => void;
+  settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
+  onUpdateSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
+  customSettlements?: Settlement[];
+  onEnableSettlementMode?: () => void;
+  onEditSettlement?: (settlement: Settlement) => void;
+  onDeleteCustomSettlement?: (id: string) => void;
+  onClearAllCustomSettlements?: () => void;
+  autoHighlightZone?: boolean;
+  onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
   onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
 }
@@ -103,6 +117,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateShowRadarOverlay = (_show) => {},
   blurMapOnExport = false,
   onUpdateBlurMapOnExport = (_blur) => {},
+  showSettlementLabels = true,
+  onUpdateShowSettlementLabels = (_show) => {},
+  settlementLabelMode = 'all',
+  onUpdateSettlementLabelMode = (_mode) => {},
+  customSettlements = [],
+  onEnableSettlementMode = () => {},
+  onEditSettlement = (_s) => {},
+  onDeleteCustomSettlement = (_id) => {},
+  onClearAllCustomSettlements = () => {},
+  autoHighlightZone = false,
+  onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
   onUpdateCustomIconTitle = (_type, _val) => {},
 }) => {
@@ -388,6 +413,73 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Accordion List wrapper */}
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
+        {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
+        <div className={`p-2 rounded-2xl border shadow-sm flex items-center justify-around transition-all ${
+          theme === 'light' 
+            ? 'border-slate-200 bg-white' 
+            : 'border-[#262c38] bg-[#0e1117]/60'
+        }`}>
+          <button
+            onClick={() => onUpdateShowSettlementLabels?.(!showSettlementLabels)}
+            title={isUa ? `Назви населених пунктів: ${showSettlementLabels ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Settlement labels: ${showSettlementLabels ? 'ON' : 'OFF'}`}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              showSettlementLabels
+                ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
+            title={isUa ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              autoHighlightZone
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onSetInteractionMode(interactionMode === 'redzone' ? 'draw' : 'redzone')}
+            title={isUa ? 'Червоні зони' : 'Red Zone Mode'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              interactionMode === 'redzone'
+                ? 'bg-red-500 text-white font-bold shadow-md shadow-red-500/30 ring-2 ring-red-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-red-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onEnableSettlementMode()}
+            title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              interactionMode === 'settlement'
+                ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <MapPin className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onSetInteractionMode(interactionMode === 'measure' ? 'draw' : 'measure')}
+            title={isUa ? 'Виміряти відстань' : 'Measure Distance'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              interactionMode === 'measure'
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <Ruler className="w-4 h-4" />
+          </button>
+        </div>
+
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
         <div className={`border rounded-2xl overflow-hidden ${
           theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
@@ -423,40 +515,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
               <button
                 onClick={() => onSetInteractionMode('pan')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'pan'
-                    ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <Hand className="w-4 h-4" />
-                <span className="text-[11px] font-bold">{isUa ? 'Переміщення' : 'Pan Map'}</span>
-              </button>
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'pan'
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Hand className="w-4 h-4" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Переміщення' : 'Pan Map'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('redzone')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'redzone'
-                    ? 'bg-red-500 text-white font-extrabold shadow-md shadow-red-500/20 border-red-400'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" />
-                <span className="text-[11px] font-bold">{isUa ? 'Червоні зони' : 'Red Zones'}</span>
-              </button>
+                <button
+                  onClick={() => onSetInteractionMode('redzone')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'redzone'
+                      ? 'bg-red-500 text-white font-extrabold shadow-md shadow-red-500/20 border-red-400'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Червоні зони' : 'Red Zones'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('measure')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'measure'
-                    ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/20 border-amber-400'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <Ruler className="w-4 h-4 text-amber-500 dark:text-amber-400" />
-                <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
-              </button>
-            </div>
+                <button
+                  onClick={() => onSetInteractionMode('measure')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'measure'
+                      ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/20 border-amber-400'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Ruler className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
+                </button>
+              </div>
           )}
         </div>
 
@@ -1092,6 +1184,142 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   />
                   <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
+              </div>
+
+              {/* Show Settlement & District Labels Toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Назви районів та міст' : 'District & Settlement Labels'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Плашки з назвами пунктів та районів' : 'Show label badges on map'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={showSettlementLabels} 
+                    onChange={(e) => onUpdateShowSettlementLabels(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Settlement Label Density / Mode */}
+              {showSettlementLabels && (
+                <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-white/5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Фільтр відображення назв' : 'Label Density Filter'}
+                  </label>
+                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('all')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'all'
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Всі' : 'All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('districts_cities')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'districts_cities'
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Міста+Райони' : 'Cities+Districts'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('districts_only')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'districts_only'
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Райони' : 'Districts'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Settlement Dots Control */}
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Власні точки НП' : 'Custom Settlement Dots'} ({customSettlements.length})
+                  </label>
+                  {customSettlements.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onClearAllCustomSettlements}
+                      className="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                    >
+                      {isUa ? 'Видалити всі' : 'Clear all'}
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onEnableSettlementMode}
+                  className="w-full py-2 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4" />
+                  <span>{isUa ? '＋ Встановити точку на карті' : '＋ Place Dot on Map'}</span>
+                </button>
+
+                {customSettlements.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {customSettlements.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              s.type === 'district'
+                                ? 'bg-amber-400 ring-1 ring-amber-500'
+                                : s.priority === 1
+                                ? 'bg-cyan-400'
+                                : s.priority === 2
+                                ? 'bg-emerald-400'
+                                : 'bg-sky-300'
+                            }`}
+                          />
+                          <span className="font-bold truncate text-slate-800 dark:text-slate-100">{s.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onEditSettlement(s)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all cursor-pointer shrink-0"
+                            title={isUa ? 'Редагувати точку' : 'Edit point'}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteCustomSettlement(s.id)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer shrink-0"
+                            title={isUa ? 'Видалити точку' : 'Delete point'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Legend Warning Textarea (only if legend enabled) */}
