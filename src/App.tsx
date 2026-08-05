@@ -3,7 +3,7 @@ import { CustomMarker, TileLayerConfig, Language, InteractionMode } from './type
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
-import { Settlement } from './data/settlements';
+import { Settlement, SettlementCategory } from './data/settlements';
 import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
@@ -21,8 +21,8 @@ const TILE_LAYERS: TileLayerConfig[] = [
   },
   {
     id: 'carto_voyager',
-    nameEn: 'CartoDB Voyager (Detailed with Roads/Towns)',
-    nameUa: 'CartoDB Детальна (Дороги та міста, без ключа)',
+    nameEn: 'CartoDB Voyager (Detailed)',
+    nameUa: 'CartoDB Детальна Voyager (Без ключа)',
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     tms: false,
     subdomains: 'abcd',
@@ -224,14 +224,45 @@ export default function App() {
     return (saved as any) || 'all';
   });
 
+  const [disabledSettlementCategories, setDisabledSettlementCategories] = useState<SettlementCategory[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_disabled_settlement_categories');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const handleToggleSettlementLabels = (show: boolean) => {
     setShowSettlementLabels(show);
     localStorage.setItem('visicom_show_settlement_labels', String(show));
   };
 
+  const handleToggleSettlementCategory = (category: SettlementCategory) => {
+    setDisabledSettlementCategories((prev) => {
+      const isCurrentlyDisabled = prev.includes(category);
+      const updated = isCurrentlyDisabled
+        ? prev.filter((c) => c !== category)
+        : [...prev, category];
+      localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   const handleSetSettlementLabelMode = (mode: 'all' | 'districts_cities' | 'districts_only') => {
     setSettlementLabelMode(mode);
     localStorage.setItem('visicom_settlement_label_mode', mode);
+
+    let newDisabled: SettlementCategory[] = [];
+    if (mode === 'districts_only') {
+      newDisabled = ['city', 'town', 'village', 'small_village'];
+    } else if (mode === 'districts_cities') {
+      newDisabled = ['town', 'village', 'small_village'];
+    } else {
+      newDisabled = [];
+    }
+    setDisabledSettlementCategories(newDisabled);
+    localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(newDisabled));
   };
 
   const [customSettlements, setCustomSettlements] = useState<Settlement[]>(() => {
@@ -242,6 +273,14 @@ export default function App() {
       return [];
     }
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('visicom_custom_settlements', JSON.stringify(customSettlements));
+    } catch (err) {
+      console.error('Failed to sync custom settlements:', err);
+    }
+  }, [customSettlements]);
 
   const [isAddSettlementModalOpen, setIsAddSettlementModalOpen] = useState(false);
   const [editingSettlement, setEditingSettlement] = useState<Settlement | null>(null);
@@ -297,8 +336,11 @@ export default function App() {
   };
 
   const handleClearAllCustomSettlements = () => {
-    setCustomSettlements([]);
-    localStorage.removeItem('visicom_custom_settlements');
+    setCustomSettlements((prev) => {
+      const updated = prev.filter((s) => !s.id.startsWith('custom_'));
+      localStorage.setItem('visicom_custom_settlements', JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const [visicomKey, setVisicomKey] = useState<string>(() => {
@@ -664,6 +706,7 @@ export default function App() {
             blurMapOnExport={blurMapOnExport}
             showSettlementLabels={showSettlementLabels}
             settlementLabelMode={settlementLabelMode}
+            disabledSettlementCategories={disabledSettlementCategories}
             onToggleSettlementLabels={handleToggleSettlementLabels}
             onSetSettlementLabelMode={handleSetSettlementLabelMode}
             customSettlements={customSettlements}
@@ -899,6 +942,8 @@ export default function App() {
               onToggleAutoHighlightZone={handleToggleAutoHighlightZone}
               settlementLabelMode={settlementLabelMode}
               onUpdateSettlementLabelMode={handleSetSettlementLabelMode}
+              disabledSettlementCategories={disabledSettlementCategories}
+              onToggleSettlementCategory={handleToggleSettlementCategory}
               customSettlements={customSettlements}
               onEnableSettlementMode={() => setInteractionMode('settlement')}
               onEditSettlement={handleEditSettlement}

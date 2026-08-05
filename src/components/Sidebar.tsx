@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
-import { Settlement } from '../data/settlements';
+import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { 
   Map, 
@@ -70,6 +70,8 @@ interface SidebarProps {
   onUpdateShowSettlementLabels?: (show: boolean) => void;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
   onUpdateSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
+  disabledSettlementCategories?: SettlementCategory[];
+  onToggleSettlementCategory?: (category: SettlementCategory) => void;
   customSettlements?: Settlement[];
   onEnableSettlementMode?: () => void;
   onEditSettlement?: (settlement: Settlement) => void;
@@ -121,6 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateShowSettlementLabels = (_show) => {},
   settlementLabelMode = 'all',
   onUpdateSettlementLabelMode = (_mode) => {},
+  disabledSettlementCategories = [],
+  onToggleSettlementCategory = (_category) => {},
   customSettlements = [],
   onEnableSettlementMode = () => {},
   onEditSettlement = (_s) => {},
@@ -153,6 +157,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     overlays: false,
     settings: false,
   });
+
+  const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections((prev) => ({
@@ -478,6 +484,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Ruler className="w-4 h-4" />
           </button>
+
+          {userCustomSettlements.length > 0 && (
+            <button
+              onClick={onClearAllCustomSettlements}
+              title={isUa ? `Видалити нанесені населені пункти (${userCustomSettlements.length})` : `Delete custom settlements (${userCustomSettlements.length})`}
+              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 hover:border-red-500"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
@@ -1207,18 +1223,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </label>
               </div>
 
-              {/* Settlement Label Density / Mode */}
+              {/* Settlement Label Density / Category Filter */}
               {showSettlementLabels && (
-                <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-white/5">
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    {isUa ? 'Фільтр відображення назв' : 'Label Density Filter'}
-                  </label>
+                <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      {isUa ? 'Фільтр відображення назв' : 'Label Category Filter'}
+                    </label>
+                    {disabledSettlementCategories.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettlementLabelMode('all')}
+                        className="text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                      >
+                        {isUa ? 'Увімкнути всі' : 'Enable all'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Preset Modes */}
                   <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
                     <button
                       type="button"
                       onClick={() => onUpdateSettlementLabelMode('all')}
                       className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                        settlementLabelMode === 'all'
+                        settlementLabelMode === 'all' && disabledSettlementCategories.length === 0
                           ? 'bg-blue-500 text-white shadow'
                           : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
                       }`}
@@ -1248,6 +1277,39 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       {isUa ? 'Райони' : 'Districts'}
                     </button>
                   </div>
+
+                  {/* Individual Category Toggles */}
+                  <div className="space-y-1 pt-1">
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                      {isUa ? 'Категорії населених пунктів:' : 'Settlement categories:'}
+                    </div>
+                    {SETTLEMENT_CATEGORY_CONFIG.map((cat) => {
+                      const isEnabled = !disabledSettlementCategories.includes(cat.id);
+                      return (
+                        <label
+                          key={cat.id}
+                          className={`flex items-center justify-between p-1.5 px-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                            isEnabled
+                              ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200'
+                              : 'bg-slate-200/40 dark:bg-white/[0.02] border-transparent text-slate-400 dark:text-slate-500 opacity-50 line-through'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cat.dotClass}`} />
+                            <span className="text-[11px] font-bold truncate">
+                              {isUa ? cat.nameUa : cat.nameEn}
+                            </span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => onToggleSettlementCategory(cat.id)}
+                            className="w-4 h-4 rounded border-slate-400 text-blue-500 focus:ring-blue-500/20 cursor-pointer accent-blue-500 shrink-0"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
@@ -1255,9 +1317,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="pt-2 border-t border-slate-100 dark:border-white/5 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                    {isUa ? 'Власні точки НП' : 'Custom Settlement Dots'} ({customSettlements.length})
+                    {isUa ? 'Власні точки НП' : 'Custom Settlement Dots'} ({userCustomSettlements.length})
                   </label>
-                  {customSettlements.length > 0 && (
+                  {userCustomSettlements.length > 0 && (
                     <button
                       type="button"
                       onClick={onClearAllCustomSettlements}
@@ -1277,9 +1339,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{isUa ? '＋ Встановити точку на карті' : '＋ Place Dot on Map'}</span>
                 </button>
 
-                {customSettlements.length > 0 && (
+                {userCustomSettlements.length > 0 && (
                   <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                    {customSettlements.map((s) => (
+                    {userCustomSettlements.map((s) => (
                       <div
                         key={s.id}
                         className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs"

@@ -9,6 +9,54 @@ export interface Settlement {
   population?: string;
 }
 
+export type SettlementCategory = 'district' | 'city' | 'town' | 'village' | 'small_village';
+
+export function getSettlementCategory(item: Settlement): SettlementCategory {
+  if (item.type === 'district') return 'district';
+  if (item.type === 'city' || item.priority === 1) return 'city';
+  if (item.type === 'town' || item.priority === 2) return 'town';
+  if (item.priority === 3) return 'village';
+  return 'small_village';
+}
+
+export const SETTLEMENT_CATEGORY_CONFIG: {
+  id: SettlementCategory;
+  nameUa: string;
+  nameEn: string;
+  dotClass: string;
+}[] = [
+  {
+    id: 'district',
+    nameUa: 'Райони',
+    nameEn: 'Districts',
+    dotClass: 'bg-amber-400 ring-1 ring-amber-500',
+  },
+  {
+    id: 'city',
+    nameUa: 'Великі міста',
+    nameEn: 'Major Cities',
+    dotClass: 'bg-cyan-400 ring-1 ring-blue-500',
+  },
+  {
+    id: 'town',
+    nameUa: 'Містечка / СМТ',
+    nameEn: 'Towns',
+    dotClass: 'bg-emerald-400 ring-1 ring-emerald-500',
+  },
+  {
+    id: 'village',
+    nameUa: 'Села',
+    nameEn: 'Villages',
+    dotClass: 'bg-sky-300 ring-1 ring-sky-400',
+  },
+  {
+    id: 'small_village',
+    nameUa: 'Малі села / Хутори',
+    nameEn: 'Hamlets / Small Villages',
+    dotClass: 'bg-slate-200 ring-1 ring-slate-400',
+  },
+];
+
 export const SETTLEMENTS: Settlement[] = [
   // Priority 0/1: Districts (Райони України)
   { id: 'dist_kryvorizkyi', name: 'КРИВОРІЗЬКИЙ РАЙОН', type: 'district', lat: 47.9500, lng: 33.3500, priority: 1, district: 'Дніпропетровська обл.' },
@@ -29,19 +77,32 @@ export const SETTLEMENTS: Settlement[] = [
   { id: 'dist_kremenchutskyi', name: 'КРЕМЕНЧУЦЬКИЙ РАЙОН', type: 'district', lat: 49.1000, lng: 33.4500, priority: 1, district: 'Полтавська обл.' },
 
   // Priority 1: Major Cities (Великі міста України)
-  { id: 'city_kryvyi_rih', name: 'КРИВИЙ РІГ', type: 'city', lat: 47.9105, lng: 33.3918, priority: 1, district: 'Криворізький район', population: '603 тис.' },
-  { id: 'city_dnipro', name: 'ДНІПРО', type: 'city', lat: 48.4647, lng: 35.0462, priority: 1, district: 'Дніпровський район', population: '980 тис.' },
-  { id: 'city_zaporizhzhia', name: 'ЗАПОРІЖЖЯ', type: 'city', lat: 47.8388, lng: 35.1396, priority: 1, district: 'Запорізький район', population: '710 тис.' },
-  { id: 'city_mykolaiv', name: 'МИКОЛАЇВ', type: 'city', lat: 46.9750, lng: 31.9950, priority: 1, district: 'Миколаївський район', population: '470 тис.' },
-  { id: 'city_kherson', name: 'ХЕРСОН', type: 'city', lat: 46.6354, lng: 32.6169, priority: 1, district: 'Херсонський район', population: '280 тис.' },
-  { id: 'city_kropyvnytskyi', name: 'КРОПИВНИЦЬКИЙ', type: 'city', lat: 48.5106, lng: 32.2623, priority: 1, district: 'Кропивницький район', population: '220 тис.' },
-  { id: 'city_nikopol', name: 'НІКОПОЛЬ', type: 'city', lat: 47.5750, lng: 34.3980, priority: 1, district: 'Нікопольський район', population: '105 тис.' },
-  { id: 'city_oleksandriia', name: 'ОЛЕКСАНДРІЯ', type: 'city', lat: 48.6710, lng: 33.1150, priority: 1, district: 'Олександрійський район', population: '77 тис.' },
-  { id: 'city_kremenchuk', name: 'КРЕМЕНЧУК', type: 'city', lat: 49.0631, lng: 33.4042, priority: 1, district: 'Кременчуцький район', population: '215 тис.' },
-  { id: 'city_odesa', name: 'ОДЕСА', type: 'city', lat: 46.4825, lng: 30.7233, priority: 1, district: 'Одеський район', population: '1010 тис.' },
   { id: 'city_kyiv', name: 'КИЇВ', type: 'city', lat: 50.4501, lng: 30.5234, priority: 1, district: 'м. Київ', population: '2950 тис.' },
   { id: 'city_kharkiv', name: 'ХАРКІВ', type: 'city', lat: 49.9935, lng: 36.2304, priority: 1, district: 'Харківський район', population: '1420 тис.' },
+  { id: 'city_odesa', name: 'ОДЕСА', type: 'city', lat: 46.4825, lng: 30.7233, priority: 1, district: 'Одеський район', population: '1010 тис.' },
+  { id: 'city_dnipro', name: 'ДНІПРО', type: 'city', lat: 48.4647, lng: 35.0462, priority: 1, district: 'Дніпровський район', population: '980 тис.' },
+  { id: 'city_zaporizhzhia', name: 'ЗАПОРІЖЖЯ', type: 'city', lat: 47.8388, lng: 35.1396, priority: 1, district: 'Запорізький район', population: '710 тис.' },
+  { id: 'city_lviv', name: 'ЛЬВІВ', type: 'city', lat: 49.8383, lng: 24.0232, priority: 1, district: 'Львівський район', population: '720 тис.' },
+  { id: 'city_kryvyi_rih', name: 'КРИВИЙ РІГ', type: 'city', lat: 47.9105, lng: 33.3918, priority: 1, district: 'Криворізький район', population: '603 тис.' },
+  { id: 'city_mykolaiv', name: 'МИКОЛАЇВ', type: 'city', lat: 46.9750, lng: 31.9950, priority: 1, district: 'Миколаївський район', population: '470 тис.' },
+  { id: 'city_kherson', name: 'ХЕРСОН', type: 'city', lat: 46.6354, lng: 32.6169, priority: 1, district: 'Херсонський район', population: '280 тис.' },
   { id: 'city_poltava', name: 'ПОЛТАВА', type: 'city', lat: 49.5883, lng: 34.5514, priority: 1, district: 'Полтавський район', population: '280 тис.' },
+  { id: 'city_vinnytsia', name: 'ВІННИЦЯ', type: 'city', lat: 49.2331, lng: 28.4682, priority: 1, district: 'Вінницький район', population: '370 тис.' },
+  { id: 'city_kropyvnytskyi', name: 'КРОПИВНИЦЬКИЙ', type: 'city', lat: 48.5106, lng: 32.2623, priority: 1, district: 'Кропивницький район', population: '220 тис.' },
+  { id: 'city_cherkasy', name: 'ЧЕРКАСИ', type: 'city', lat: 49.4444, lng: 32.0598, priority: 1, district: 'Черкаський район', population: '270 тис.' },
+  { id: 'city_sumy', name: 'СУМИ', type: 'city', lat: 50.9077, lng: 34.7981, priority: 1, district: 'Сумський район', population: '260 тис.' },
+  { id: 'city_chernihiv', name: 'ЧЕРНІГІВ', type: 'city', lat: 51.4982, lng: 31.2893, priority: 1, district: 'Чернігівський район', population: '285 тис.' },
+  { id: 'city_zhytomyr', name: 'ЖИТОМИР', type: 'city', lat: 50.2547, lng: 28.6587, priority: 1, district: 'Житомирський район', population: '265 тис.' },
+  { id: 'city_khmelnytskyi', name: 'ХМЕЛЬНИЦЬКИЙ', type: 'city', lat: 49.4230, lng: 26.9871, priority: 1, district: 'Хмельницький район', population: '275 тис.' },
+  { id: 'city_rivne', name: 'РІВНЕ', type: 'city', lat: 50.6199, lng: 26.2516, priority: 1, district: 'Рівненський район', population: '245 тис.' },
+  { id: 'city_lutsk', name: 'ЛУЦЬК', type: 'city', lat: 50.7472, lng: 25.3254, priority: 1, district: 'Луцький район', population: '217 тис.' },
+  { id: 'city_ivano_frankivsk', name: 'ІВАНО-ФРАНКІВСЬК', type: 'city', lat: 48.9226, lng: 24.7111, priority: 1, district: 'Івано-Франківський район', population: '238 тис.' },
+  { id: 'city_ternopil', name: 'ТЕРНОПІЛЬ', type: 'city', lat: 49.5535, lng: 25.5948, priority: 1, district: 'Тернопільський район', population: '224 тис.' },
+  { id: 'city_uzhhorod', name: 'УЖГОРОД', type: 'city', lat: 48.6208, lng: 22.2879, priority: 1, district: 'Ужгородський район', population: '115 тис.' },
+  { id: 'city_chernivtsi', name: 'ЧЕРНІВЦІ', type: 'city', lat: 48.2921, lng: 25.9358, priority: 1, district: 'Чернівецький район', population: '265 тис.' },
+  { id: 'city_kremenchuk', name: 'КРЕМЕНЧУК', type: 'city', lat: 49.0631, lng: 33.4042, priority: 1, district: 'Кременчуцький район', population: '215 тис.' },
+  { id: 'city_nikopol', name: 'НІКОПОЛЬ', type: 'city', lat: 47.5750, lng: 34.3980, priority: 1, district: 'Нікопольський район', population: '105 тис.' },
+  { id: 'city_oleksandriia', name: 'ОЛЕКСАНДРІЯ', type: 'city', lat: 48.6710, lng: 33.1150, priority: 1, district: 'Олександрійський район', population: '77 тис.' },
   { id: 'city_zhovti_vody', name: 'Жовті Води', type: 'city', lat: 48.3450, lng: 33.5080, priority: 1, district: 'Кам\'янський район', population: '42 тис.' },
 
   // Priority 2: District Centers & Urban Hromadas (Районні центри та великі міста)

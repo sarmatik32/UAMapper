@@ -4,7 +4,7 @@ import { toPng, toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2 } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
 import { createMarkerHtml } from './IconLibrary';
-import { SETTLEMENTS, Settlement } from '../data/settlements';
+import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -97,6 +97,7 @@ interface MapContainerProps {
   blurMapOnExport?: boolean;
   showSettlementLabels?: boolean;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
+  disabledSettlementCategories?: SettlementCategory[];
   onToggleSettlementLabels?: (show: boolean) => void;
   onSetSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
   customSettlements?: Settlement[];
@@ -127,6 +128,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   blurMapOnExport = false,
   showSettlementLabels = true,
   settlementLabelMode = 'all',
+  disabledSettlementCategories = [],
   onToggleSettlementLabels,
   onSetSettlementLabelMode,
   customSettlements = [],
@@ -636,21 +638,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     const currentZoom = map.getZoom();
 
-    const customSettlementMap = new Map(customSettlements.map(s => [s.id, s]));
-    const allSettlements = SETTLEMENTS
-      .map(s => customSettlementMap.get(s.id) || s)
-      .filter(s => !(s as any).isDeleted);
-
-    customSettlements.forEach(s => {
-      if (!SETTLEMENTS.some(orig => orig.id === s.id) && !(s as any).isDeleted) {
-        allSettlements.push(s);
-      }
-    });
+    const allSettlements = customSettlements.filter(s => !(s as any).isDeleted);
 
     allSettlements.forEach((item) => {
-      const isCustom = item.id.startsWith('custom_') || customSettlementMap.has(item.id);
+      const category = getSettlementCategory(item);
+      if (disabledSettlementCategories.includes(category)) {
+        return;
+      }
 
-      if (!isCustom) {
+      const isUserCustomPoint = item.id.startsWith('custom_');
+
+      if (!isUserCustomPoint) {
         if (settlementLabelMode === 'districts_only' && item.type !== 'district') {
           return;
         }
@@ -659,21 +657,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       }
 
-      let minZoom = 12;
-      if (isCustom) {
-        minZoom = 1; // Always visible if custom
+      let minZoom = 11;
+      if (isUserCustomPoint) {
+        minZoom = 1; // Always visible if custom point created by user
       } else if (item.type === 'district') {
-        minZoom = 6;
+        minZoom = 2.5; // Visible at full country scale
       } else if (item.priority === 1) {
-        minZoom = 6.5;
+        minZoom = 3.0; // Major regional capitals visible at low zoom
       } else if (item.priority === 2) {
-        minZoom = 8;
+        minZoom = 5.0;
       } else if (item.priority === 3) {
-        minZoom = 9.5;
+        minZoom = 7.0;
       } else if (item.priority === 4) {
-        minZoom = 11;
+        minZoom = 9.0;
       } else {
-        minZoom = 12;
+        minZoom = 10.5;
       }
 
       if (currentZoom < minZoom) return;
@@ -684,35 +682,35 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (item.type === 'district') {
         dotHtml = `<span class="w-3.5 h-3.5 rounded-full bg-amber-400 ring-2 ring-amber-500/80 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse shrink-0"></span>`;
         labelHtml = `
-          <div class="px-2 py-0.5 rounded-md bg-slate-950/90 text-amber-300 border border-amber-500/50 shadow-lg text-[11px] font-black tracking-widest uppercase whitespace-nowrap transition-transform group-hover:scale-105">
+          <div class="text-amber-300 text-[12px] font-black tracking-widest uppercase whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 1) {
         dotHtml = `<span class="w-3 h-3 rounded-full bg-cyan-400 ring-2 ring-blue-500/80 shadow-[0_0_10px_rgba(34,211,238,0.9)] shrink-0"></span>`;
         labelHtml = `
-          <div class="px-1.5 py-0.5 rounded-md bg-slate-950/90 text-white border border-blue-400/40 shadow-md text-[11px] font-extrabold tracking-wide whitespace-nowrap transition-transform group-hover:scale-105">
+          <div class="text-white text-[12px] font-extrabold tracking-wide whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 2) {
         dotHtml = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1.5 ring-emerald-500/70 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0"></span>`;
         labelHtml = `
-          <div class="px-1.5 py-0.2 rounded bg-slate-950/90 text-slate-100 border border-white/15 shadow-sm text-[10px] font-bold whitespace-nowrap transition-transform group-hover:scale-105">
+          <div class="text-slate-100 text-[11px] font-bold whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 3) {
         dotHtml = `<span class="w-2 h-2 rounded-full bg-sky-300 ring-1 ring-sky-400/60 shadow-[0_0_5px_rgba(186,230,253,0.7)] shrink-0"></span>`;
         labelHtml = `
-          <div class="px-1 py-0.2 rounded bg-slate-950/90 text-slate-200 border border-white/10 shadow-xs text-[9px] font-medium whitespace-nowrap transition-transform group-hover:scale-105">
+          <div class="text-slate-200 text-[10px] font-semibold whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
             ${item.name}
           </div>
         `;
       } else {
         dotHtml = `<span class="w-1.5 h-1.5 rounded-full bg-slate-200 ring-1 ring-slate-400/50 shadow-[0_0_4px_rgba(255,255,255,0.5)] shrink-0"></span>`;
         labelHtml = `
-          <div class="px-1 py-0.2 rounded bg-slate-950/85 text-slate-300 border border-white/10 shadow-xs text-[8.5px] font-normal whitespace-nowrap transition-transform group-hover:scale-105">
+          <div class="text-slate-200 text-[9.5px] font-medium whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
             ${item.name}
           </div>
         `;
@@ -755,7 +753,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         marker.addTo(settlementLayerRef.current);
       }
     });
-  }, [showSettlementLabels, settlementLabelMode, customSettlements]);
+  }, [showSettlementLabels, settlementLabelMode, disabledSettlementCategories, customSettlements]);
 
   useEffect(() => {
     renderSettlementLabels();
