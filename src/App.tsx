@@ -343,6 +343,71 @@ export default function App() {
     });
   };
 
+  const handleExportCustomSettlements = () => {
+    const userCustomSettlements = customSettlements.filter(
+      (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
+    );
+    if (userCustomSettlements.length === 0) {
+      alert(language === 'uk' ? 'Немає власних точок для експорту!' : 'No custom settlement points to export!');
+      return;
+    }
+    const exportData = {
+      version: 1,
+      type: 'custom_settlements',
+      exportedAt: new Date().toISOString(),
+      settlements: userCustomSettlements,
+    };
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.download = `custom_settlements_${dateStr}.json`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCustomSettlements = (importedSettlements: Settlement[]) => {
+    if (!Array.isArray(importedSettlements) || importedSettlements.length === 0) {
+      alert(language === 'uk' ? 'Недійсний файл або порожній список точок!' : 'Invalid file or empty list of points!');
+      return;
+    }
+
+    setCustomSettlements((prev) => {
+      const updatedMap = new Map(prev.map((s) => [s.id, s]));
+      let addedCount = 0;
+
+      importedSettlements.forEach((s) => {
+        if (!s || typeof s.lat !== 'number' || typeof s.lng !== 'number') return;
+        const validId = s.id ? (s.id.startsWith('custom_') ? s.id : `custom_${s.id}`) : `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const itemToSave: Settlement = {
+          ...s,
+          id: validId,
+          type: s.type || 'village',
+          name: s.name || 'Населений пункт',
+        };
+        if (!updatedMap.has(validId)) {
+          addedCount++;
+        }
+        updatedMap.set(validId, itemToSave);
+      });
+
+      const updated = Array.from(updatedMap.values());
+      localStorage.setItem('visicom_custom_settlements', JSON.stringify(updated));
+
+      const countMsg = language === 'uk'
+        ? `Успішно імпортовано/оновлено ${importedSettlements.length} точок НП!`
+        : `Successfully imported/updated ${importedSettlements.length} settlement points!`;
+      alert(countMsg);
+
+      return updated;
+    });
+
+    setShowSettlementLabels(true);
+    localStorage.setItem('visicom_show_settlement_labels', 'true');
+  };
+
   const [visicomKey, setVisicomKey] = useState<string>(() => {
     return localStorage.getItem('visicom_api_key') || '';
   });
@@ -949,6 +1014,8 @@ export default function App() {
               onEditSettlement={handleEditSettlement}
               onDeleteCustomSettlement={handleDeleteCustomSettlement}
               onClearAllCustomSettlements={handleClearAllCustomSettlements}
+              onExportCustomSettlements={handleExportCustomSettlements}
+              onImportCustomSettlements={handleImportCustomSettlements}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
             />

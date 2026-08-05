@@ -77,6 +77,8 @@ interface SidebarProps {
   onEditSettlement?: (settlement: Settlement) => void;
   onDeleteCustomSettlement?: (id: string) => void;
   onClearAllCustomSettlements?: () => void;
+  onExportCustomSettlements?: () => void;
+  onImportCustomSettlements?: (settlements: Settlement[]) => void;
   autoHighlightZone?: boolean;
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
@@ -130,6 +132,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onEditSettlement = (_s) => {},
   onDeleteCustomSettlement = (_id) => {},
   onClearAllCustomSettlements = () => {},
+  onExportCustomSettlements = () => {},
+  onImportCustomSettlements = (_settlements) => {},
   autoHighlightZone = false,
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
@@ -192,6 +196,36 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const handleFileImportSettlements = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+
+        let settlementsToImport: Settlement[] = [];
+        if (Array.isArray(parsed)) {
+          settlementsToImport = parsed;
+        } else if (parsed && Array.isArray(parsed.settlements)) {
+          settlementsToImport = parsed.settlements;
+        } else {
+          alert(isUa ? 'Невідомий формат файлу експорту.' : 'Unknown export file format.');
+          return;
+        }
+
+        onImportCustomSettlements(settlementsToImport);
+      } catch (err) {
+        console.error('Failed to parse settlements JSON:', err);
+        alert(isUa ? 'Помилка при зчитуванні JSON-файлу.' : 'Error reading JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
@@ -1338,6 +1372,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <MapPin className="w-4 h-4" />
                   <span>{isUa ? '＋ Встановити точку на карті' : '＋ Place Dot on Map'}</span>
                 </button>
+
+                {/* Export / Import Custom Settlement Points */}
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={onExportCustomSettlements}
+                    disabled={userCustomSettlements.length === 0}
+                    className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Експортувати власні точки у файл JSON' : 'Export custom points to JSON file'}
+                  >
+                    <Download className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{isUa ? 'Експорт' : 'Export'}</span>
+                  </button>
+
+                  <label
+                    className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 font-bold text-[11px] text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Імпортувати власні точки з файлу JSON' : 'Import custom points from JSON file'}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isUa ? 'Імпорт' : 'Import'}</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleFileImportSettlements}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
 
                 {userCustomSettlements.length > 0 && (
                   <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
