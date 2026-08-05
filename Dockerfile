@@ -9,7 +9,8 @@ RUN npm ci --legacy-peer-deps || npm install
 
 # Copy source and build
 COPY . .
-RUN npm run build
+# Build and fail if dist is missing; prevents creating an image with no built assets
+RUN npm run build && test -d dist
 
 # Production stage: serve built files with nginx
 FROM nginx:stable-alpine AS production
