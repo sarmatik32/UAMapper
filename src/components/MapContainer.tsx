@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2 } from 'lucide-react';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
@@ -23,23 +23,41 @@ interface SearchedArea {
   markerId?: string;
 }
 
-const QUICK_DISTRICTS = [
-  { id: 'kryvorizkyi_raion', label: 'Криворізький район', query: 'Криворізький район, Дніпропетровська область' },
-  { id: 'kryvyi_rih_city', label: 'м. Кривий Ріг', query: 'Кривий Ріг, Дніпропетровська область' },
-  { id: 'saksahanskyi', label: 'Саксаганський р-н', query: 'Саксаганський район, Кривий Ріг' },
-  { id: 'ternivskyi', label: 'Тернівський р-н', query: 'Тернівський район, Кривий Ріг' },
-  { id: 'metalurhiinyi', label: 'Металургійний р-н', query: 'Металургійний район, Кривий Ріг' },
-  { id: 'inhuletskyi', label: 'Інгулецький р-н', query: 'Інгулецький район, Кривий Ріг' },
-  { id: 'pokrovskyi', label: 'Покровський р-н', query: 'Покровський район, Кривий Ріг' },
-  { id: 'dolhintsevskyi', label: 'Довгинцівський р-н', query: 'Довгинцівський район, Кривий Ріг' },
-  { id: 'tsentralno_miskyi', label: 'Центрально-Міський р-н', query: 'Центрально-Міський район, Кривий Ріг' },
-  { id: 'radushne', label: 'смт Радушне', query: 'Радушне, Дніпропетровська область' },
-  { id: 'apostolove', label: 'м. Апостолове', query: 'Апостолове, Дніпропетровська область' },
-  { id: 'shyroke', label: 'смт Широке', query: 'Широке, Дніпропетровська область' },
-  { id: 'sofiivka', label: 'смт Софіївка', query: 'Софіївка, Криворізький район' },
-  { id: 'zelenodolsk', label: 'м. Зеленодольськ', query: 'Зеленодольськ, Дніпропетровська область' },
-  { id: 'lozuravatka', label: 'с. Лозуватка', query: 'Лозуватка, Криворізький район' },
-  { id: 'heikivka', label: 'смт Гейківка', query: 'Гейківка, Криворізький район' },
+interface QuickDistrict {
+  id: string;
+  label: string;
+  fullName: string;
+  query: string;
+  shortLabel?: string;
+  osmId?: string;
+  category?: 'urban_district' | 'city' | 'raion' | 'settlement' | 'custom';
+  geojson?: any;
+  lat?: string;
+  lon?: string;
+}
+
+const QUICK_DISTRICTS: QuickDistrict[] = [
+  // 7 urban districts of Kryvyi Rih (Circular buttons with initial letters)
+  { id: 'saksahanskyi', shortLabel: 'С', label: 'Саксаганський р-н', fullName: 'Саксаганський район', query: 'Саксаганський район', osmId: '1827711', category: 'urban_district' },
+  { id: 'metalurhiinyi', shortLabel: 'М', label: 'Металургійний р-н', fullName: 'Металургійний район', query: 'Металургійний район', osmId: '1827708', category: 'urban_district' },
+  { id: 'dolhintsevskyi', shortLabel: 'Д', label: 'Довгинцівський р-н', fullName: 'Довгинцівський район', query: 'Довгинцівський район', osmId: '1827709', category: 'urban_district' },
+  { id: 'pokrovskyi', shortLabel: 'П', label: 'Покровський р-н', fullName: 'Покровський район', query: 'Покровський район', osmId: '1827710', category: 'urban_district' },
+  { id: 'inhuletskyi', shortLabel: 'І', label: 'Інгулецький р-н', fullName: 'Інгулецький район', query: 'Інгулецький район', osmId: '1827568', category: 'urban_district' },
+  { id: 'ternivskyi', shortLabel: 'Т', label: 'Тернівський р-н', fullName: 'Тернівський район', query: 'Тернівський район', osmId: '1827712', category: 'urban_district' },
+  { id: 'tsentralno_miskyi', shortLabel: 'Ц', label: 'Центрально-Міський р-н', fullName: 'Центрально-Міський район', query: 'Центрально-Міський район', osmId: '1827713', category: 'urban_district' },
+  
+  // Entire City & District Boundaries
+  { id: 'kryvyi_rih_city', label: 'м. Кривий Ріг', fullName: 'місто Кривий Ріг', query: 'місто Кривий Ріг', osmId: '1821193', category: 'city' },
+  { id: 'kryvorizkyi_raion', label: 'Криворізький район', fullName: 'Криворізький район', query: 'Криворізький район', osmId: '1738028', category: 'raion' },
+
+  // Surrounding Settlements
+  { id: 'radushne', label: 'смт Радушне', fullName: 'смт Радушне', query: 'Радушне', osmId: '3200923', category: 'settlement' },
+  { id: 'apostolove', label: 'м. Апостолове', fullName: 'м. Апостолове', query: 'Апостолове', osmId: '3193498', category: 'settlement' },
+  { id: 'shyroke', label: 'смт Широке', fullName: 'смт Широке', query: 'Широке', osmId: '3200924', category: 'settlement' },
+  { id: 'sofiivka', label: 'смт Софіївка', fullName: 'смт Софіївка', query: 'Софіївка', osmId: '3193502', category: 'settlement' },
+  { id: 'zelenodolsk', label: 'м. Зеленодольськ', fullName: 'м. Зеленодольськ', query: 'Зеленодольськ', osmId: '3193501', category: 'settlement' },
+  { id: 'lozuravatka', label: 'с. Лозуватка', fullName: 'с. Лозуватка', query: 'Лозуватка, Криворізький район', category: 'settlement' },
+  { id: 'heikivka', label: 'смт Гейківка', fullName: 'смт Гейківка', query: 'Гейківка', category: 'settlement' },
 ];
 
 function calculateDistanceMeters(p1: { lat: number; lng: number }, p2: { lat: number; lng: number }) {
@@ -150,6 +168,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const measureMarkersRef = useRef<L.Marker[]>([]);
   const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
 
+  // Map Readiness State
+  const [isMapReady, setIsMapReady] = useState(false);
+
   // Red Zone Loading state
   const [isAddingRedZone, setIsAddingRedZone] = useState<boolean>(false);
 
@@ -179,7 +200,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Clean up auto-generated zones when feature is disabled
       setSearchedAreas((prev) => prev.filter((a) => !a.id.startsWith('autozone_') && !a.markerId));
     }
-  }, [autoHighlightZone]);
+  }, [autoHighlightZone, isMapReady]);
 
   // Format city/municipality name cleanly for display
   const formatCityName = (address: any) => {
@@ -315,42 +336,252 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return total;
   }, [measurePoints]);
 
-  // Handle Red Zone creation by clicking on map coordinates
+  // Custom quick zones saved by user
+  const [customQuickZones, setCustomQuickZones] = useState<QuickDistrict[]>(() => {
+    try {
+      const saved = localStorage.getItem('uamapper_custom_quick_zones');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(customQuickZones));
+    } catch (e) {
+      console.warn('Failed to save custom quick zones:', e);
+    }
+  }, [customQuickZones]);
+
+  const addZoneToQuickButtons = useCallback((name: string, geojson?: any, lat?: string, lon?: string, osmId?: string) => {
+    if (!name || !name.trim()) return;
+    const cleanName = name.trim();
+
+    setCustomQuickZones((prev) => {
+      const existsInDefault = QUICK_DISTRICTS.some(
+        (d) => d.label.toLowerCase() === cleanName.toLowerCase() || d.fullName.toLowerCase() === cleanName.toLowerCase()
+      );
+      const existsInCustom = prev.some(
+        (q) => q.label.toLowerCase() === cleanName.toLowerCase() || q.fullName.toLowerCase() === cleanName.toLowerCase()
+      );
+      if (existsInDefault || existsInCustom) return prev;
+
+      const newZone: QuickDistrict = {
+        id: osmId ? `custom_osm_${osmId}` : `custom_zone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        label: cleanName,
+        fullName: cleanName,
+        query: cleanName,
+        category: 'settlement',
+        geojson,
+        lat,
+        lon,
+        osmId
+      };
+      return [...prev, newZone];
+    });
+  }, []);
+
+  const handleRemoveCustomQuickZone = (id: string) => {
+    setCustomQuickZones((prev) => prev.filter((q) => q.id !== id));
+  };
+
+  // Combine default preset non-urban boundaries with saved custom quick zones
+  const allQuickZones = React.useMemo(() => {
+    return [
+      ...QUICK_DISTRICTS.filter((d) => d.category !== 'urban_district'),
+      ...customQuickZones
+    ];
+  }, [customQuickZones]);
+
+  // Highlight settlement by name (for settlement label marker click)
+  const handleHighlightSettlementByName = async (name: string, lat: number, lng: number) => {
+    try {
+      const existing = searchedAreas.find((a) => a.name.toLowerCase() === name.toLowerCase());
+      if (existing) {
+        setSearchedAreas((prev) => prev.filter((a) => a.id !== existing.id));
+        return;
+      }
+
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          name
+        )}&format=json&polygon_geojson=1&accept-language=uk&limit=5`
+      );
+      let itemGeojson = null;
+      let title = name;
+      let osmId = undefined;
+
+      if (response.ok) {
+        const data = await response.json();
+        const found = data.find(
+          (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+        );
+        if (found) {
+          itemGeojson = found.geojson;
+          title = found.display_name.split(',')[0] || name;
+          osmId = found.osm_id?.toString();
+        }
+      }
+
+      if (!itemGeojson) {
+        itemGeojson = createCircleGeoJson(lat, lng, 2000);
+      }
+
+      const newArea: SearchedArea = {
+        id: `settlement_zone_${Date.now()}`,
+        name: title,
+        lat: lat.toString(),
+        lon: lng.toString(),
+        geojson: itemGeojson
+      };
+
+      setSearchedAreas((prev) => [...prev, newArea]);
+      addZoneToQuickButtons(title, itemGeojson, lat.toString(), lng.toString(), osmId);
+
+      if (mapInstanceRef.current && itemGeojson) {
+        try {
+          const tempLayer = L.geoJSON(itemGeojson);
+          const bounds = tempLayer.getBounds();
+          if (bounds.isValid()) {
+            mapInstanceRef.current.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+          }
+        } catch (e) {}
+      }
+    } catch (e) {
+      console.error('Error highlighting settlement by name:', e);
+    }
+  };
+
+  // Handle Red Zone creation by clicking on map coordinates:
+  // - Clicking on a city/village -> highlights boundary of city/village
+  // - Clicking NOT on a settlement name (fields/countryside) -> highlights boundary of HROMADA ( громада )
   const handleCreateRedZoneAt = async (lat: number, lng: number) => {
     setIsAddingRedZone(true);
     try {
       const response = await fetch(
         `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`
       );
-      if (response.ok) {
-        const data = await response.json();
-        const placeName = data.address?.village || data.address?.town || data.address?.city || data.address?.suburb || data.display_name?.split(',')[0] || 'Червона зона';
-        const geojson = data.geojson;
+      if (!response.ok) return;
+      const data = await response.json();
+      const address = data.address || {};
 
-        if (geojson && (geojson.type === 'Polygon' || geojson.type === 'MultiPolygon')) {
-          const newArea: SearchedArea = {
-            id: `redzone_${Date.now()}`,
-            name: `${placeName} (Червона зона)`,
-            lat: lat.toString(),
-            lon: lng.toString(),
-            geojson: geojson
-          };
-          setSearchedAreas((prev) => [...prev, newArea]);
-        } else {
-          // Fallback to circular 2.5km danger zone polygon
-          const circleGeojson = createCircleGeoJson(lat, lng, 2500);
-          const newArea: SearchedArea = {
-            id: `redzone_circle_${Date.now()}`,
-            name: `${placeName} (Зона 2.5 км)`,
-            lat: lat.toString(),
-            lon: lng.toString(),
-            geojson: circleGeojson
-          };
-          setSearchedAreas((prev) => [...prev, newArea]);
+      // Check if click is directly on/inside a settlement
+      const settlementName = address.village || address.town || address.city || address.suburb || address.hamlet;
+
+      if (settlementName) {
+        // 1. CLICKED ON A SETTLEMENT (місто/село)! Highlight boundary of city/village
+        const searchRes = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(settlementName)}&format=json&polygon_geojson=1&accept-language=uk&limit=5`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        let settlementGeojson = null;
+        let placeTitle = settlementName;
+        let osmId = undefined;
+
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const found = searchData.find(
+            (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+          );
+          if (found) {
+            settlementGeojson = found.geojson;
+            placeTitle = found.display_name.split(',')[0] || settlementName;
+            osmId = found.osm_id?.toString();
+          }
+        }
+
+        if (!settlementGeojson && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+          settlementGeojson = data.geojson;
+        }
+        if (!settlementGeojson) {
+          settlementGeojson = createCircleGeoJson(lat, lng, 2000);
+        }
+
+        const newArea: SearchedArea = {
+          id: `redzone_settlement_${Date.now()}`,
+          name: placeTitle,
+          lat: lat.toString(),
+          lon: lng.toString(),
+          geojson: settlementGeojson
+        };
+
+        setSearchedAreas((prev) => [...prev, newArea]);
+        addZoneToQuickButtons(placeTitle, settlementGeojson, lat.toString(), lng.toString(), osmId);
+
+        if (mapInstanceRef.current && settlementGeojson) {
+          try {
+            const tempLayer = L.geoJSON(settlementGeojson);
+            const bounds = tempLayer.getBounds();
+            if (bounds.isValid()) {
+              mapInstanceRef.current.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+            }
+          } catch (e) {}
+        }
+      } else {
+        // 2. CLICKED NOT ON A SETTLEMENT (fields / countryside) -> Highlight HROMADA (громада)!
+        const hromadaRes = await fetch(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=10&accept-language=uk`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        let hromadaGeojson = null;
+        let hromadaName = address.municipality || address.district || 'Громада';
+        let osmId = undefined;
+
+        if (hromadaRes.ok) {
+          const hromadaData = await hromadaRes.json();
+          if (hromadaData.name || hromadaData.address?.municipality) {
+            hromadaName = hromadaData.name || hromadaData.address?.municipality || hromadaName;
+          }
+          if (hromadaData.geojson && (hromadaData.geojson.type === 'Polygon' || hromadaData.geojson.type === 'MultiPolygon')) {
+            hromadaGeojson = hromadaData.geojson;
+            osmId = hromadaData.osm_id?.toString();
+          }
+        }
+
+        if (!hromadaGeojson && address.municipality) {
+          const searchHromada = await fetch(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address.municipality)}&format=json&polygon_geojson=1&accept-language=uk&limit=3`
+          );
+          if (searchHromada.ok) {
+            const searchData = await searchHromada.json();
+            const found = searchData.find(
+              (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+            );
+            if (found) {
+              hromadaGeojson = found.geojson;
+              osmId = found.osm_id?.toString();
+            }
+          }
+        }
+
+        if (!hromadaGeojson) {
+          hromadaGeojson = createCircleGeoJson(lat, lng, 3000);
+        }
+
+        const newArea: SearchedArea = {
+          id: `redzone_hromada_${Date.now()}`,
+          name: hromadaName,
+          lat: lat.toString(),
+          lon: lng.toString(),
+          geojson: hromadaGeojson
+        };
+
+        setSearchedAreas((prev) => [...prev, newArea]);
+        addZoneToQuickButtons(hromadaName, hromadaGeojson, lat.toString(), lng.toString(), osmId);
+
+        if (mapInstanceRef.current && hromadaGeojson) {
+          try {
+            const tempLayer = L.geoJSON(hromadaGeojson);
+            const bounds = tempLayer.getBounds();
+            if (bounds.isValid()) {
+              mapInstanceRef.current.fitBounds(bounds, { maxZoom: 13, animate: true, padding: [20, 20] });
+            }
+          } catch (e) {}
         }
       }
     } catch (e) {
-      console.error('Error reverse geocoding red zone:', e);
+      console.error('Error in handleCreateRedZoneAt:', e);
     } finally {
       setIsAddingRedZone(false);
     }
@@ -421,9 +652,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const [loadingDistrict, setLoadingDistrict] = useState<string | null>(null);
 
-  const handleToggleDistrict = async (district: typeof QUICK_DISTRICTS[0]) => {
+  const handleToggleDistrict = async (district: QuickDistrict) => {
     // Check if it's already highlighted
-    const existing = searchedAreas.find((area) => area.districtId === district.id);
+    const existing = searchedAreas.find(
+      (area) => area.districtId === district.id || area.name === district.label || area.name === district.fullName
+    );
     if (existing) {
       handleRemoveArea(existing.id);
       return;
@@ -431,53 +664,89 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     setLoadingDistrict(district.id);
     try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          district.query
-        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data && data.length > 0) {
-          // Find the first result with a polygon geometry that is in Dnipropetrovsk oblast or Kryvyi Rih
-          const item = data.find(
-            (it: any) =>
-              it.geojson &&
-              (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon') &&
-              (it.display_name.includes('Крив') || it.display_name.includes('Дніпро'))
-          ) || data.find(
-            (it: any) =>
-              it.geojson &&
-              (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
-          ) || data[0];
+      let item: any = null;
 
-          const map = mapInstanceRef.current;
-          if (map) {
-            const newArea: SearchedArea = {
-              id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
-              name: district.label,
-              lat: item.lat,
-              lon: item.lon,
-              geojson: item.geojson,
-              districtId: district.id
-            };
+      // Strategy 0: Direct cached GeoJSON if saved with quick district
+      if (district.geojson) {
+        item = {
+          lat: district.lat || '0',
+          lon: district.lon || '0',
+          geojson: district.geojson,
+          osm_id: district.osmId,
+          osm_type: 'custom'
+        };
+      }
 
-            setSearchedAreas((prev) => {
-              if (prev.some((a) => a.id === newArea.id)) return prev;
-              return [...prev, newArea];
-            });
+      // Strategy 1: Fast direct lookup by OSM Relation ID if provided
+      if (!item && district.osmId) {
+        try {
+          const lookupRes = await fetch(
+            `https://nominatim.openstreetmap.org/lookup?osm_ids=R${district.osmId}&format=json&polygon_geojson=1&accept-language=uk`,
+            { headers: { 'Accept': 'application/json' } }
+          );
+          if (lookupRes.ok) {
+            const lookupData = await lookupRes.json();
+            if (lookupData && lookupData.length > 0 && lookupData[0].geojson) {
+              item = lookupData[0];
+            }
+          }
+        } catch (e) {
+          console.warn('OSM ID lookup failed, trying search fallback:', e);
+        }
+      }
 
-            try {
-              const tempLayer = L.geoJSON(item.geojson);
-              const bounds = tempLayer.getBounds();
-              if (bounds.isValid()) {
-                map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-              } else {
-                map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
-              }
-            } catch (e) {
+      // Strategy 2: Fallback search query if lookup didn't return polygon
+      if (!item) {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+            district.query
+          )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.length > 0) {
+            item = data.find(
+              (it: any) =>
+                it.geojson &&
+                (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon') &&
+                (it.display_name.includes('Крив') || it.display_name.includes('Дніпро'))
+            ) || data.find(
+              (it: any) =>
+                it.geojson &&
+                (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+            ) || data[0];
+          }
+        }
+      }
+
+      if (item && item.geojson) {
+        const map = mapInstanceRef.current;
+        if (map) {
+          const newArea: SearchedArea = {
+            id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `district_${district.id}`,
+            name: district.fullName || district.label,
+            lat: item.lat,
+            lon: item.lon,
+            geojson: item.geojson,
+            districtId: district.id
+          };
+
+          setSearchedAreas((prev) => {
+            if (prev.some((a) => a.id === newArea.id || a.districtId === district.id)) return prev;
+            return [...prev, newArea];
+          });
+
+          try {
+            const tempLayer = L.geoJSON(item.geojson);
+            const bounds = tempLayer.getBounds();
+            if (bounds.isValid()) {
+              map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
+            } else {
               map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
             }
+          } catch (e) {
+            map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
           }
         }
       }
@@ -493,9 +762,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     if (!map) return;
 
     if (item.geojson && (item.geojson.type === 'Polygon' || item.geojson.type === 'MultiPolygon')) {
+      const name = item.display_name.split(',')[0] || item.display_name;
       const newArea: SearchedArea = {
         id: item.osm_id ? `${item.osm_type}_${item.osm_id}` : `search_${Date.now()}`,
-        name: item.display_name.split(',')[0] || item.display_name,
+        name: name,
         lat: item.lat,
         lon: item.lon,
         geojson: item.geojson
@@ -505,6 +775,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (prev.some((a) => a.id === newArea.id)) return prev;
         return [...prev, newArea];
       });
+
+      addZoneToQuickButtons(name, item.geojson, item.lat, item.lon, item.osm_id?.toString());
 
       try {
         const tempLayer = L.geoJSON(item.geojson);
@@ -525,6 +797,47 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setSearchQuery('');
     setSearchResults([]);
     setShowDropdown(false);
+  };
+
+  const handleDirectAddZoneByQuery = async (queryText: string) => {
+    if (!queryText.trim()) return;
+    setIsSearching(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+          queryText
+        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=5`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.length > 0) {
+          const item = data.find(
+            (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+          ) || data[0];
+          await handleSelectArea(item);
+          return;
+        }
+      }
+      alert(
+        language === 'uk'
+          ? `Не вдалося знайти межі зони для "${queryText}".`
+          : `Could not find zone boundary for "${queryText}".`
+      );
+    } catch (e) {
+      console.error('Error adding zone by query:', e);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleFormSubmitSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    if (searchResults.length > 0) {
+      handleSelectArea(searchResults[0]);
+    } else {
+      handleDirectAddZoneByQuery(searchQuery);
+    }
   };
 
   const handleRemoveArea = (id: string) => {
@@ -609,7 +922,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     } catch (e) {
       console.error(e);
     }
-  }, [searchedAreas, language]);
+  }, [searchedAreas, language, isMapReady]);
 
   // Clean up geojson layers on unmount
   useEffect(() => {
@@ -745,7 +1058,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (interactionModeRef.current === 'settlement' && onEditSettlementRef.current) {
           onEditSettlementRef.current(item);
         } else {
-          handleAutoHighlightZoneAt(item.lat, item.lng, `settlement_${item.id}`);
+          handleHighlightSettlementByName(item.name, item.lat, item.lng);
         }
       });
 
@@ -753,7 +1066,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         marker.addTo(settlementLayerRef.current);
       }
     });
-  }, [showSettlementLabels, settlementLabelMode, disabledSettlementCategories, customSettlements]);
+  }, [showSettlementLabels, settlementLabelMode, disabledSettlementCategories, customSettlements, isMapReady]);
 
   useEffect(() => {
     renderSettlementLabels();
@@ -772,7 +1085,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       map.off('zoomend', handleMapMove);
       map.off('moveend', handleMapMove);
     };
-  }, [renderSettlementLabels]);
+  }, [renderSettlementLabels, isMapReady]);
   
   const interactionModeRef = useRef(interactionMode);
   useEffect(() => {
@@ -862,10 +1175,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       });
 
       mapInstanceRef.current = map;
+      setIsMapReady(true);
     }
 
     return () => {
-      // Component unmount clean-up
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        setIsMapReady(false);
+      }
     };
   }, []);
 
@@ -950,7 +1268,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       measureMarkersRef.current.push(marker);
     });
-  }, [measurePoints]);
+  }, [measurePoints, isMapReady]);
 
 
   // Handle Tile Layer changes
@@ -986,7 +1304,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     tileLayer.addTo(map);
     tileLayerInstanceRef.current = tileLayer;
-  }, [activeTileLayer, visicomKey]);
+  }, [activeTileLayer, visicomKey, isMapReady]);
 
   // Synchronize Markers (Add, Update, Remove)
   useEffect(() => {
@@ -1447,7 +1765,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       }
     });
-  }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker]);
+  }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady]);
 
   // Center map on selected marker when it changes (or coordinates manual edits)
   const lastSelectedIdRef = useRef<string | null>(null);
@@ -1466,7 +1784,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
       lastSelectedIdRef.current = selectedMarkerId;
     }
-  }, [selectedMarkerId, markers]);
+  }, [selectedMarkerId, markers, isMapReady]);
 
   // Clean-up on unmount
   useEffect(() => {
@@ -1744,7 +2062,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-72 sm:w-88 flex flex-col gap-2">
             
             {/* Search Input Bar */}
-            <div className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
+            <form onSubmit={handleFormSubmitSearch} className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
               theme === 'light' 
                 ? 'bg-white/95 border-slate-200 text-slate-800' 
                 : 'bg-slate-950/90 border-white/10 text-slate-200'
@@ -1758,11 +2076,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                   setShowDropdown(true);
                 }}
                 onFocus={() => setShowDropdown(true)}
-                placeholder={language === 'uk' ? 'Пошук населених пунктів...' : 'Search populated areas...'}
+                placeholder={language === 'uk' ? 'Пошук та виділення зон (н/п, район, місто)...' : 'Search & highlight zone (city, district)...'}
                 className="w-full pl-10 pr-10 py-2.5 text-xs bg-transparent focus:outline-none placeholder-slate-400 font-medium"
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => {
                     setSearchQuery('');
                     setSearchResults([]);
@@ -1772,50 +2091,128 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                   <X className="w-3 h-3" />
                 </button>
               )}
-            </div>
+            </form>
 
             {/* Quick District & Settlement Buttons */}
-            <div className="flex flex-wrap gap-1.5 py-0.5 max-h-24 overflow-y-auto pr-1">
-              {QUICK_DISTRICTS.map((dist) => {
-                const isHighlighted = searchedAreas.some(
-                  (area) => area.districtId === dist.id || area.name === dist.label
-                );
-                const isLoading = loadingDistrict === dist.id;
-                
-                return (
-                  <button
-                    key={dist.id}
-                    onClick={() => !isLoading && handleToggleDistrict(dist)}
-                    disabled={isLoading}
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
-                      isHighlighted
-                        ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm ring-1 ring-red-400/50'
-                        : dist.id === 'kryvorizkyi_raion'
-                          ? 'bg-red-500/20 hover:bg-red-500/30 border-red-500/40 text-red-400 dark:text-red-300 font-extrabold'
-                          : theme === 'light'
-                            ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-                            : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
-                    }`}
-                  >
-                    {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
-                    <span>{dist.label}</span>
-                  </button>
-                );
-              })}
+            <div className="space-y-2 py-1 max-h-36 overflow-y-auto pr-1">
+              {/* Urban Districts of Kryvyi Rih (Circular Buttons with Initial Letter) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-0.5">
+                  <span>{language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}</span>
+                  <span className="text-[9px] font-normal text-slate-400 dark:text-slate-500">
+                    {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {QUICK_DISTRICTS.filter((d) => d.category === 'urban_district').map((dist) => {
+                    const isHighlighted = searchedAreas.some(
+                      (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
+                    );
+                    const isLoading = loadingDistrict === dist.id;
+
+                    return (
+                      <button
+                        key={dist.id}
+                        type="button"
+                        onClick={() => !isLoading && handleToggleDistrict(dist)}
+                        disabled={isLoading}
+                        title={dist.fullName || dist.label}
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer flex items-center justify-center relative shadow-sm ${
+                          isHighlighted
+                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-md ring-2 ring-red-400/80 scale-105'
+                            : theme === 'light'
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80 hover:border-slate-400'
+                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-white/10 hover:border-white/20'
+                        }`}
+                      >
+                        {isLoading ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-current" />
+                        ) : (
+                          <span>{dist.shortLabel}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Other Boundaries, Settlements & Custom Saved Quick Zones */}
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {allQuickZones.map((dist) => {
+                  const isHighlighted = searchedAreas.some(
+                    (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
+                  );
+                  const isLoading = loadingDistrict === dist.id;
+                  const isCustom = dist.id.startsWith('custom_') || dist.category === 'custom';
+
+                  return (
+                    <div key={dist.id} className="relative group inline-flex items-center">
+                      <button
+                        type="button"
+                        onClick={() => !isLoading && handleToggleDistrict(dist)}
+                        disabled={isLoading}
+                        title={dist.fullName || dist.label}
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
+                          isHighlighted
+                            ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm ring-1 ring-red-400/50'
+                            : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
+                              ? 'bg-blue-500/15 hover:bg-blue-500/25 border-blue-500/30 text-blue-600 dark:text-blue-300 font-extrabold'
+                              : theme === 'light'
+                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
+                        }`}
+                      >
+                        {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
+                        <span>{dist.label}</span>
+                      </button>
+                      {isCustom && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemoveCustomQuickZone(dist.id);
+                          }}
+                          title={language === 'uk' ? 'Видалити зі швидких зон' : 'Remove from quick zones'}
+                          className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+                        >
+                          <X className="w-2.5 h-2.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
 
             {/* Suggestions Dropdown */}
-            {showDropdown && (searchQuery || isSearching || searchResults.length > 0) && (
-              <div className={`border rounded-2xl shadow-2xl max-h-60 overflow-y-auto z-30 transition-all ${
+            {showDropdown && (searchQuery.trim().length >= 2 || isSearching || searchResults.length > 0) && (
+              <div className={`border rounded-2xl shadow-2xl max-h-64 overflow-y-auto z-30 transition-all ${
                 theme === 'light' 
                   ? 'bg-white/95 border-slate-200 text-slate-800' 
                   : 'bg-slate-950/95 border-white/10 text-slate-200'
               }`}>
+                {/* Quick direct zone action */}
+                {searchQuery.trim().length >= 2 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDirectAddZoneByQuery(searchQuery)}
+                    className="w-full text-left px-3.5 py-2.5 text-xs flex items-center justify-between bg-red-500/10 hover:bg-red-500/20 text-red-500 font-bold border-b border-red-500/20 transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{language === 'uk' ? `Виділити зону: "${searchQuery}"` : `Highlight zone for "${searchQuery}"`}</span>
+                    </span>
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-red-500/20 font-black">
+                      Enter
+                    </span>
+                  </button>
+                )}
+
                 {isSearching ? (
                   <div className="flex items-center gap-2 p-4 text-xs font-medium text-slate-400">
                     <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                    <span>{language === 'uk' ? 'Пошук...' : 'Searching...'}</span>
+                    <span>{language === 'uk' ? 'Пошук межі зони...' : 'Searching zone boundary...'}</span>
                   </div>
                 ) : searchResults.length === 0 ? (
                   searchQuery.length >= 3 && (
@@ -1829,17 +2226,24 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                       <button
                         key={item.place_id || idx}
                         onClick={() => handleSelectArea(item)}
-                        className={`w-full text-left px-4 py-2.5 text-xs flex items-start gap-2.5 transition-colors border-b last:border-0 cursor-pointer ${
+                        className={`w-full text-left px-4 py-2.5 text-xs flex items-center justify-between gap-2.5 transition-colors border-b last:border-0 cursor-pointer group ${
                           theme === 'light' 
                             ? 'hover:bg-slate-100 border-slate-100 text-slate-900' 
                             : 'hover:bg-white/5 border-white/5 text-slate-100'
                         }`}
                       >
-                        <MapPin className="w-3.5 h-3.5 mt-0.5 text-red-500 flex-shrink-0" />
-                        <div className="flex flex-col">
-                          <span className="font-bold">{item.display_name.split(',')[0]}</span>
-                          <span className="text-[10px] text-slate-400 mt-0.5">{formatDisplayName(item.display_name)}</span>
+                        <div className="flex items-start gap-2.5 min-w-0">
+                          <MapPin className="w-3.5 h-3.5 mt-0.5 text-red-500 flex-shrink-0" />
+                          <div className="flex flex-col min-w-0">
+                            <span className="font-bold truncate">{item.display_name.split(',')[0]}</span>
+                            <span className="text-[10px] text-slate-400 mt-0.5 truncate">{formatDisplayName(item.display_name)}</span>
+                          </div>
                         </div>
+
+                        <span className="flex-shrink-0 px-2 py-1 rounded-lg bg-red-500/10 text-red-500 font-bold text-[10px] flex items-center gap-1 group-hover:bg-red-500 group-hover:text-white transition-all shadow-xs">
+                          <Plus className="w-3 h-3" />
+                          <span>{language === 'uk' ? 'Додати зону' : 'Add zone'}</span>
+                        </span>
                       </button>
                     ))}
                   </div>
