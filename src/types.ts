@@ -34,4 +34,23 @@ export interface TileLayerConfig {
 
 export type Language = 'uk' | 'en';
 
-export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settlement';
+export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settlement' | 'line';
+
+export type LineEndpointType = 'fade' | 'explosion' | 'custom_icon' | 'arrow' | 'dot' | 'none';
+
+export interface DrawnLine {
+  id: string;
+  points: [number, number][]; // array of [lat, lng]
+  color: string;
+  weight: number; // thickness in px
+  smoothed: boolean; // corner smoothing
+  dashStyle?: 'solid' | 'dashed' | 'dotted';
+  
+  startPointStyle: LineEndpointType;
+  startCustomIconUrl?: string;
+  
+  endPointStyle: LineEndpointType;
+  endCustomIconUrl?: string;
+  
+  label?: string;
+}

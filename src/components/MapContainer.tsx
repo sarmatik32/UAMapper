@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
+import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
+import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -122,6 +124,21 @@ interface MapContainerProps {
   onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
   onEditSettlement?: (settlement: Settlement) => void;
   onDeleteCustomSettlement?: (id: string) => void;
+
+  drawnLines?: DrawnLine[];
+  selectedLineId?: string | null;
+  onSelectLine?: (id: string | null) => void;
+  onAddDrawnLine?: (line: DrawnLine) => void;
+  onUpdateDrawnLine?: (line: DrawnLine) => void;
+  onDeleteDrawnLine?: (id: string) => void;
+  lineColor?: string;
+  lineWeight?: number;
+  lineSmoothed?: boolean;
+  lineStartStyle?: LineEndpointType;
+  lineStartCustomIcon?: string;
+  lineEndStyle?: LineEndpointType;
+  lineEndCustomIcon?: string;
+  lineDashStyle?: 'solid' | 'dashed' | 'dotted';
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -153,6 +170,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onAddCustomSettlementPoint,
   onEditSettlement,
   onDeleteCustomSettlement,
+  drawnLines = [],
+  selectedLineId = null,
+  onSelectLine = (_id) => {},
+  onAddDrawnLine = (_line) => {},
+  onUpdateDrawnLine = (_line) => {},
+  onDeleteDrawnLine = (_id) => {},
+  lineColor = '#ef4444',
+  lineWeight = 5,
+  lineSmoothed = true,
+  lineStartStyle = 'fade' as LineEndpointType,
+  lineStartCustomIcon = '',
+  lineEndStyle = 'arrow' as LineEndpointType,
+  lineEndCustomIcon = '',
+  lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -169,6 +200,44 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const measureMarkersRef = useRef<L.Marker[]>([]);
   const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
 
+  // Line Drawing Mode State & Refs
+  const [draftLinePoints, setDraftLinePoints] = useState<[number, number][]>([]);
+  const drawnLineLayersRef = useRef<{
+    [id: string]: {
+      polyline?: L.Polyline;
+      halo?: L.Polyline;
+      startMarker?: L.Marker;
+      endMarker?: L.Marker;
+      fadingPolylines?: L.Polyline[];
+      vertexMarkers?: L.Marker[];
+    };
+  }>({});
+  const draftLineLayerRef = useRef<{
+    polyline?: L.Polyline;
+    fadingPolylines?: L.Polyline[];
+    startMarker?: L.Marker;
+    endMarker?: L.Marker;
+    nodeMarkers: L.Marker[];
+  }>({ nodeMarkers: [] });
+
+  const handleFinishDraftLine = useCallback(() => {
+    if (draftLinePoints.length < 2) return;
+    const newLine: DrawnLine = {
+      id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      points: draftLinePoints,
+      color: lineColor,
+      weight: lineWeight,
+      smoothed: lineSmoothed,
+      dashStyle: lineDashStyle,
+      startPointStyle: lineStartStyle,
+      startCustomIconUrl: lineStartCustomIcon,
+      endPointStyle: lineEndStyle,
+      endCustomIconUrl: lineEndCustomIcon,
+    };
+    onAddDrawnLine(newLine);
+    setDraftLinePoints([]);
+  }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineEndStyle, lineEndCustomIcon, onAddDrawnLine]);
+
   // Map Readiness State
   const [isMapReady, setIsMapReady] = useState(false);
 
@@ -180,6 +249,54 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const autoHighlightZoneRef = useRef(autoHighlightZone);
   const nominatimQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const nominatimCacheRef = useRef<Map<string, { placeName: string; geojson: any } | null>>(new Map());
+  const pendingKeysRef = useRef<Set<string>>(new Set());
+
+  // Load persistent nominatim cache from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('uamapper_nominatim_cache_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        Object.entries(parsed).forEach(([k, v]) => {
+          if (v && (v as any).geojson) {
+            nominatimCacheRef.current.set(k, v as any);
+          }
+        });
+      }
+    } catch (e) {}
+  }, []);
+
+  const saveToNominatimCache = (key: string, data: { placeName: string; geojson: any } | null) => {
+    nominatimCacheRef.current.set(key, data);
+    if (data && data.geojson) {
+      try {
+        const obj: Record<string, any> = {};
+        Array.from(nominatimCacheRef.current.entries())
+          .filter(([_, v]) => v && (v as any).geojson)
+          .slice(-150)
+          .forEach(([k, v]) => { obj[k] = v; });
+        localStorage.setItem('uamapper_nominatim_cache_v1', JSON.stringify(obj));
+      } catch (e) {}
+    }
+  };
+
+  // Safe fetch helper for Nominatim to prevent console CORS/429 spam
+  const safeFetchNominatim = async (url: string) => {
+    try {
+      const response = await fetch(url);
+      if (response.status === 429) {
+        return { ok: false, status: 429, data: null };
+      }
+      if (!response.ok) {
+        return { ok: false, status: response.status, data: null };
+      }
+      const data = await response.json();
+      return { ok: true, status: 200, data };
+    } catch (err) {
+      return { ok: false, status: 0, data: null };
+    }
+  };
 
   useEffect(() => {
     autoHighlightZoneRef.current = autoHighlightZone;
@@ -219,53 +336,127 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas, rural areas)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
+    if (!autoHighlightZoneRef.current) return;
+
+    const cacheKey = `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+
+    // 1. Check if cached result exists
+    if (nominatimCacheRef.current.has(cacheKey)) {
+      const cached = nominatimCacheRef.current.get(cacheKey);
+      if (cached && cached.geojson) {
+        const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}`;
+        const newArea: SearchedArea = {
+          id: zoneId,
+          markerId: markerId,
+          name: cached.placeName,
+          lat: lat.toString(),
+          lon: lng.toString(),
+          geojson: cached.geojson
+        };
+
+        setSearchedAreas((prev) => {
+          const filtered = prev.filter((a) => {
+            if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+              return false;
+            }
+            if (a.id === zoneId) return false;
+            return true;
+          });
+          return [...filtered, newArea];
+        });
+      } else {
+        if (markerId) {
+          setSearchedAreas((prev) =>
+            prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
+          );
+        }
+      }
+      return;
+    }
+
+    // 2. Prevent duplicate pending requests
+    if (pendingKeysRef.current.has(cacheKey)) {
+      return;
+    }
+    pendingKeysRef.current.add(cacheKey);
+
+    // 3. Queue network request with safe throttling
     nominatimQueueRef.current = nominatimQueueRef.current.then(async () => {
-      // Throttle queue: wait 350ms between reverse-geocode requests to strictly satisfy Nominatim rate limits
-      await new Promise((resolve) => setTimeout(resolve, 350));
+      if (!autoHighlightZoneRef.current) {
+        pendingKeysRef.current.delete(cacheKey);
+        return;
+      }
+
+      // Double check cache
+      if (nominatimCacheRef.current.has(cacheKey)) {
+        pendingKeysRef.current.delete(cacheKey);
+        const cached = nominatimCacheRef.current.get(cacheKey);
+        if (cached && cached.geojson) {
+          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}`;
+          const newArea: SearchedArea = {
+            id: zoneId,
+            markerId: markerId,
+            name: cached.placeName,
+            lat: lat.toString(),
+            lon: lng.toString(),
+            geojson: cached.geojson
+          };
+          setSearchedAreas((prev) => {
+            const filtered = prev.filter((a) => {
+              if (markerId && (a.markerId === markerId || a.id === `autozone_marker_${markerId}` || a.id === `autozone_${markerId}`)) {
+                return false;
+              }
+              if (a.id === zoneId) return false;
+              return true;
+            });
+            return [...filtered, newArea];
+          });
+        }
+        return;
+      }
+
+      // Throttle queue: wait 600ms between requests to respect rate limits
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
       try {
-        const zoomLevels = [14, 12, 10, 8, 18];
-        let data: any = null;
+        const zoomLevels = [14, 12, 10, 8];
+        let resData: any = null;
 
         for (const zoom of zoomLevels) {
-          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk`;
+          if (!autoHighlightZoneRef.current) break;
 
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const response = await fetch(url);
-              if (response.status === 429) {
-                // Rate limited: pause for 600ms before retry
-                await new Promise((resolve) => setTimeout(resolve, 600));
-                continue;
-              }
-              if (response.ok) {
-                const resData = await response.json();
-                if (resData?.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
-                  data = resData;
-                  break;
-                }
-              }
-            } catch (err) {
-              console.warn(`Nominatim fetch error at zoom ${zoom}:`, err);
-            }
+          const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=${zoom}&accept-language=uk`;
+          const fetchRes = await safeFetchNominatim(url);
+
+          if (fetchRes.status === 429) {
+            // Rate limited: pause for 2000ms
+            await new Promise((resolve) => setTimeout(resolve, 2000));
             break;
           }
 
-          if (data) break; // Found valid boundary polygon!
+          if (fetchRes.ok && fetchRes.data?.geojson && (fetchRes.data.geojson.type === 'Polygon' || fetchRes.data.geojson.type === 'MultiPolygon')) {
+            resData = fetchRes.data;
+            break; // Found valid polygon boundary!
+          }
+
+          // If no polygon returned at this zoom level, pause 300ms before trying next zoom level
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
 
-        if (data && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
-          const address = data.address || {};
-          const districtOrSuburb = data.name || address.borough || address.suburb || address.city_district || address.village || address.town;
+        if (resData && resData.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
+          const address = resData.address || {};
+          const districtOrSuburb = resData.name || address.borough || address.suburb || address.city_district || address.village || address.town;
           const cityName = formatCityName(address);
 
-          let placeName = districtOrSuburb || cityName || data.display_name?.split(',')[0] || 'Зона';
+          let placeName = districtOrSuburb || cityName || resData.display_name?.split(',')[0] || 'Зона';
           if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
             placeName = `${districtOrSuburb} (${cityName})`;
           }
 
-          const geojson = data.geojson;
-          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+          const geojson = resData.geojson;
+          saveToNominatimCache(cacheKey, { placeName, geojson });
+
+          const zoneId = markerId ? `autozone_marker_${markerId}` : `autozone_${Date.now()}`;
 
           const newArea: SearchedArea = {
             id: zoneId,
@@ -273,7 +464,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             name: placeName,
             lat: lat.toString(),
             lon: lng.toString(),
-            geojson: geojson
+            geojson: geojson,
           };
 
           setSearchedAreas((prev) => {
@@ -290,7 +481,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           setLastAutoZoneName(placeName);
           setTimeout(() => setLastAutoZoneName(null), 3500);
         } else {
-          // If no boundary polygon is returned by Nominatim, clean up any previous zone for this marker
+          saveToNominatimCache(cacheKey, null);
           if (markerId) {
             setSearchedAreas((prev) =>
               prev.filter((a) => a.markerId !== markerId && a.id !== `autozone_marker_${markerId}` && a.id !== `autozone_${markerId}`)
@@ -298,7 +489,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
         }
       } catch (e) {
-        console.error('Error auto-highlighting zone:', e);
+        // Suppress
+      } finally {
+        pendingKeysRef.current.delete(cacheKey);
       }
     });
   };
@@ -398,30 +591,63 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   // Highlight settlement by name (for settlement label marker click)
   const handleHighlightSettlementByName = async (name: string, lat: number, lng: number) => {
     try {
-      const existing = searchedAreas.find((a) => a.name.toLowerCase() === name.toLowerCase());
+      const existing = searchedAreas.find((a) => {
+        const aLat = parseFloat(a.lat);
+        const aLon = parseFloat(a.lon);
+        if (!isNaN(aLat) && !isNaN(aLon)) {
+          return L.latLng(aLat, aLon).distanceTo(L.latLng(lat, lng)) < 8000;
+        }
+        return a.name.toLowerCase() === name.toLowerCase();
+      });
       if (existing) {
         setSearchedAreas((prev) => prev.filter((a) => a.id !== existing.id));
         return;
       }
 
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-          name
-        )}&format=json&polygon_geojson=1&accept-language=uk&limit=5`
-      );
+      // 1) Try reverse geocoding directly at the clicked coordinates first (most accurate)
       let itemGeojson = null;
       let title = name;
       let osmId = undefined;
 
-      if (response.ok) {
-        const data = await response.json();
-        const found = data.find(
-          (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+      const reverseRes = await safeFetchNominatim(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`
+      );
+
+      if (reverseRes.ok && reverseRes.data) {
+        const rData = reverseRes.data;
+        if (rData.geojson && (rData.geojson.type === 'Polygon' || rData.geojson.type === 'MultiPolygon')) {
+          itemGeojson = rData.geojson;
+          title = rData.name || rData.display_name?.split(',')[0] || name;
+          osmId = rData.osm_id?.toString();
+        }
+      }
+
+      // 2) If reverse geocoding didn't yield a polygon, search with location viewbox and pick closest candidate
+      if (!itemGeojson) {
+        const bbox = `viewbox=${lng - 0.25},${lat + 0.25},${lng + 0.25},${lat - 0.25}&bounded=0`;
+        const res = await safeFetchNominatim(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+            name
+          )}&format=json&polygon_geojson=1&accept-language=uk&${bbox}&limit=10`
         );
-        if (found) {
-          itemGeojson = found.geojson;
-          title = found.display_name.split(',')[0] || name;
-          osmId = found.osm_id?.toString();
+
+        if (res.ok && res.data && res.data.length > 0) {
+          const candidates = res.data
+            .filter((it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon'))
+            .map((it: any) => {
+              const cLat = parseFloat(it.lat);
+              const cLon = parseFloat(it.lon);
+              const dist = !isNaN(cLat) && !isNaN(cLon) ? L.latLng(cLat, cLon).distanceTo(L.latLng(lat, lng)) : Infinity;
+              return { ...it, dist };
+            })
+            .sort((a: any, b: any) => a.dist - b.dist);
+
+          const best = candidates[0];
+          if (best && best.dist < 35000) {
+            itemGeojson = best.geojson;
+            title = best.display_name.split(',')[0] || name;
+            osmId = best.osm_id?.toString();
+          }
         }
       }
 
@@ -450,7 +676,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         } catch (e) {}
       }
     } catch (e) {
-      console.error('Error highlighting settlement by name:', e);
+      // Suppress
     }
   };
 
@@ -460,11 +686,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const handleCreateRedZoneAt = async (lat: number, lng: number) => {
     setIsAddingRedZone(true);
     try {
-      const response = await fetch(
+      const res = await safeFetchNominatim(
         `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&accept-language=uk`
       );
-      if (!response.ok) return;
-      const data = await response.json();
+      if (!res.ok || !res.data) return;
+      const data = res.data;
       const address = data.address || {};
 
       // Check if click is directly on/inside a settlement
@@ -472,29 +698,45 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       if (settlementName) {
         // 1. CLICKED ON A SETTLEMENT (місто/село)! Highlight boundary of city/village
-        const searchRes = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(settlementName)}&format=json&polygon_geojson=1&accept-language=uk&limit=5`,
-          { headers: { 'Accept': 'application/json' } }
-        );
         let settlementGeojson = null;
-        let placeTitle = settlementName;
-        let osmId = undefined;
+        let placeTitle = data.name || settlementName;
+        let osmId = data.osm_id?.toString();
 
-        if (searchRes.ok) {
-          const searchData = await searchRes.json();
-          const found = searchData.find(
-            (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
+        // 1a. If reverse geocode at (lat, lng) ALREADY has a Polygon/MultiPolygon, use it directly!
+        if (data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
+          settlementGeojson = data.geojson;
+        }
+
+        // 1b. Otherwise, search bounded near (lat, lng) and pick the closest candidate
+        if (!settlementGeojson) {
+          const regionContext = address.county || address.state || address.district || '';
+          const query = regionContext ? `${settlementName}, ${regionContext}` : settlementName;
+          const bbox = `viewbox=${lng - 0.25},${lat + 0.25},${lng + 0.25},${lat - 0.25}&bounded=0`;
+
+          const searchRes = await safeFetchNominatim(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&polygon_geojson=1&accept-language=uk&${bbox}&limit=10`
           );
-          if (found) {
-            settlementGeojson = found.geojson;
-            placeTitle = found.display_name.split(',')[0] || settlementName;
-            osmId = found.osm_id?.toString();
+
+          if (searchRes.ok && searchRes.data) {
+            const candidates = searchRes.data
+              .filter((it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon'))
+              .map((it: any) => {
+                const cLat = parseFloat(it.lat);
+                const cLon = parseFloat(it.lon);
+                const dist = !isNaN(cLat) && !isNaN(cLon) ? L.latLng(cLat, cLon).distanceTo(L.latLng(lat, lng)) : Infinity;
+                return { ...it, dist };
+              })
+              .sort((a: any, b: any) => a.dist - b.dist);
+
+            const best = candidates[0];
+            if (best && best.dist < 35000) {
+              settlementGeojson = best.geojson;
+              placeTitle = best.display_name.split(',')[0] || settlementName;
+              osmId = best.osm_id?.toString();
+            }
           }
         }
 
-        if (!settlementGeojson && data.geojson && (data.geojson.type === 'Polygon' || data.geojson.type === 'MultiPolygon')) {
-          settlementGeojson = data.geojson;
-        }
         if (!settlementGeojson) {
           settlementGeojson = createCircleGeoJson(lat, lng, 2000);
         }
@@ -521,16 +763,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       } else {
         // 2. CLICKED NOT ON A SETTLEMENT (fields / countryside) -> Highlight HROMADA (громада)!
-        const hromadaRes = await fetch(
-          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=10&accept-language=uk`,
-          { headers: { 'Accept': 'application/json' } }
+        const hromadaRes = await safeFetchNominatim(
+          `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&polygon_geojson=1&zoom=10&accept-language=uk`
         );
         let hromadaGeojson = null;
         let hromadaName = address.municipality || address.district || 'Громада';
         let osmId = undefined;
 
-        if (hromadaRes.ok) {
-          const hromadaData = await hromadaRes.json();
+        if (hromadaRes.ok && hromadaRes.data) {
+          const hromadaData = hromadaRes.data;
           if (hromadaData.name || hromadaData.address?.municipality) {
             hromadaName = hromadaData.name || hromadaData.address?.municipality || hromadaName;
           }
@@ -541,17 +782,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         if (!hromadaGeojson && address.municipality) {
-          const searchHromada = await fetch(
-            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address.municipality)}&format=json&polygon_geojson=1&accept-language=uk&limit=3`
+          const bbox = `viewbox=${lng - 0.5},${lat + 0.5},${lng + 0.5},${lat - 0.5}&bounded=0`;
+          const searchHromada = await safeFetchNominatim(
+            `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address.municipality)}&format=json&polygon_geojson=1&accept-language=uk&${bbox}&limit=10`
           );
-          if (searchHromada.ok) {
-            const searchData = await searchHromada.json();
-            const found = searchData.find(
-              (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
-            );
-            if (found) {
-              hromadaGeojson = found.geojson;
-              osmId = found.osm_id?.toString();
+          if (searchHromada.ok && searchHromada.data) {
+            const candidates = searchHromada.data
+              .filter((it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon'))
+              .map((it: any) => {
+                const cLat = parseFloat(it.lat);
+                const cLon = parseFloat(it.lon);
+                const dist = !isNaN(cLat) && !isNaN(cLon) ? L.latLng(cLat, cLon).distanceTo(L.latLng(lat, lng)) : Infinity;
+                return { ...it, dist };
+              })
+              .sort((a: any, b: any) => a.dist - b.dist);
+
+            const best = candidates[0];
+            if (best && best.dist < 50000) {
+              hromadaGeojson = best.geojson;
+              osmId = best.osm_id?.toString();
             }
           }
         }
@@ -582,7 +831,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       }
     } catch (e) {
-      console.error('Error in handleCreateRedZoneAt:', e);
+      // Suppress
     } finally {
       setIsAddingRedZone(false);
     }
@@ -598,13 +847,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setIsSearching(true);
     setShowDropdown(true);
     try {
-      const response = await fetch(
+      const res = await safeFetchNominatim(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
           queryText
         )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=8`
       );
-      if (response.ok) {
-        const data = await response.json();
+      if (res.ok && res.data) {
+        const data = res.data;
         // Filter out places with valid polygon geometries first, fallback to all if empty
         const filtered = data.filter(
           (item: any) =>
@@ -617,7 +866,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         setSearchResults([]);
       }
     } catch (e) {
-      console.error('Error searching:', e);
       setSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -681,31 +929,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Strategy 1: Fast direct lookup by OSM Relation ID if provided
       if (!item && district.osmId) {
         try {
-          const lookupRes = await fetch(
-            `https://nominatim.openstreetmap.org/lookup?osm_ids=R${district.osmId}&format=json&polygon_geojson=1&accept-language=uk`,
-            { headers: { 'Accept': 'application/json' } }
+          const lookupRes = await safeFetchNominatim(
+            `https://nominatim.openstreetmap.org/lookup?osm_ids=R${district.osmId}&format=json&polygon_geojson=1&accept-language=uk`
           );
-          if (lookupRes.ok) {
-            const lookupData = await lookupRes.json();
+          if (lookupRes.ok && lookupRes.data) {
+            const lookupData = lookupRes.data;
             if (lookupData && lookupData.length > 0 && lookupData[0].geojson) {
               item = lookupData[0];
             }
           }
         } catch (e) {
-          console.warn('OSM ID lookup failed, trying search fallback:', e);
+          // Suppress
         }
       }
 
       // Strategy 2: Fallback search query if lookup didn't return polygon
       if (!item) {
-        const response = await fetch(
+        const res = await safeFetchNominatim(
           `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
             district.query
-          )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`,
-          { headers: { 'Accept': 'application/json' } }
+          )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=10`
         );
-        if (response.ok) {
-          const data = await response.json();
+        if (res.ok && res.data) {
+          const data = res.data;
           if (data && data.length > 0) {
             item = data.find(
               (it: any) =>
@@ -804,13 +1050,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     if (!queryText.trim()) return;
     setIsSearching(true);
     try {
-      const response = await fetch(
+      const res = await safeFetchNominatim(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
           queryText
         )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=5`
       );
-      if (response.ok) {
-        const data = await response.json();
+      if (res.ok && res.data) {
+        const data = res.data;
         if (data && data.length > 0) {
           const item = data.find(
             (it: any) => it.geojson && (it.geojson.type === 'Polygon' || it.geojson.type === 'MultiPolygon')
@@ -1151,7 +1397,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (!clickedMarker) {
           const mode = interactionModeRef.current;
-          if (mode === 'measure') {
+          if (mode === 'line') {
+            setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
+          } else if (mode === 'measure') {
             setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
           } else if (mode === 'redzone') {
             handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
@@ -1206,11 +1454,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         if (!geojson) {
-          const res = await fetch(
+          const res = await safeFetchNominatim(
             'https://nominatim.openstreetmap.org/lookup?osm_ids=R1738028&format=json&polygon_geojson=1&accept-language=uk'
           );
-          if (res.ok) {
-            const data = await res.json();
+          if (res.ok && res.data) {
+            const data = res.data;
             if (data && data[0] && data[0].geojson) {
               geojson = data[0].geojson;
               localStorage.setItem('uamapper_kryvorizkyi_raion_boundary', JSON.stringify(geojson));
@@ -1228,7 +1476,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               className: 'neon-district-outline',
               color: '#00ff66',      // Neon green stroke
               weight: 2,             // Thin line
-              opacity: 0.5,          // 50% opacity
+              opacity: 0.95,         // Vibrant neon opacity
               fill: false,           // No fill
               fillOpacity: 0,        // Completely transparent inside
               interactive: false,    // Clicks pass through to map
@@ -1831,6 +2079,502 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
   }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady]);
 
+  // Render drawn lines on map
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    // Remove existing line layers that are no longer in drawnLines
+    const activeLineIds = new Set(drawnLines.map((l) => l.id));
+    Object.keys(drawnLineLayersRef.current).forEach((id) => {
+      if (!activeLineIds.has(id)) {
+        const layers = drawnLineLayersRef.current[id];
+        if (layers.polyline) layers.polyline.remove();
+        if (layers.halo) layers.halo.remove();
+        if (layers.startMarker) layers.startMarker.remove();
+        if (layers.endMarker) layers.endMarker.remove();
+        if (layers.fadingPolylines) layers.fadingPolylines.forEach((p) => p.remove());
+        if (layers.vertexMarkers) layers.vertexMarkers.forEach((m) => m.remove());
+        delete drawnLineLayersRef.current[id];
+      }
+    });
+
+    // Render each line
+    drawnLines.forEach((line) => {
+      if (!line.points || line.points.length < 2) return;
+
+      const isSelected = selectedLineId === line.id;
+
+      // Smooth points if line.smoothed is true
+      const displayPoints: [number, number][] = line.smoothed
+        ? smoothPolylinePoints(line.points, 4)
+        : line.points;
+
+      // Dash style
+      let dashArray: string | undefined = undefined;
+      if (line.dashStyle === 'dashed') dashArray = '12, 8';
+      if (line.dashStyle === 'dotted') dashArray = '3, 6';
+
+      let existing = drawnLineLayersRef.current[line.id];
+      if (!existing) {
+        existing = {};
+        drawnLineLayersRef.current[line.id] = existing;
+      }
+
+      // 1. Selection Halo
+      if (isSelected) {
+        if (!existing.halo) {
+          existing.halo = L.polyline(displayPoints, {
+            color: '#3b82f6',
+            weight: line.weight + 8,
+            opacity: 0.5,
+            lineCap: 'round',
+            lineJoin: 'round',
+          }).addTo(map);
+        } else {
+          existing.halo.setLatLngs(displayPoints);
+          existing.halo.setStyle({ weight: line.weight + 8 });
+        }
+      } else if (existing.halo) {
+        existing.halo.remove();
+        existing.halo = undefined;
+      }
+
+      // 2. Main polyline / Fading segments
+      const isFadeStart = line.startPointStyle === 'fade';
+      const isFadeEnd = line.endPointStyle === 'fade';
+
+      if (isFadeStart || isFadeEnd) {
+        if (existing.polyline) {
+          existing.polyline.remove();
+          existing.polyline = undefined;
+        }
+
+        if (existing.fadingPolylines) {
+          existing.fadingPolylines.forEach((p) => p.remove());
+        }
+
+        const fadingSegments = generateFadingPolylineSegments(
+          displayPoints,
+          isFadeStart,
+          isFadeEnd,
+          0.9
+        );
+
+        existing.fadingPolylines = fadingSegments.map((seg) => {
+          const poly = L.polyline(seg.points, {
+            color: line.color,
+            weight: line.weight,
+            opacity: seg.opacity,
+            dashArray: dashArray,
+            lineCap: 'round',
+            lineJoin: 'round',
+          }).addTo(map);
+
+          poly.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onSelectLine(line.id);
+          });
+
+          return poly;
+        });
+      } else {
+        if (existing.fadingPolylines) {
+          existing.fadingPolylines.forEach((p) => p.remove());
+          existing.fadingPolylines = undefined;
+        }
+
+        if (!existing.polyline) {
+          existing.polyline = L.polyline(displayPoints, {
+            color: line.color,
+            weight: line.weight,
+            opacity: 0.9,
+            dashArray: dashArray,
+            lineCap: 'round',
+            lineJoin: 'round',
+          }).addTo(map);
+
+          existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onSelectLine(line.id);
+          });
+        } else {
+          existing.polyline.setLatLngs(displayPoints);
+          existing.polyline.setStyle({
+            color: line.color,
+            weight: line.weight,
+            opacity: 0.9,
+            dashArray: dashArray,
+          });
+        }
+      }
+
+      // 3. Endpoint markers
+      const createEndpointIcon = (
+        style: LineEndpointType,
+        customIconUrl: string,
+        p1: [number, number],
+        p2: [number, number],
+        isStart: boolean
+      ): L.DivIcon | null => {
+        if (style === 'none') return null;
+
+        if (style === 'fade') {
+          return createFadeGlowIcon(line.color, Math.max(2, line.weight - 2));
+        }
+        if (style === 'explosion') {
+          return createExplosionIcon(line.color, line.weight);
+        }
+        if (style === 'custom_icon') {
+          return createCustomImageIcon(customIconUrl || '', line.weight);
+        }
+        if (style === 'arrow') {
+          const bearing = isStart ? calculateBearing(p2, p1) : calculateBearing(p1, p2);
+          return createArrowIcon(line.color, bearing, line.weight);
+        }
+        if (style === 'dot') {
+          return createDotIcon(line.color, line.weight);
+        }
+        return null;
+      };
+
+      const startCoord = displayPoints[0];
+      const secondCoord = displayPoints[1] || startCoord;
+
+      const endCoord = displayPoints[displayPoints.length - 1];
+      const prevEndCoord = displayPoints[displayPoints.length - 2] || endCoord;
+
+      // Start Marker
+      const startIcon = createEndpointIcon(
+        line.startPointStyle,
+        line.startCustomIconUrl || '',
+        startCoord,
+        secondCoord,
+        true
+      );
+
+      if (startIcon) {
+        if (!existing.startMarker) {
+          existing.startMarker = L.marker(startCoord, {
+            icon: startIcon,
+            interactive: true,
+            zIndexOffset: 500,
+          }).addTo(map);
+          existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onSelectLine(line.id);
+          });
+        } else {
+          existing.startMarker.setLatLng(startCoord);
+          existing.startMarker.setIcon(startIcon);
+        }
+      } else if (existing.startMarker) {
+        existing.startMarker.remove();
+        existing.startMarker = undefined;
+      }
+
+      // End Marker
+      const endIcon = createEndpointIcon(
+        line.endPointStyle,
+        line.endCustomIconUrl || '',
+        prevEndCoord,
+        endCoord,
+        false
+      );
+
+      if (endIcon) {
+        if (!existing.endMarker) {
+          existing.endMarker = L.marker(endCoord, {
+            icon: endIcon,
+            interactive: true,
+            zIndexOffset: 500,
+          }).addTo(map);
+          existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            onSelectLine(line.id);
+          });
+        } else {
+          existing.endMarker.setLatLng(endCoord);
+          existing.endMarker.setIcon(endIcon);
+        }
+      } else if (existing.endMarker) {
+        existing.endMarker.remove();
+        existing.endMarker = undefined;
+      }
+
+      // 4. Vertex Editing Handles (shown ONLY when line is selected)
+      if (isSelected) {
+        if (existing.vertexMarkers) {
+          existing.vertexMarkers.forEach((m) => m.remove());
+        }
+        existing.vertexMarkers = [];
+
+        line.points.forEach((pt, idx) => {
+          const isStartNode = idx === 0;
+          const isEndNode = idx === line.points.length - 1;
+          const ringColor = isStartNode ? '#10b981' : isEndNode ? '#f59e0b' : '#3b82f6';
+
+          const handleIcon = L.divIcon({
+            className: 'line-vertex-edit-handle',
+            html: `
+              <div class="relative flex items-center justify-center cursor-grab active:cursor-grabbing group">
+                <div class="w-4 h-4 rounded-full bg-white border-2 shadow-lg transition-transform group-hover:scale-125 flex items-center justify-center" style="border-color: ${ringColor};">
+                  <div class="w-1.5 h-1.5 rounded-full" style="background-color: ${ringColor};"></div>
+                </div>
+              </div>
+            `,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8],
+          });
+
+          const marker = L.marker(pt, {
+            icon: handleIcon,
+            draggable: true,
+            zIndexOffset: 1200,
+          }).addTo(map);
+
+          marker.on('drag', (e: L.LeafletEvent) => {
+            const dragged = e.target as L.Marker;
+            const newPos = dragged.getLatLng();
+            const tempPoints = [...line.points];
+            tempPoints[idx] = [newPos.lat, newPos.lng];
+
+            const tempDisplay = line.smoothed
+              ? smoothPolylinePoints(tempPoints, 4)
+              : tempPoints;
+
+            if (existing.halo) {
+              existing.halo.setLatLngs(tempDisplay);
+            }
+            if (existing.polyline) {
+              existing.polyline.setLatLngs(tempDisplay);
+            }
+            if (existing.fadingPolylines) {
+              const tempFading = generateFadingPolylineSegments(
+                tempDisplay,
+                line.startPointStyle === 'fade',
+                line.endPointStyle === 'fade',
+                0.9
+              );
+              existing.fadingPolylines.forEach((p, pIdx) => {
+                if (tempFading[pIdx]) {
+                  p.setLatLngs(tempFading[pIdx].points);
+                }
+              });
+            }
+          });
+
+          marker.on('dragend', (e: L.LeafletEvent) => {
+            const dragged = e.target as L.Marker;
+            const newPos = dragged.getLatLng();
+            const updatedPoints = [...line.points];
+            updatedPoints[idx] = [newPos.lat, newPos.lng];
+            onUpdateDrawnLine({ ...line, points: updatedPoints });
+          });
+
+          marker.on('contextmenu', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e);
+            if (line.points.length > 2) {
+              const updatedPoints = line.points.filter((_, i) => i !== idx);
+              onUpdateDrawnLine({ ...line, points: updatedPoints });
+            }
+          });
+
+          existing.vertexMarkers.push(marker);
+        });
+      } else if (existing.vertexMarkers) {
+        existing.vertexMarkers.forEach((m) => m.remove());
+        existing.vertexMarkers = undefined;
+      }
+    });
+  }, [drawnLines, selectedLineId, onSelectLine, onUpdateDrawnLine, isMapReady]);
+
+  // Render current draft line being drawn
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    const layers = draftLineLayerRef.current;
+
+    // Clear node markers
+    layers.nodeMarkers.forEach((m) => m.remove());
+    layers.nodeMarkers = [];
+
+    if (draftLinePoints.length === 0) {
+      if (layers.polyline) {
+        layers.polyline.remove();
+        layers.polyline = undefined;
+      }
+      if (layers.startMarker) {
+        layers.startMarker.remove();
+        layers.startMarker = undefined;
+      }
+      if (layers.endMarker) {
+        layers.endMarker.remove();
+        layers.endMarker = undefined;
+      }
+      return;
+    }
+
+    const displayPoints: [number, number][] =
+      lineSmoothed && draftLinePoints.length >= 3
+        ? smoothPolylinePoints(draftLinePoints, 4)
+        : draftLinePoints;
+
+    // Dash style
+    let dashArray: string | undefined = undefined;
+    if (lineDashStyle === 'dashed') dashArray = '12, 8';
+    if (lineDashStyle === 'dotted') dashArray = '3, 6';
+
+    const isFadeStart = lineStartStyle === 'fade';
+    const isFadeEnd = lineEndStyle === 'fade';
+
+    if (isFadeStart || isFadeEnd) {
+      if (layers.polyline) {
+        layers.polyline.remove();
+        layers.polyline = undefined;
+      }
+      if (layers.fadingPolylines) {
+        layers.fadingPolylines.forEach((p) => p.remove());
+      }
+
+      const fadingSegments = generateFadingPolylineSegments(
+        displayPoints,
+        isFadeStart,
+        isFadeEnd,
+        0.85
+      );
+
+      layers.fadingPolylines = fadingSegments.map((seg) =>
+        L.polyline(seg.points, {
+          color: lineColor,
+          weight: lineWeight,
+          opacity: seg.opacity,
+          dashArray: dashArray || '6, 6',
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(map)
+      );
+    } else {
+      if (layers.fadingPolylines) {
+        layers.fadingPolylines.forEach((p) => p.remove());
+        layers.fadingPolylines = undefined;
+      }
+
+      if (!layers.polyline) {
+        layers.polyline = L.polyline(displayPoints, {
+          color: lineColor,
+          weight: lineWeight,
+          dashArray: dashArray || '6, 6',
+          opacity: 0.85,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }).addTo(map);
+      } else {
+        layers.polyline.setLatLngs(displayPoints);
+        layers.polyline.setStyle({
+          color: lineColor,
+          weight: lineWeight,
+          dashArray: dashArray || '6, 6',
+        });
+      }
+    }
+
+    // Render node markers at raw points
+    draftLinePoints.forEach((pt, idx) => {
+      const isStartNode = idx === 0;
+      const isEndNode = idx === draftLinePoints.length - 1;
+
+      const ringColor = isStartNode ? '#10b981' : isEndNode ? '#f59e0b' : '#3b82f6';
+
+      const nodeIcon = L.divIcon({
+        className: 'draft-line-node',
+        html: `<div style="background-color: white; border: 2.5px solid ${ringColor}; width: 12px; height: 12px; border-radius: 9999px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transform: translate(-50%, -50%);"></div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+
+      const marker = L.marker(pt, { icon: nodeIcon, interactive: false }).addTo(map);
+      layers.nodeMarkers.push(marker);
+    });
+
+    // Start & End Endpoint Markers on draft line
+    if (displayPoints.length >= 2) {
+      const startCoord = displayPoints[0];
+      const secondCoord = displayPoints[1] || startCoord;
+      const endCoord = displayPoints[displayPoints.length - 1];
+      const prevEndCoord = displayPoints[displayPoints.length - 2] || endCoord;
+
+      if (lineStartStyle !== 'none') {
+        let startIcon: L.DivIcon | null = null;
+        if (lineStartStyle === 'fade') startIcon = createFadeGlowIcon(lineColor, lineWeight);
+        if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight);
+        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineWeight);
+        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, calculateBearing(secondCoord, startCoord), lineWeight);
+        if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight);
+
+        if (startIcon) {
+          if (!layers.startMarker) {
+            layers.startMarker = L.marker(startCoord, { icon: startIcon, interactive: false }).addTo(map);
+          } else {
+            layers.startMarker.setLatLng(startCoord);
+            layers.startMarker.setIcon(startIcon);
+          }
+        }
+      } else if (layers.startMarker) {
+        layers.startMarker.remove();
+        layers.startMarker = undefined;
+      }
+
+      if (lineEndStyle !== 'none') {
+        let endIcon: L.DivIcon | null = null;
+        if (lineEndStyle === 'fade') endIcon = createFadeGlowIcon(lineColor, lineWeight);
+        if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight);
+        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineWeight);
+        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, calculateBearing(prevEndCoord, endCoord), lineWeight);
+        if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight);
+
+        if (endIcon) {
+          if (!layers.endMarker) {
+            layers.endMarker = L.marker(endCoord, { icon: endIcon, interactive: false }).addTo(map);
+          } else {
+            layers.endMarker.setLatLng(endCoord);
+            layers.endMarker.setIcon(endIcon);
+          }
+        }
+      } else if (layers.endMarker) {
+        layers.endMarker.remove();
+        layers.endMarker = undefined;
+      }
+    }
+  }, [
+    draftLinePoints,
+    lineColor,
+    lineWeight,
+    lineSmoothed,
+    lineDashStyle,
+    lineStartStyle,
+    lineStartCustomIcon,
+    lineEndStyle,
+    lineEndCustomIcon,
+    isMapReady,
+  ]);
+
+  // Keyboard shortcut listener for line drawing
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (interactionModeRef.current === 'line' && draftLinePoints.length >= 2) {
+        if (e.key === 'Enter') {
+          handleFinishDraftLine();
+        } else if (e.key === 'Escape') {
+          setDraftLinePoints([]);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [draftLinePoints, handleFinishDraftLine]);
+
   // Center map on selected marker when it changes (or coordinates manual edits)
   const lastSelectedIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2288,7 +3032,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                   <div className="flex flex-col py-1">
                     {searchResults.map((item, idx) => (
                       <button
-                        key={item.place_id || idx}
+                        key={item.place_id ? `search_${item.place_id}_${idx}` : `search_idx_${idx}`}
                         onClick={() => handleSelectArea(item)}
                         className={`w-full text-left px-4 py-2.5 text-xs flex items-center justify-between gap-2.5 transition-colors border-b last:border-0 cursor-pointer group ${
                           theme === 'light' 
@@ -2384,7 +3128,114 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
-        {/* Active Mode Floating Banners (Distance Measurement / Red Zone) */}
+        {/* Active Mode Floating Banners (Distance Measurement / Red Zone / Line Drawing / Point Drawing) */}
+        {!(isExporting || isCopying) && interactionMode === 'draw' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-blue-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <PenTool className="w-4 h-4 text-blue-400 flex-shrink-0 animate-pulse" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Режим нанесення точок / значків' : 'Point / Marker Placement Mode'}
+              </span>
+              <span className="text-xs font-medium truncate text-slate-200">
+                {language === 'uk' ? 'Клацайте на карті для додавання значків' : 'Click anywhere on map to place markers'}
+              </span>
+            </div>
+            <button
+              onClick={() => onSelectInteractionMode?.('pan')}
+              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 hover:border-slate-500 rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 shadow-md"
+              title={language === 'uk' ? 'Вимкнути нанесення (перейти в режим переміщення)' : 'Turn off drawing (switch to pan mode)'}
+            >
+              <Hand className="w-3 h-3 text-amber-400" />
+              <span>{language === 'uk' ? 'Вимкнути' : 'Turn Off'}</span>
+            </button>
+          </div>
+        )}
+
+        {!(isExporting || isCopying) && interactionMode === 'line' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-indigo-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <Spline className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Режим малювання ліній' : 'Line Drawing Mode'}
+              </span>
+              <span className="text-xs font-mono font-bold truncate text-slate-200">
+                {draftLinePoints.length === 0
+                  ? (language === 'uk' ? 'Клікніть на карту, щоб поставити першу точку' : 'Click on map to place start point')
+                  : `${draftLinePoints.length} ${language === 'uk' ? 'точок (Enter - завершити)' : 'pts (Enter to finish)'}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {draftLinePoints.length >= 2 && (
+                <button
+                  onClick={handleFinishDraftLine}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-md"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
+                </button>
+              )}
+              {draftLinePoints.length > 0 && (
+                <button
+                  onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
+                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                >
+                  {language === 'uk' ? 'Назад' : 'Undo'}
+                </button>
+              )}
+              {draftLinePoints.length > 0 && (
+                <button
+                  onClick={() => setDraftLinePoints([])}
+                  className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                >
+                  {language === 'uk' ? 'Скинути' : 'Reset'}
+                </button>
+              )}
+              <button
+                onClick={() => onSelectInteractionMode?.('draw')}
+                title={language === 'uk' ? 'Закрити режим' : 'Close mode'}
+                className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Selected Line Editing Banner */}
+        {!(isExporting || isCopying) && selectedLineId && interactionMode !== 'line' && (
+          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-indigo-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
+            <PenTool className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
+                {language === 'uk' ? 'Редагування лінії' : 'Line Editing Mode'}
+              </span>
+              <span className="text-xs font-mono truncate text-slate-200">
+                {language === 'uk'
+                  ? 'Перетягуйте вузли для зміни форми. Правий клік — видалити вузол.'
+                  : 'Drag nodes to reshape. Right click to delete node.'}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={() => onSelectLine(null)}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-md"
+              >
+                <Check className="w-3 h-3" />
+                <span>{language === 'uk' ? 'Готово' : 'Done'}</span>
+              </button>
+              <button
+                onClick={() => {
+                  if (selectedLineId) onDeleteDrawnLine(selectedLineId);
+                }}
+                className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                title={language === 'uk' ? 'Видалити лінію' : 'Delete line'}
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {!(isExporting || isCopying) && interactionMode === 'measure' && (
           <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-yellow-400/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
             <Ruler className="w-4 h-4 text-yellow-400 flex-shrink-0 animate-pulse" />

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -181,6 +181,68 @@ export default function App() {
   });
 
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
+
+  // Drawn Lines State
+  const [drawnLines, setDrawnLines] = useState<DrawnLine[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_drawn_lines');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+
+  // Line drawing settings state
+  const [lineColor, setLineColor] = useState<string>('#ef4444');
+  const [lineWeight, setLineWeight] = useState<number>(5);
+  const [lineSmoothed, setLineSmoothed] = useState<boolean>(true);
+  const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('fade');
+  const [lineStartCustomIcon, setLineStartCustomIcon] = useState<string>('');
+  const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('arrow');
+  const [lineEndCustomIcon, setLineEndCustomIcon] = useState<string>('');
+  const [lineDashStyle, setLineDashStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+
+  const handleAddDrawnLine = (newLine: DrawnLine) => {
+    setDrawnLines((prev) => {
+      const updated = [...prev, newLine];
+      try {
+        localStorage.setItem('visicom_drawn_lines', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    setSelectedLineId(newLine.id);
+  };
+
+  const handleUpdateDrawnLine = (updatedLine: DrawnLine) => {
+    setDrawnLines((prev) => {
+      const updated = prev.map((l) => (l.id === updatedLine.id ? updatedLine : l));
+      try {
+        localStorage.setItem('visicom_drawn_lines', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const handleDeleteDrawnLine = (lineId: string) => {
+    setDrawnLines((prev) => {
+      const updated = prev.filter((l) => l.id !== lineId);
+      try {
+        localStorage.setItem('visicom_drawn_lines', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+    if (selectedLineId === lineId) {
+      setSelectedLineId(null);
+    }
+  };
+
+  const handleClearDrawnLines = () => {
+    setDrawnLines([]);
+    setSelectedLineId(null);
+    localStorage.removeItem('visicom_drawn_lines');
+  };
 
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
@@ -778,19 +840,33 @@ export default function App() {
             onAddCustomSettlementPoint={handleAddCustomSettlementPoint}
             onEditSettlement={handleEditSettlement}
             onDeleteCustomSettlement={handleDeleteCustomSettlement}
+            drawnLines={drawnLines}
+            selectedLineId={selectedLineId}
+            onSelectLine={setSelectedLineId}
+            onAddDrawnLine={handleAddDrawnLine}
+            onUpdateDrawnLine={handleUpdateDrawnLine}
+            onDeleteDrawnLine={handleDeleteDrawnLine}
+            lineColor={lineColor}
+            lineWeight={lineWeight}
+            lineSmoothed={lineSmoothed}
+            lineStartStyle={lineStartStyle}
+            lineStartCustomIcon={lineStartCustomIcon}
+            lineEndStyle={lineEndStyle}
+            lineEndCustomIcon={lineEndCustomIcon}
+            lineDashStyle={lineDashStyle}
           />
 
 
-          {/* Mobile Bottom Floating Action Bar (When no marker is selected) */}
+          {/* Floating Action Bar (When no marker is selected) */}
           {selectedMarkerId === null && (
-            <div className="absolute bottom-14 md:bottom-10 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white md:hidden animate-fade-in">
+            <div className="absolute bottom-14 md:bottom-8 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white animate-fade-in">
               {/* Interaction Mode Toggle (No label) */}
               <button
                 onClick={() => setInteractionMode(interactionMode === 'draw' ? 'pan' : 'draw')}
-                title={interactionMode === 'draw' ? (language === 'uk' ? 'Режим: Малювання' : 'Mode: Draw') : (language === 'uk' ? 'Режим: Рух' : 'Mode: Move')}
+                title={interactionMode === 'draw' ? (language === 'uk' ? 'Режим: Нанесення значків (Клацніть для переміщення)' : 'Mode: Draw (Click for Pan)') : (language === 'uk' ? 'Режим: Переміщення (Клацніть для малювання)' : 'Mode: Pan (Click for Draw)')}
                 className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${
                   interactionMode === 'draw'
-                    ? 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                     : 'bg-white/10 text-slate-200 hover:bg-white/20'
                 }`}
               >
@@ -1018,6 +1094,28 @@ export default function App() {
               onImportCustomSettlements={handleImportCustomSettlements}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
+              drawnLines={drawnLines}
+              selectedLineId={selectedLineId}
+              onSelectLine={setSelectedLineId}
+              onUpdateLine={handleUpdateDrawnLine}
+              onDeleteLine={handleDeleteDrawnLine}
+              onClearDrawnLines={handleClearDrawnLines}
+              lineColor={lineColor}
+              onChangeLineColor={setLineColor}
+              lineWeight={lineWeight}
+              onChangeLineWeight={setLineWeight}
+              lineSmoothed={lineSmoothed}
+              onChangeLineSmoothed={setLineSmoothed}
+              lineStartStyle={lineStartStyle}
+              onChangeLineStartStyle={setLineStartStyle}
+              lineStartCustomIcon={lineStartCustomIcon}
+              onChangeLineStartCustomIcon={setLineStartCustomIcon}
+              lineEndStyle={lineEndStyle}
+              onChangeLineEndStyle={setLineEndStyle}
+              lineEndCustomIcon={lineEndCustomIcon}
+              onChangeLineEndCustomIcon={setLineEndCustomIcon}
+              lineDashStyle={lineDashStyle}
+              onChangeLineDashStyle={setLineDashStyle}
             />
           </div>
           {/* Mobile Back-to-Map Sticky bottom bar */}
@@ -1038,8 +1136,15 @@ export default function App() {
         isOpen={isAddSettlementModalOpen}
         latLng={pendingSettlementLatLng}
         editingSettlement={editingSettlement}
-        onClose={() => setIsAddSettlementModalOpen(false)}
-        onSave={handleSaveCustomSettlement}
+        onClose={() => {
+          setIsAddSettlementModalOpen(false);
+          setInteractionMode('draw');
+        }}
+        onSave={(s) => {
+          handleSaveCustomSettlement(s);
+          setIsAddSettlementModalOpen(false);
+          setInteractionMode('draw');
+        }}
         onDelete={handleDeleteCustomSettlement}
         language={language}
       />

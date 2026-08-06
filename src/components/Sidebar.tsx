@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { 
@@ -28,7 +28,11 @@ import {
   ShieldAlert,
   PenTool,
   Hand,
-  Building2
+  Building2,
+  Spline,
+  Sparkles,
+  Plus,
+  Image as ImageIcon
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -83,6 +87,30 @@ interface SidebarProps {
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
   onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
+
+  drawnLines?: DrawnLine[];
+  selectedLineId?: string | null;
+  onSelectLine?: (id: string | null) => void;
+  onUpdateLine?: (line: DrawnLine) => void;
+  onDeleteLine?: (id: string) => void;
+  onClearDrawnLines?: () => void;
+
+  lineColor?: string;
+  onChangeLineColor?: (color: string) => void;
+  lineWeight?: number;
+  onChangeLineWeight?: (weight: number) => void;
+  lineSmoothed?: boolean;
+  onChangeLineSmoothed?: (smoothed: boolean) => void;
+  lineStartStyle?: LineEndpointType;
+  onChangeLineStartStyle?: (style: LineEndpointType) => void;
+  lineStartCustomIcon?: string;
+  onChangeLineStartCustomIcon?: (url: string) => void;
+  lineEndStyle?: LineEndpointType;
+  onChangeLineEndStyle?: (style: LineEndpointType) => void;
+  lineEndCustomIcon?: string;
+  onChangeLineEndCustomIcon?: (url: string) => void;
+  lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+  onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
 }
 
 
@@ -138,6 +166,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
   onUpdateCustomIconTitle = (_type, _val) => {},
+  drawnLines = [],
+  selectedLineId = null,
+  onSelectLine = (_id) => {},
+  onUpdateLine = (_line) => {},
+  onDeleteLine = (_id) => {},
+  onClearDrawnLines = () => {},
+  lineColor = '#ef4444',
+  onChangeLineColor = (_color) => {},
+  lineWeight = 5,
+  onChangeLineWeight = (_weight) => {},
+  lineSmoothed = true,
+  onChangeLineSmoothed = (_smoothed) => {},
+  lineStartStyle = 'fade',
+  onChangeLineStartStyle = (_style) => {},
+  lineStartCustomIcon = '',
+  onChangeLineStartCustomIcon = (_url) => {},
+  lineEndStyle = 'arrow',
+  onChangeLineEndStyle = (_style) => {},
+  lineEndCustomIcon = '',
+  onChangeLineEndCustomIcon = (_url) => {},
+  lineDashStyle = 'solid',
+  onChangeLineDashStyle = (_style) => {},
 }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [customTileUrl, setCustomTileUrl] = useState('');
@@ -155,12 +205,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [expandedSections, setExpandedSections] = useState({
     mode: false,
+    lines: false,
     styles: false,
     objects: false,
     map: false,
     overlays: false,
     settings: false,
   });
+
+  const selectedLine = drawnLines.find((l) => l.id === selectedLineId);
+  const currLineColor = selectedLine ? selectedLine.color : lineColor;
+  const currLineWeight = selectedLine ? selectedLine.weight : lineWeight;
+  const currLineSmoothed = selectedLine ? selectedLine.smoothed : lineSmoothed;
+  const currLineStartStyle = selectedLine ? selectedLine.startPointStyle : lineStartStyle;
+  const currLineStartCustomIcon = selectedLine ? (selectedLine.startCustomIconUrl || '') : lineStartCustomIcon;
+  const currLineEndStyle = selectedLine ? selectedLine.endPointStyle : lineEndStyle;
+  const currLineEndCustomIcon = selectedLine ? (selectedLine.endCustomIconUrl || '') : lineEndCustomIcon;
+  const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
 
@@ -496,7 +557,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => onEnableSettlementMode()}
+            onClick={() => onSetInteractionMode(interactionMode === 'settlement' ? 'draw' : 'settlement')}
             title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
             className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               interactionMode === 'settlement'
@@ -505,6 +566,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <MapPin className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onSetInteractionMode(interactionMode === 'line' ? 'draw' : 'line')}
+            title={isUa ? 'Малювання ліній зі зглажуванням' : 'Draw Smoothed Lines'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+              interactionMode === 'line'
+                ? 'bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-emerald-500 border border-slate-200 dark:border-white/10'
+            }`}
+          >
+            <Spline className="w-4 h-4" />
           </button>
 
           <button
@@ -518,16 +591,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Ruler className="w-4 h-4" />
           </button>
-
-          {userCustomSettlements.length > 0 && (
-            <button
-              onClick={onClearAllCustomSettlements}
-              title={isUa ? `Видалити нанесені населені пункти (${userCustomSettlements.length})` : `Delete custom settlements (${userCustomSettlements.length})`}
-              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 hover:border-red-500"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
         </div>
 
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
@@ -560,7 +623,19 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 }`}
               >
                 <PenTool className="w-4 h-4" />
-                <span className="text-[11px] font-bold">{isUa ? 'Малювання' : 'Draw Markers'}</span>
+                <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
+              </button>
+
+              <button
+                onClick={() => onSetInteractionMode('line')}
+                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                  interactionMode === 'line'
+                    ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
+                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                }`}
+              >
+                <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
               </button>
 
               <button
@@ -599,6 +674,417 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
                 </button>
               </div>
+          )}
+        </div>
+
+        {/* 1.5 НАЛАШТУВАННЯ ЛІНІЙ (LINE DRAWING & CONFIGURATION) */}
+        <div className={`border rounded-2xl overflow-hidden transition-all ${
+          interactionMode === 'line' || selectedLineId !== null ? 'ring-2 ring-emerald-500/60 border-emerald-500' : (theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20')
+        }`}>
+          <button
+            onClick={() => toggleSection('lines')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
+              interactionMode === 'line'
+                ? 'bg-emerald-500/15 text-emerald-400'
+                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Spline className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{isUa ? 'Малювання та стиль ліній' : 'Line Drawing & Styles'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {drawnLines.length > 0 && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
+                  {drawnLines.length}
+                </span>
+              )}
+              {expandedSections.lines ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+            </div>
+          </button>
+
+          {(expandedSections.lines || interactionMode === 'line' || selectedLineId !== null) && (
+            <div className="p-3.5 space-y-4 text-xs">
+              
+              {/* Target indicator */}
+              <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-200 dark:border-white/10">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {isUa ? 'Об\'єкт лінії:' : 'Line Object:'}
+                </span>
+                {selectedLine ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-md">
+                      {isUa ? 'Обрано лінію' : 'Selected Line'}
+                    </span>
+                    <button
+                      onClick={() => onDeleteLine(selectedLine.id)}
+                      title={isUa ? 'Видалити обрану лінію' : 'Delete Selected Line'}
+                      className="p-1 rounded-md bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-extrabold text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-md">
+                    {isUa ? 'Шаблон нової лінії' : 'New Line Template'}
+                  </span>
+                )}
+              </div>
+
+              {/* Mode button shortcut */}
+              {interactionMode !== 'line' && !selectedLine && (
+                <button
+                  onClick={() => onSetInteractionMode('line')}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
+                >
+                  <Spline className="w-4 h-4" />
+                  <span>{isUa ? 'Увімкнути режим малювання лінії' : 'Activate Line Drawing Mode'}</span>
+                </button>
+              )}
+
+              {/* 1. Color Picker */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  {isUa ? 'Колір лінії' : 'Line Color'}
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c.hex}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, color: c.hex });
+                        else onChangeLineColor(c.hex);
+                      }}
+                      className={`w-6 h-6 rounded-full border border-white/20 transition-all cursor-pointer relative ${
+                        currLineColor === c.hex ? 'ring-2 ring-emerald-400 scale-110 shadow-md' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                      title={isUa ? c.nameUa : c.nameEn}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={currLineColor.startsWith('#') ? currLineColor : '#ef4444'}
+                    onChange={(e) => {
+                      if (selectedLine) onUpdateLine({ ...selectedLine, color: e.target.value });
+                      else onChangeLineColor(e.target.value);
+                    }}
+                    className="w-7 h-7 rounded-lg border-0 bg-transparent cursor-pointer p-0"
+                    title={isUa ? 'Свій колір' : 'Custom Color'}
+                  />
+                </div>
+              </div>
+
+              {/* 2. Weight / Thickness Slider */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {isUa ? 'Товщина лінії' : 'Line Thickness'}
+                  </label>
+                  <span className="text-[11px] font-mono font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                    {currLineWeight} px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  value={currLineWeight}
+                  onChange={(e) => {
+                    const w = parseInt(e.target.value, 10);
+                    if (selectedLine) onUpdateLine({ ...selectedLine, weight: w });
+                    else onChangeLineWeight(w);
+                  }}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              {/* 3. Corner Smoothing Toggle */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-1">
+                <div className="flex items-center justify-between cursor-pointer" onClick={() => {
+                  const val = !currLineSmoothed;
+                  if (selectedLine) onUpdateLine({ ...selectedLine, smoothed: val });
+                  else onChangeLineSmoothed(val);
+                }}>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                      {isUa ? 'Згладжувати повороти (кути)' : 'Smooth Corners & Turns'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={currLineSmoothed}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      if (selectedLine) onUpdateLine({ ...selectedLine, smoothed: val });
+                      else onChangeLineSmoothed(val);
+                    }}
+                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pl-6">
+                  {isUa ? 'Повороти та кути сильно згладжуються плавною дугою' : 'Turn angles and corners are strongly smoothed into curves'}
+                </p>
+              </div>
+
+              {/* 4. Dash Style */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  {isUa ? 'Стиль лінії' : 'Line Pattern'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'solid', labelUa: 'Суцільна', labelEn: 'Solid' },
+                    { id: 'dashed', labelUa: 'Штрихова', labelEn: 'Dashed' },
+                    { id: 'dotted', labelUa: 'Пунктирна', labelEn: 'Dotted' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, dashStyle: st.id as any });
+                        else onChangeLineDashStyle(st.id as any);
+                      }}
+                      className={`py-1.5 px-2 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                        currLineDashStyle === st.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                          : 'bg-slate-500/5 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-slate-500/10'
+                      }`}
+                    >
+                      {isUa ? st.labelUa : st.labelEn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. Start Point Style */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2.5">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Початкова точка лінії' : 'Line Start Endpoint'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'fade', nameUa: 'Затухання', nameEn: 'Fade', icon: '✨' },
+                    { id: 'explosion', nameUa: 'Вибух', nameEn: 'Explosion', icon: '💥' },
+                    { id: 'custom_icon', nameUa: 'Іконка', nameEn: 'Custom Icon', icon: '🖼️' },
+                    { id: 'arrow', nameUa: 'Стрілка', nameEn: 'Arrow', icon: '➔' },
+                    { id: 'dot', nameUa: 'Точка', nameEn: 'Dot', icon: '⏺' },
+                    { id: 'none', nameUa: 'Без значка', nameEn: 'None', icon: '—' },
+                  ].map((ep) => (
+                    <button
+                      key={ep.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startPointStyle: ep.id as any });
+                        else onChangeLineStartStyle(ep.id as any);
+                      }}
+                      className={`p-1.5 rounded-lg border flex flex-col items-center gap-0.5 text-[10px] font-bold transition-all cursor-pointer ${
+                        currLineStartStyle === ep.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold shadow-sm'
+                          : 'bg-slate-900/20 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{ep.icon}</span>
+                      <span>{isUa ? ep.nameUa : ep.nameEn}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Icon picker for Start Point */}
+                {currLineStartStyle === 'custom_icon' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{isUa ? 'Оберіть іконку з бібліотеки:' : 'Select custom icon:'}</span>
+                      <label className="text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 font-bold">
+                        <Plus className="w-3 h-3" />
+                        <span>{isUa ? 'Завантажити' : 'Upload'}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/svg+xml,image/jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (dataUrl) {
+                                saveToLibrary(file.name.replace(/\.[^/.]+$/, ""), dataUrl);
+                                if (selectedLine) onUpdateLine({ ...selectedLine, startCustomIconUrl: dataUrl });
+                                else onChangeLineStartCustomIcon(dataUrl);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {customLibrary.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic">
+                        {isUa ? 'У бібліотеці немає власних іконок. Натисніть "Завантажити" вище.' : 'No custom icons. Click "Upload" above.'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-5 gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/20 rounded-xl">
+                        {customLibrary.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (selectedLine) onUpdateLine({ ...selectedLine, startCustomIconUrl: item.dataUrl });
+                              else onChangeLineStartCustomIcon(item.dataUrl);
+                            }}
+                            className={`p-1 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                              currLineStartCustomIcon === item.dataUrl ? 'border-emerald-400 bg-emerald-500/30 ring-1 ring-emerald-400' : 'border-white/10 hover:bg-white/10'
+                            }`}
+                            title={item.name}
+                          >
+                            <img src={item.dataUrl} className="w-6 h-6 object-contain" alt={item.name} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 6. End Point Style */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2.5">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Кінцева точка лінії' : 'Line End Endpoint'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'fade', nameUa: 'Затухання', nameEn: 'Fade', icon: '✨' },
+                    { id: 'explosion', nameUa: 'Вибух', nameEn: 'Explosion', icon: '💥' },
+                    { id: 'custom_icon', nameUa: 'Іконка', nameEn: 'Custom Icon', icon: '🖼️' },
+                    { id: 'arrow', nameUa: 'Стрілка', nameEn: 'Arrow', icon: '➔' },
+                    { id: 'dot', nameUa: 'Точка', nameEn: 'Dot', icon: '⏺' },
+                    { id: 'none', nameUa: 'Без значка', nameEn: 'None', icon: '—' },
+                  ].map((ep) => (
+                    <button
+                      key={ep.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endPointStyle: ep.id as any });
+                        else onChangeLineEndStyle(ep.id as any);
+                      }}
+                      className={`p-1.5 rounded-lg border flex flex-col items-center gap-0.5 text-[10px] font-bold transition-all cursor-pointer ${
+                        currLineEndStyle === ep.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold shadow-sm'
+                          : 'bg-slate-900/20 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{ep.icon}</span>
+                      <span>{isUa ? ep.nameUa : ep.nameEn}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Icon picker for End Point */}
+                {currLineEndStyle === 'custom_icon' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{isUa ? 'Оберіть іконку з бібліотеки:' : 'Select custom icon:'}</span>
+                      <label className="text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 font-bold">
+                        <Plus className="w-3 h-3" />
+                        <span>{isUa ? 'Завантажити' : 'Upload'}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/svg+xml,image/jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (dataUrl) {
+                                saveToLibrary(file.name.replace(/\.[^/.]+$/, ""), dataUrl);
+                                if (selectedLine) onUpdateLine({ ...selectedLine, endCustomIconUrl: dataUrl });
+                                else onChangeLineEndCustomIcon(dataUrl);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {customLibrary.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic">
+                        {isUa ? 'У бібліотеці немає власних іконок. Натисніть "Завантажити" вище.' : 'No custom icons. Click "Upload" above.'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-5 gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/20 rounded-xl">
+                        {customLibrary.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (selectedLine) onUpdateLine({ ...selectedLine, endCustomIconUrl: item.dataUrl });
+                              else onChangeLineEndCustomIcon(item.dataUrl);
+                            }}
+                            className={`p-1 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                              currLineEndCustomIcon === item.dataUrl ? 'border-emerald-400 bg-emerald-500/30 ring-1 ring-emerald-400' : 'border-white/10 hover:bg-white/10'
+                            }`}
+                            title={item.name}
+                          >
+                            <img src={item.dataUrl} className="w-6 h-6 object-contain" alt={item.name} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* 7. Drawn Lines List & Clear All */}
+              {drawnLines.length > 0 && (
+                <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <span>{isUa ? `Намальовані лінії (${drawnLines.length})` : `Drawn Lines (${drawnLines.length})`}</span>
+                    <button
+                      onClick={onClearDrawnLines}
+                      className="text-red-400 hover:text-red-300 hover:underline flex items-center gap-1 text-[10px] cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>{isUa ? 'Видалити всі' : 'Clear All'}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                    {drawnLines.map((line, idx) => {
+                      const isSel = selectedLineId === line.id;
+                      return (
+                        <div
+                          key={line.id}
+                          onClick={() => onSelectLine(isSel ? null : line.id)}
+                          className={`p-2 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                            isSel
+                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold'
+                              : 'bg-slate-500/5 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-slate-500/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/30" style={{ backgroundColor: line.color }}></span>
+                            <span className="text-[11px]">
+                              {isUa ? `Лінія #${idx + 1} (${line.points.length} точок)` : `Line #${idx + 1} (${line.points.length} pts)`}
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteLine(line.id);
+                            }}
+                            className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            </div>
           )}
         </div>
 
