@@ -113,3 +113,9 @@
   box-shadow: none !important;
   pointer-events: auto !important;
 }
+
+/* Permanent Neon District Outline */
+.neon-district-outline {
+  filter: drop-shadow(0 0 3px rgba(0, 255, 102, 0.4));
+  pointer-events: none !important;
+}

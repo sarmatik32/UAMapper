@@ -161,6 +161,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
+  const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
   
   // Measurement Tool State & Refs
   const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
@@ -1186,6 +1187,69 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
     };
   }, []);
+
+  // Permanent boundary layer for Kryvyi Rih Raion (thin neon green line, no fill)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    let isMounted = true;
+
+    const loadKryvyiRihBoundary = async () => {
+      try {
+        let geojson = null;
+        const cached = localStorage.getItem('uamapper_kryvorizkyi_raion_boundary');
+        if (cached) {
+          try {
+            geojson = JSON.parse(cached);
+          } catch (e) {}
+        }
+
+        if (!geojson) {
+          const res = await fetch(
+            'https://nominatim.openstreetmap.org/lookup?osm_ids=R1738028&format=json&polygon_geojson=1&accept-language=uk'
+          );
+          if (res.ok) {
+            const data = await res.json();
+            if (data && data[0] && data[0].geojson) {
+              geojson = data[0].geojson;
+              localStorage.setItem('uamapper_kryvorizkyi_raion_boundary', JSON.stringify(geojson));
+            }
+          }
+        }
+
+        if (geojson && isMounted && mapInstanceRef.current) {
+          if (kryvyiRihRaionLayerRef.current) {
+            kryvyiRihRaionLayerRef.current.remove();
+          }
+
+          kryvyiRihRaionLayerRef.current = L.geoJSON(geojson, {
+            style: {
+              className: 'neon-district-outline',
+              color: '#00ff66',      // Neon green stroke
+              weight: 2,             // Thin line
+              opacity: 0.5,          // 50% opacity
+              fill: false,           // No fill
+              fillOpacity: 0,        // Completely transparent inside
+              interactive: false,    // Clicks pass through to map
+            } as L.PathOptions
+          }).addTo(mapInstanceRef.current);
+        }
+      } catch (err) {
+        console.error('Error loading Kryvyi Rih district boundary:', err);
+      }
+    };
+
+    loadKryvyiRihBoundary();
+
+    return () => {
+      isMounted = false;
+      if (kryvyiRihRaionLayerRef.current) {
+        kryvyiRihRaionLayerRef.current.remove();
+        kryvyiRihRaionLayerRef.current = null;
+      }
+    };
+  }, [isMapReady]);
 
   // Synchronize Measurement Tool Graphics on Map
   useEffect(() => {
