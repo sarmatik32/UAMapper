@@ -4,7 +4,7 @@ import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
 import { Settlement, SettlementCategory } from './data/settlements';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon } from 'lucide-react';
+import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2 } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
@@ -198,7 +198,7 @@ export default function App() {
   const [lineColor, setLineColor] = useState<string>('#ef4444');
   const [lineWeight, setLineWeight] = useState<number>(5);
   const [lineSmoothed, setLineSmoothed] = useState<boolean>(true);
-  const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('fade');
+  const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('none');
   const [lineStartCustomIcon, setLineStartCustomIcon] = useState<string>('');
   const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('arrow');
   const [lineEndCustomIcon, setLineEndCustomIcon] = useState<string>('');
@@ -484,6 +484,60 @@ export default function App() {
 
   const [showAlert, setShowAlert] = useState<boolean>(true);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('draw');
+
+  const ALL_INTERACTION_MODES: InteractionMode[] = ['draw', 'pan', 'line', 'measure', 'redzone', 'settlement'];
+
+  const handleCycleInteractionMode = () => {
+    const currentIndex = ALL_INTERACTION_MODES.indexOf(interactionMode);
+    const nextIndex = (currentIndex + 1) % ALL_INTERACTION_MODES.length;
+    setInteractionMode(ALL_INTERACTION_MODES[nextIndex]);
+  };
+
+  const getModeInfo = (mode: InteractionMode) => {
+    switch (mode) {
+      case 'draw':
+        return {
+          icon: <PenTool className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Нанесення значків' : 'Mode: Draw Markers',
+        };
+      case 'pan':
+        return {
+          icon: <Hand className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Переміщення карти' : 'Mode: Pan Map',
+        };
+      case 'line':
+        return {
+          icon: <Spline className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Малювання ліній' : 'Mode: Draw Lines',
+        };
+      case 'measure':
+        return {
+          icon: <Ruler className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Вимірювання' : 'Mode: Measure',
+        };
+      case 'redzone':
+        return {
+          icon: <ShieldAlert className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Зона ураження' : 'Mode: Red Zone',
+        };
+      case 'settlement':
+        return {
+          icon: <Building2 className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Населений пункт' : 'Mode: Add Settlement',
+        };
+      default:
+        return {
+          icon: <PenTool className="w-5 h-5" />,
+          title: language === 'uk' ? 'Режим: Нанесення значків' : 'Mode: Draw Markers',
+        };
+    }
+  };
+
+  useEffect(() => {
+    if (interactionMode !== 'line' && selectedLineId !== null) {
+      setSelectedLineId(null);
+    }
+  }, [interactionMode, selectedLineId]);
   const [mobileView, setMobileView] = useState<'map' | 'sidebar'>('map');
 
   const [autoHighlightZone, setAutoHighlightZone] = useState<boolean>(() => {
@@ -777,6 +831,9 @@ export default function App() {
   const handleClearMarkers = () => {
     setMarkers([]);
     setSelectedMarkerId(null);
+    setDrawnLines([]);
+    setSelectedLineId(null);
+    localStorage.removeItem('visicom_drawn_lines');
   };
 
   // Handler: Toggle App Language
@@ -860,17 +917,17 @@ export default function App() {
           {/* Floating Action Bar (When no marker is selected) */}
           {selectedMarkerId === null && (
             <div className="absolute bottom-14 md:bottom-8 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white animate-fade-in">
-              {/* Interaction Mode Toggle (No label) */}
+              {/* Interaction Mode Toggle (Cycles through all modes) */}
               <button
-                onClick={() => setInteractionMode(interactionMode === 'draw' ? 'pan' : 'draw')}
-                title={interactionMode === 'draw' ? (language === 'uk' ? 'Режим: Нанесення значків (Клацніть для переміщення)' : 'Mode: Draw (Click for Pan)') : (language === 'uk' ? 'Режим: Переміщення (Клацніть для малювання)' : 'Mode: Pan (Click for Draw)')}
+                onClick={handleCycleInteractionMode}
+                title={getModeInfo(interactionMode).title}
                 className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 ${
-                  interactionMode === 'draw'
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  interactionMode === 'pan'
+                    ? 'bg-white/10 text-slate-200 hover:bg-white/20'
+                    : 'bg-blue-600 text-white shadow-lg shadow-blue-500/30 ring-2 ring-blue-400/50'
                 }`}
               >
-                {interactionMode === 'draw' ? <PenTool className="w-5 h-5" /> : <Hand className="w-5 h-5" />}
+                {getModeInfo(interactionMode).icon}
               </button>
 
               {/* Camera copy button (Yellow) */}

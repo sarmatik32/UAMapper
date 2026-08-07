@@ -18,11 +18,15 @@ export function createExplosionIcon(color: string, sizeMultiplier = 1) {
   });
 }
 
-export function createCustomImageIcon(dataUrl: string, sizeMultiplier = 1) {
+export function createCustomImageIcon(dataUrl: string, sizeMultiplier = 1, angleDegrees?: number) {
   const size = Math.max(28, Math.min(56, 24 + sizeMultiplier * 2));
+  const rotateStyle = angleDegrees !== undefined ? `transform: rotate(${angleDegrees - 90}deg);` : '';
+  const imgContent = dataUrl
+    ? `<img src="${dataUrl}" class="w-full h-full object-contain pointer-events-none" alt="icon" />`
+    : `<span class="text-amber-400 text-xs font-bold">🖼️</span>`;
   const html = `
-    <div class="flex items-center justify-center p-1 rounded-full bg-slate-900/90 border-2 border-amber-400 shadow-lg shadow-black/60" style="width: ${size}px; height: ${size}px;">
-      <img src="${dataUrl}" class="w-full h-full object-contain pointer-events-none" alt="icon" />
+    <div class="flex items-center justify-center p-1 rounded-full bg-slate-900/90 border-2 border-amber-400 shadow-lg shadow-black/60" style="width: ${size}px; height: ${size}px; ${rotateStyle}">
+      ${imgContent}
     </div>
   `;
   return L.divIcon({
@@ -52,7 +56,7 @@ export function createFadeGlowIcon(color: string, sizeMultiplier = 1) {
 export function createArrowIcon(color: string, angleDegrees: number, sizeMultiplier = 1) {
   const size = Math.max(22, Math.min(42, 20 + sizeMultiplier * 2));
   const html = `
-    <div class="flex items-center justify-center" style="width: ${size}px; height: ${size}px; transform: rotate(${angleDegrees}deg);">
+    <div class="flex items-center justify-center" style="width: ${size}px; height: ${size}px; transform: rotate(${angleDegrees - 90}deg);">
       <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
         <path d="M5 12H19M19 12L12 5M19 12L12 19" stroke="${color}" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>

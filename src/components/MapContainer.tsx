@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles } from 'lucide-react';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
@@ -212,6 +212,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       vertexMarkers?: L.Marker[];
     };
   }>({});
+  const draftLinePointsRef = useRef(draftLinePoints);
+  useEffect(() => {
+    draftLinePointsRef.current = draftLinePoints;
+  }, [draftLinePoints]);
+
   const draftLineLayerRef = useRef<{
     polyline?: L.Polyline;
     fadingPolylines?: L.Polyline[];
@@ -237,6 +242,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     onAddDrawnLine(newLine);
     setDraftLinePoints([]);
   }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineEndStyle, lineEndCustomIcon, onAddDrawnLine]);
+
+  const handleFinishDraftLineRef = useRef(handleFinishDraftLine);
+  useEffect(() => {
+    handleFinishDraftLineRef.current = handleFinishDraftLine;
+  }, [handleFinishDraftLine]);
 
   // Map Readiness State
   const [isMapReady, setIsMapReady] = useState(false);
@@ -664,7 +674,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       };
 
       setSearchedAreas((prev) => [...prev, newArea]);
-      addZoneToQuickButtons(title, itemGeojson, lat.toString(), lng.toString(), osmId);
 
       if (mapInstanceRef.current && itemGeojson) {
         try {
@@ -750,7 +759,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         };
 
         setSearchedAreas((prev) => [...prev, newArea]);
-        addZoneToQuickButtons(placeTitle, settlementGeojson, lat.toString(), lng.toString(), osmId);
 
         if (mapInstanceRef.current && settlementGeojson) {
           try {
@@ -818,7 +826,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         };
 
         setSearchedAreas((prev) => [...prev, newArea]);
-        addZoneToQuickButtons(hromadaName, hromadaGeojson, lat.toString(), lng.toString(), osmId);
 
         if (mapInstanceRef.current && hromadaGeojson) {
           try {
@@ -837,7 +844,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  // Search handler
+  // Search handler with Kryvyi Rih district biasing & ranking
   const handleSearch = async (queryText: string) => {
     if (!queryText.trim()) {
       setSearchResults([]);
@@ -847,21 +854,48 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setIsSearching(true);
     setShowDropdown(true);
     try {
+      // Viewbox bounding Kryvyi Rih district & nearby surroundings (lon_min, lat_max, lon_max, lat_min)
+      const viewboxStr = '32.5,48.6,34.5,47.2';
       const res = await safeFetchNominatim(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
           queryText
-        )}&format=json&polygon_geojson=1&countrycodes=ua&accept-language=uk&limit=8`
+        )}&format=json&polygon_geojson=1&countrycodes=ua&viewbox=${viewboxStr}&bounded=0&accept-language=uk&limit=14`
       );
       if (res.ok && res.data) {
         const data = res.data;
-        // Filter out places with valid polygon geometries first, fallback to all if empty
-        const filtered = data.filter(
+        
+        // Kryvyi Rih district scoring helper
+        const getKryvyiRihScore = (item: any) => {
+          let score = 0;
+          const nameLower = (item.display_name || '').toLowerCase();
+          const lat = parseFloat(item.lat);
+          const lon = parseFloat(item.lon);
+
+          // Geofence check for Kryvyi Rih district & surrounding region
+          if (!isNaN(lat) && !isNaN(lon) && lat >= 47.1 && lat <= 48.5 && lon >= 32.5 && lon <= 34.5) {
+            score += 150;
+          }
+
+          // Textual relevance for Kryvyi Rih district / Dnipropetrovsk oblast
+          if (nameLower.includes('криворізьк') || nameLower.includes('кривий ріг')) {
+            score += 250;
+          } else if (nameLower.includes('дніпропетровськ') || nameLower.includes('дніпро')) {
+            score += 80;
+          }
+
+          return score;
+        };
+
+        const sortedData = [...data].sort((a, b) => getKryvyiRihScore(b) - getKryvyiRihScore(a));
+
+        // Filter out places with valid polygon geometries first, fallback to sorted all if empty
+        const filtered = sortedData.filter(
           (item: any) =>
             item.geojson &&
             (item.geojson.type === 'Polygon' ||
               item.geojson.type === 'MultiPolygon')
         );
-        setSearchResults(filtered.length > 0 ? filtered : data);
+        setSearchResults(filtered.length > 0 ? filtered : sortedData);
       } else {
         setSearchResults([]);
       }
@@ -1022,8 +1056,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (prev.some((a) => a.id === newArea.id)) return prev;
         return [...prev, newArea];
       });
-
-      addZoneToQuickButtons(name, item.geojson, item.lat, item.lon, item.osm_id?.toString());
 
       try {
         const tempLayer = L.geoJSON(item.geojson);
@@ -1297,6 +1329,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const marker = L.marker([item.lat, item.lng], {
         icon: customDivIcon,
         interactive: true,
+        pane: 'settlementPane',
         zIndexOffset: item.type === 'district' ? 1000 : (item.priority === 1 ? 800 : 400),
       });
 
@@ -1341,6 +1374,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const onAddMarkerRef = useRef(onAddMarker);
   const onSelectMarkerRef = useRef(onSelectMarker);
+  const onSelectLineRef = useRef(onSelectLine);
   const onAddCustomSettlementPointRef = useRef(onAddCustomSettlementPoint);
   const onEditSettlementRef = useRef(onEditSettlement);
 
@@ -1351,6 +1385,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useEffect(() => {
     onSelectMarkerRef.current = onSelectMarker;
   }, [onSelectMarker]);
+
+  useEffect(() => {
+    onSelectLineRef.current = onSelectLine;
+  }, [onSelectLine]);
 
   useEffect(() => {
     onAddCustomSettlementPointRef.current = onAddCustomSettlementPoint;
@@ -1378,6 +1416,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       // Add a styled zoom control at top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
+
+      // Create custom Leaflet panes to control z-index layer ordering:
+      // Red zones (320) < Settlement points & labels (350) < Drawn lines (450) < User markers/tactical icons (600)
+      if (!map.getPane('redZonePane')) {
+        const p = map.createPane('redZonePane');
+        p.style.zIndex = '320';
+      }
+      if (!map.getPane('settlementPane')) {
+        const p = map.createPane('settlementPane');
+        p.style.zIndex = '350';
+      }
+      if (!map.getPane('drawnLinesPane')) {
+        const p = map.createPane('drawnLinesPane');
+        p.style.zIndex = '450';
+      }
+      if (!map.getPane('userMarkersPane')) {
+        const p = map.createPane('userMarkersPane');
+        p.style.zIndex = '600';
+      }
 
       // Handle map clicks based on active interaction mode
       map.on('click', (e: L.LeafletMouseEvent) => {
@@ -1407,6 +1464,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
           } else if (mode === 'draw') {
             onSelectMarkerRef.current(null);
+            onSelectLineRef.current(null);
             const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
             if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
               handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
@@ -1419,6 +1477,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             }
           } else {
             onSelectMarkerRef.current(null);
+            onSelectLineRef.current(null);
+          }
+        }
+      });
+
+      // Finish line on map double click
+      map.on('dblclick', (e: L.LeafletMouseEvent) => {
+        if (interactionModeRef.current === 'line') {
+          L.DomEvent.stopPropagation(e);
+          if (draftLinePointsRef.current.length >= 2) {
+            handleFinishDraftLineRef.current();
           }
         }
       });
@@ -1649,9 +1718,22 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
 
     setSearchedAreas((prev) => {
-      const hasOrphaned = prev.some((a) => a.markerId && !validMarkerIds.has(a.markerId));
-      if (!hasOrphaned) return prev;
-      return prev.filter((a) => !a.markerId || validMarkerIds.has(a.markerId));
+      const filtered = prev.filter((a) => {
+        if (a.markerId) {
+          return validMarkerIds.has(a.markerId);
+        }
+        if (a.id.startsWith('autozone_marker_')) {
+          const mId = a.id.replace('autozone_marker_', '');
+          return validMarkerIds.has(mId);
+        }
+        if (a.id.startsWith('autozone_')) {
+          const mId = a.id.replace('autozone_', '');
+          return validMarkerIds.has(mId);
+        }
+        return true;
+      });
+      if (filtered.length === prev.length) return prev;
+      return filtered;
     });
 
     // 2. Add or update current markers
@@ -1709,6 +1791,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const newMarker = L.marker([lat, lng], {
           icon: customIcon,
           draggable: draggable,
+          pane: 'userMarkersPane',
           zIndexOffset: isSelected ? 1000 : 0,
         }).addTo(map);
 
@@ -1986,6 +2069,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           endMarkerInstance = L.marker([finalEndLat, finalEndLng], {
             icon: endMarkerIcon,
             draggable: isSelected,
+            pane: 'userMarkersPane',
             zIndexOffset: 1100,
           }).addTo(map);
           endMarkersRef.current[id] = endMarkerInstance;
@@ -2130,6 +2214,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             opacity: 0.5,
             lineCap: 'round',
             lineJoin: 'round',
+            pane: 'drawnLinesPane',
           }).addTo(map);
         } else {
           existing.halo.setLatLngs(displayPoints);
@@ -2169,6 +2254,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             dashArray: dashArray,
             lineCap: 'round',
             lineJoin: 'round',
+            pane: 'drawnLinesPane',
           }).addTo(map);
 
           poly.on('click', (e: L.LeafletMouseEvent) => {
@@ -2192,6 +2278,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             dashArray: dashArray,
             lineCap: 'round',
             lineJoin: 'round',
+            pane: 'drawnLinesPane',
           }).addTo(map);
 
           existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
@@ -2214,8 +2301,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         style: LineEndpointType,
         customIconUrl: string,
         p1: [number, number],
-        p2: [number, number],
-        isStart: boolean
+        p2: [number, number]
       ): L.DivIcon | null => {
         if (style === 'none') return null;
 
@@ -2226,10 +2312,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           return createExplosionIcon(line.color, line.weight);
         }
         if (style === 'custom_icon') {
-          return createCustomImageIcon(customIconUrl || '', line.weight);
+          const bearing = calculateBearing(p1, p2);
+          return createCustomImageIcon(customIconUrl || '', line.weight, bearing);
         }
         if (style === 'arrow') {
-          const bearing = isStart ? calculateBearing(p2, p1) : calculateBearing(p1, p2);
+          const bearing = calculateBearing(p1, p2);
           return createArrowIcon(line.color, bearing, line.weight);
         }
         if (style === 'dot') {
@@ -2249,8 +2336,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         line.startPointStyle,
         line.startCustomIconUrl || '',
         startCoord,
-        secondCoord,
-        true
+        secondCoord
       );
 
       if (startIcon) {
@@ -2258,6 +2344,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           existing.startMarker = L.marker(startCoord, {
             icon: startIcon,
             interactive: true,
+            pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
           existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
@@ -2278,8 +2365,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         line.endPointStyle,
         line.endCustomIconUrl || '',
         prevEndCoord,
-        endCoord,
-        false
+        endCoord
       );
 
       if (endIcon) {
@@ -2287,6 +2373,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           existing.endMarker = L.marker(endCoord, {
             icon: endIcon,
             interactive: true,
+            pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
           existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
@@ -2302,8 +2389,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         existing.endMarker = undefined;
       }
 
-      // 4. Vertex Editing Handles (shown ONLY when line is selected)
-      if (isSelected) {
+      // 4. Vertex Editing Handles (shown ONLY when line is selected AND line drawing mode is active)
+      if (isSelected && interactionMode === 'line') {
         if (existing.vertexMarkers) {
           existing.vertexMarkers.forEach((m) => m.remove());
         }
@@ -2315,7 +2402,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const ringColor = isStartNode ? '#10b981' : isEndNode ? '#f59e0b' : '#3b82f6';
 
           const handleIcon = L.divIcon({
-            className: 'line-vertex-edit-handle',
+            className: 'line-vertex-edit-handle screenshot-exclude',
             html: `
               <div class="relative flex items-center justify-center cursor-grab active:cursor-grabbing group">
                 <div class="w-4 h-4 rounded-full bg-white border-2 shadow-lg transition-transform group-hover:scale-125 flex items-center justify-center" style="border-color: ${ringColor};">
@@ -2330,6 +2417,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const marker = L.marker(pt, {
             icon: handleIcon,
             draggable: true,
+            pane: 'drawnLinesPane',
             zIndexOffset: 1200,
           }).addTo(map);
 
@@ -2387,7 +2475,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         existing.vertexMarkers = undefined;
       }
     });
-  }, [drawnLines, selectedLineId, onSelectLine, onUpdateDrawnLine, isMapReady]);
+  }, [drawnLines, selectedLineId, interactionMode, onSelectLine, onUpdateDrawnLine, isMapReady]);
 
   // Render current draft line being drawn
   useEffect(() => {
@@ -2400,10 +2488,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     layers.nodeMarkers.forEach((m) => m.remove());
     layers.nodeMarkers = [];
 
-    if (draftLinePoints.length === 0) {
+    if (draftLinePoints.length === 0 || interactionMode !== 'line') {
       if (layers.polyline) {
         layers.polyline.remove();
         layers.polyline = undefined;
+      }
+      if (layers.fadingPolylines) {
+        layers.fadingPolylines.forEach((p) => p.remove());
+        layers.fadingPolylines = undefined;
       }
       if (layers.startMarker) {
         layers.startMarker.remove();
@@ -2450,9 +2542,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           color: lineColor,
           weight: lineWeight,
           opacity: seg.opacity,
-          dashArray: dashArray || '6, 6',
+          dashArray: dashArray,
           lineCap: 'round',
           lineJoin: 'round',
+          pane: 'drawnLinesPane',
         }).addTo(map)
       );
     } else {
@@ -2465,22 +2558,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         layers.polyline = L.polyline(displayPoints, {
           color: lineColor,
           weight: lineWeight,
-          dashArray: dashArray || '6, 6',
+          dashArray: dashArray,
           opacity: 0.85,
           lineCap: 'round',
           lineJoin: 'round',
+          pane: 'drawnLinesPane',
         }).addTo(map);
       } else {
         layers.polyline.setLatLngs(displayPoints);
         layers.polyline.setStyle({
           color: lineColor,
           weight: lineWeight,
-          dashArray: dashArray || '6, 6',
+          dashArray: dashArray,
         });
       }
     }
 
-    // Render node markers at raw points
+    // Render node markers at raw points (draggable and editable during draft drawing)
     draftLinePoints.forEach((pt, idx) => {
       const isStartNode = idx === 0;
       const isEndNode = idx === draftLinePoints.length - 1;
@@ -2488,13 +2582,45 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const ringColor = isStartNode ? '#10b981' : isEndNode ? '#f59e0b' : '#3b82f6';
 
       const nodeIcon = L.divIcon({
-        className: 'draft-line-node',
-        html: `<div style="background-color: white; border: 2.5px solid ${ringColor}; width: 12px; height: 12px; border-radius: 9999px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transform: translate(-50%, -50%);"></div>`,
+        className: 'draft-line-node screenshot-exclude',
+        html: `<div style="background-color: white; border: 2.5px solid ${ringColor}; width: 14px; height: 14px; border-radius: 9999px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transform: translate(-50%, -50%); cursor: grab;" title="${language === 'uk' ? 'Перетягніть для зсуву точки, ПКМ — видалити' : 'Drag to move vertex, Right click to remove'}"></div>`,
         iconSize: [0, 0],
         iconAnchor: [0, 0],
       });
 
-      const marker = L.marker(pt, { icon: nodeIcon, interactive: false }).addTo(map);
+      const marker = L.marker(pt, {
+        icon: nodeIcon,
+        draggable: true,
+        interactive: true,
+        pane: 'drawnLinesPane',
+        zIndexOffset: 1500,
+      }).addTo(map);
+
+      marker.on('drag', (e: L.LeafletEvent) => {
+        const dragged = e.target as L.Marker;
+        const newPos = dragged.getLatLng();
+        setDraftLinePoints((prev) => {
+          const next = [...prev];
+          if (next[idx]) next[idx] = [newPos.lat, newPos.lng];
+          return next;
+        });
+      });
+
+      marker.on('dragend', (e: L.LeafletEvent) => {
+        const dragged = e.target as L.Marker;
+        const newPos = dragged.getLatLng();
+        setDraftLinePoints((prev) => {
+          const next = [...prev];
+          if (next[idx]) next[idx] = [newPos.lat, newPos.lng];
+          return next;
+        });
+      });
+
+      marker.on('contextmenu', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        setDraftLinePoints((prev) => prev.filter((_, i) => i !== idx));
+      });
+
       layers.nodeMarkers.push(marker);
     });
 
@@ -2509,13 +2635,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let startIcon: L.DivIcon | null = null;
         if (lineStartStyle === 'fade') startIcon = createFadeGlowIcon(lineColor, lineWeight);
         if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineWeight);
-        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, calculateBearing(secondCoord, startCoord), lineWeight);
+        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineWeight, calculateBearing(startCoord, secondCoord));
+        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, calculateBearing(startCoord, secondCoord), lineWeight);
         if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight);
 
         if (startIcon) {
           if (!layers.startMarker) {
-            layers.startMarker = L.marker(startCoord, { icon: startIcon, interactive: false }).addTo(map);
+            layers.startMarker = L.marker(startCoord, { icon: startIcon, interactive: false, pane: 'drawnLinesPane' }).addTo(map);
           } else {
             layers.startMarker.setLatLng(startCoord);
             layers.startMarker.setIcon(startIcon);
@@ -2530,13 +2656,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let endIcon: L.DivIcon | null = null;
         if (lineEndStyle === 'fade') endIcon = createFadeGlowIcon(lineColor, lineWeight);
         if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineWeight);
+        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineWeight, calculateBearing(prevEndCoord, endCoord));
         if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, calculateBearing(prevEndCoord, endCoord), lineWeight);
         if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight);
 
         if (endIcon) {
           if (!layers.endMarker) {
-            layers.endMarker = L.marker(endCoord, { icon: endIcon, interactive: false }).addTo(map);
+            layers.endMarker = L.marker(endCoord, { icon: endIcon, interactive: false, pane: 'drawnLinesPane' }).addTo(map);
           } else {
             layers.endMarker.setLatLng(endCoord);
             layers.endMarker.setIcon(endIcon);
@@ -2557,8 +2683,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     lineStartCustomIcon,
     lineEndStyle,
     lineEndCustomIcon,
+    interactionMode,
     isMapReady,
   ]);
+
+  // Clear draft line points when leaving line drawing mode
+  useEffect(() => {
+    if (interactionMode !== 'line' && draftLinePoints.length > 0) {
+      setDraftLinePoints([]);
+    }
+  }, [interactionMode, draftLinePoints.length]);
 
   // Keyboard shortcut listener for line drawing
   useEffect(() => {
@@ -2574,6 +2708,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [draftLinePoints, handleFinishDraftLine]);
+
+  // Disable doubleClickZoom during line drawing mode to allow double-click line finishing
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+    if (interactionMode === 'line') {
+      map.doubleClickZoom.disable();
+    } else {
+      map.doubleClickZoom.enable();
+    }
+  }, [interactionMode, isMapReady]);
 
   // Center map on selected marker when it changes (or coordinates manual edits)
   const lastSelectedIdRef = useRef<string | null>(null);
@@ -2620,11 +2765,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       mapElement.classList.add('exporting-map-blur');
     }
     setIsExporting(true);
-    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (4x Ultra HQ)...' : 'Preparing map (4x Ultra HQ)...');
+    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (Ultra HQ)...' : 'Preparing map (Ultra HQ)...');
     
     try {
-      // Hide standard Leaflet UI controls briefly
-      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle');
+      // Hide standard Leaflet UI controls and editing handles briefly
+      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon');
       elementsToHide.forEach((el) => {
         (el as HTMLElement).style.opacity = '0';
       });
@@ -2642,36 +2787,34 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       });
 
       // Fast layout sync delay
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, 30));
 
       setScreenshotStatus(language === 'uk' ? 'Генерація зображення...' : 'Generating image...');
 
-      const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
-      const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
-
-      const scale = Math.min(2, window.devicePixelRatio || 2);
-      const scaledWidth = Math.round(sourceWidth * scale);
-      const scaledHeight = Math.round(sourceHeight * scale);
+      const filterNode = (node: HTMLElement) => {
+        if (node && node.classList) {
+          if (
+            node.classList.contains('leaflet-control-container') ||
+            node.classList.contains('screenshot-exclude') ||
+            node.classList.contains('draft-line-node') ||
+            node.classList.contains('line-vertex-edit-handle') ||
+            node.classList.contains('custom-end-handle') ||
+            node.classList.contains('measure-node-icon')
+          ) {
+            return false;
+          }
+        }
+        return true;
+      };
 
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        width: scaledWidth,
-        height: scaledHeight,
-        canvasWidth: scaledWidth,
-        canvasHeight: scaledHeight,
-        style: {
-          width: `${sourceWidth}px`,
-          height: `${sourceHeight}px`,
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-          margin: '0',
-          padding: '0',
-        },
+        pixelRatio: Math.min(2, window.devicePixelRatio || 2),
         skipFonts: true,
         fontEmbedCSS: '',
         imagePlaceholder: undefined,
-        filter: () => true,
+        filter: filterNode as any,
       };
 
       const dataUrl = await toPng(mapElement, captureOptions);
@@ -2726,7 +2869,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     
     try {
       // Hide standard UI controls
-      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle');
+      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon');
       elementsToHide.forEach((el) => {
         (el as HTMLElement).style.opacity = '0';
       });
@@ -2743,35 +2886,33 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       });
 
-      // Fast 50ms layout sync delay
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Fast layout sync delay
+      await new Promise((resolve) => setTimeout(resolve, 30));
 
-      const sourceWidth = mapElement.clientWidth || mapElement.offsetWidth;
-      const sourceHeight = mapElement.clientHeight || mapElement.offsetHeight;
-
-      const scale = Math.min(2, window.devicePixelRatio || 2);
-      const scaledWidth = Math.round(sourceWidth * scale);
-      const scaledHeight = Math.round(sourceHeight * scale);
+      const filterNode = (node: HTMLElement) => {
+        if (node && node.classList) {
+          if (
+            node.classList.contains('leaflet-control-container') ||
+            node.classList.contains('screenshot-exclude') ||
+            node.classList.contains('draft-line-node') ||
+            node.classList.contains('line-vertex-edit-handle') ||
+            node.classList.contains('custom-end-handle') ||
+            node.classList.contains('measure-node-icon')
+          ) {
+            return false;
+          }
+        }
+        return true;
+      };
 
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        width: scaledWidth,
-        height: scaledHeight,
-        canvasWidth: scaledWidth,
-        canvasHeight: scaledHeight,
-        style: {
-          width: `${sourceWidth}px`,
-          height: `${sourceHeight}px`,
-          transform: `scale(${scale})`,
-          transformOrigin: 'top left',
-          margin: '0',
-          padding: '0',
-        },
+        pixelRatio: Math.min(2, window.devicePixelRatio || 2),
         skipFonts: true,
         fontEmbedCSS: '',
         imagePlaceholder: undefined,
-        filter: () => true,
+        filter: filterNode as any,
       };
 
       // Direct single-pass Blob generation
@@ -3030,30 +3171,68 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                   )
                 ) : (
                   <div className="flex flex-col py-1">
-                    {searchResults.map((item, idx) => (
-                      <button
-                        key={item.place_id ? `search_${item.place_id}_${idx}` : `search_idx_${idx}`}
-                        onClick={() => handleSelectArea(item)}
-                        className={`w-full text-left px-4 py-2.5 text-xs flex items-center justify-between gap-2.5 transition-colors border-b last:border-0 cursor-pointer group ${
-                          theme === 'light' 
-                            ? 'hover:bg-slate-100 border-slate-100 text-slate-900' 
-                            : 'hover:bg-white/5 border-white/5 text-slate-100'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2.5 min-w-0">
-                          <MapPin className="w-3.5 h-3.5 mt-0.5 text-red-500 flex-shrink-0" />
-                          <div className="flex flex-col min-w-0">
-                            <span className="font-bold truncate">{item.display_name.split(',')[0]}</span>
-                            <span className="text-[10px] text-slate-400 mt-0.5 truncate">{formatDisplayName(item.display_name)}</span>
+                    {searchResults.map((item, idx) => {
+                      const name = item.display_name.split(',')[0] || item.display_name;
+                      const isSavedInCustom = customQuickZones.some(
+                        (q) => q.label.toLowerCase() === name.trim().toLowerCase() || q.fullName.toLowerCase() === name.trim().toLowerCase()
+                      );
+
+                      return (
+                        <div
+                          key={item.place_id ? `search_${item.place_id}_${idx}` : `search_idx_${idx}`}
+                          className={`w-full text-left px-3.5 py-2.5 text-xs flex items-center justify-between gap-2 transition-colors border-b last:border-0 ${
+                            theme === 'light' 
+                              ? 'hover:bg-slate-100 border-slate-100 text-slate-900' 
+                              : 'hover:bg-white/5 border-white/5 text-slate-100'
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleSelectArea(item)}
+                            className="flex items-start gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+                          >
+                            <MapPin className="w-3.5 h-3.5 mt-0.5 text-red-500 flex-shrink-0" />
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold truncate group-hover:text-blue-400 transition-colors">{name}</span>
+                              <span className="text-[10px] text-slate-400 mt-0.5 truncate">{formatDisplayName(item.display_name)}</span>
+                            </div>
+                          </button>
+
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {/* Just highlight on map */}
+                            <button
+                              type="button"
+                              onClick={() => handleSelectArea(item)}
+                              className="px-2 py-1 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                              title={language === 'uk' ? 'Виділити зону на карті' : 'Highlight zone on map'}
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>{language === 'uk' ? 'Виділити' : 'Highlight'}</span>
+                            </button>
+
+                            {/* Add to favorites / custom quick zones */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addZoneToQuickButtons(name, item.geojson, item.lat, item.lon, item.osm_id?.toString());
+                                handleSelectArea(item);
+                              }}
+                              disabled={isSavedInCustom}
+                              className={`px-2 py-1 rounded-lg font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs ${
+                                isSavedInCustom
+                                  ? 'bg-amber-500/20 text-amber-400 opacity-80 cursor-default'
+                                  : 'bg-amber-500/10 text-amber-500 hover:bg-amber-500 hover:text-white'
+                              }`}
+                              title={isSavedInCustom ? (language === 'uk' ? 'Уже в обраному' : 'Already in favorites') : (language === 'uk' ? 'Додати в обране' : 'Add to favorites')}
+                            >
+                              <Star className={`w-3 h-3 ${isSavedInCustom ? 'fill-amber-400 text-amber-400' : ''}`} />
+                              <span>{isSavedInCustom ? (language === 'uk' ? 'В обраному' : 'Saved') : (language === 'uk' ? 'В обране' : 'Bookmark')}</span>
+                            </button>
                           </div>
                         </div>
-
-                        <span className="flex-shrink-0 px-2 py-1 rounded-lg bg-red-500/10 text-red-500 font-bold text-[10px] flex items-center gap-1 group-hover:bg-red-500 group-hover:text-white transition-all shadow-xs">
-                          <Plus className="w-3 h-3" />
-                          <span>{language === 'uk' ? 'Додати зону' : 'Add zone'}</span>
-                        </span>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -3062,20 +3241,40 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             {/* List of active highlighted areas */}
             {searchedAreas.length > 0 && (
               <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-1">
-                {searchedAreas.map((area) => (
-                  <div
-                    key={area.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border bg-red-500/10 border-red-500/30 text-red-400 shadow-sm"
-                  >
-                    <span>{area.name}</span>
-                    <button
-                      onClick={() => handleRemoveArea(area.id)}
-                      className="hover:text-red-200 transition-colors cursor-pointer"
+                {searchedAreas.map((area) => {
+                  const isSavedInCustom = customQuickZones.some(
+                    (q) => q.label.toLowerCase() === area.name.trim().toLowerCase() || q.fullName.toLowerCase() === area.name.trim().toLowerCase()
+                  );
+                  return (
+                    <div
+                      key={area.id}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border bg-red-500/10 border-red-500/30 text-red-400 shadow-sm"
                     >
-                      <X className="w-2.5 h-2.5" />
-                    </button>
-                  </div>
-                ))}
+                      <span>{area.name}</span>
+                      
+                      {/* Button to add active zone to favorites */}
+                      <button
+                        type="button"
+                        onClick={() => addZoneToQuickButtons(area.name, area.geojson, area.lat, area.lon)}
+                        disabled={isSavedInCustom}
+                        title={isSavedInCustom ? (language === 'uk' ? 'Уже в обраному' : 'Already in favorites') : (language === 'uk' ? 'Додати в обране' : 'Add to favorites')}
+                        className={`p-0.5 rounded transition-colors ${
+                          isSavedInCustom ? 'text-amber-400 cursor-default' : 'text-slate-400 hover:text-amber-400 cursor-pointer'
+                        }`}
+                      >
+                        <Star className={`w-2.5 h-2.5 ${isSavedInCustom ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      </button>
+
+                      <button
+                        onClick={() => handleRemoveArea(area.id)}
+                        className="hover:text-red-200 transition-colors cursor-pointer"
+                        title={language === 'uk' ? 'Прибрати виділення' : 'Remove highlight'}
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  );
+                })}
                 
                 {/* Clear All pill */}
                 {searchedAreas.length > 1 && (
@@ -3436,6 +3635,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-map .selected-marker-highlight {
             outline: none !important;
             box-shadow: none !important;
+          }
+          /* Hide all helper nodes, vertex drag points, handles during export/copy */
+          .exporting-map .draft-line-node,
+          .exporting-map .line-vertex-edit-handle,
+          .exporting-map .screenshot-exclude,
+          .exporting-map .custom-end-handle,
+          .exporting-map .measure-node-icon {
+            display: none !important;
+            opacity: 0 !important;
+            visibility: hidden !important;
           }
           /* Perfect baseline/vertical centering for the tactical watermark badge elements */
           .tactical-logo-container {
