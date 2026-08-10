@@ -10,69 +10,99 @@ import { ICON_TYPES } from './components/IconLibrary';
 const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'carto_dark',
-    nameEn: 'CartoDB Dark (Night mode)',
-    nameUa: 'CartoDB Темна (Без ключа)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    nameEn: 'CartoDB Dark Matter (Clean, No Watermark)',
+    nameUa: 'CartoDB Темна (Без водяних знаків)',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
     tms: false,
     subdomains: 'abcd',
     maxZoom: 20,
     attribution: '© CartoDB, © OpenStreetMap',
     requiresKey: false,
+    isDark: true,
+  },
+  {
+    id: 'esri_dark_gray',
+    nameEn: 'Esri Dark Gray Canvas (Clean, No Watermark)',
+    nameUa: 'Esri Темна сіра (Без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    tms: false,
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, HERE, NGA, USGS',
+    requiresKey: false,
+    isDark: true,
   },
   {
     id: 'carto_voyager',
-    nameEn: 'CartoDB Voyager (Detailed)',
-    nameUa: 'CartoDB Детальна Voyager (Без ключа)',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    nameEn: 'CartoDB Voyager (Clean, No Watermark)',
+    nameUa: 'CartoDB Детальна Voyager (Світла, без водяних знаків)',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
     tms: false,
     subdomains: 'abcd',
     maxZoom: 20,
     attribution: '© CartoDB, © OpenStreetMap',
     requiresKey: false,
+    isDark: false,
   },
   {
     id: 'carto_light',
-    nameEn: 'CartoDB Light (Minimalist)',
-    nameUa: 'CartoDB Світла (Без ключа)',
-    url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    nameEn: 'CartoDB Positron / Light (Clean, No Watermark)',
+    nameUa: 'CartoDB Світла Positron (Без водяних знаків)',
+    url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
     tms: false,
     subdomains: 'abcd',
     maxZoom: 20,
     attribution: '© CartoDB, © OpenStreetMap',
     requiresKey: false,
+    isDark: false,
   },
   {
-    id: 'osm_hot',
-    nameEn: 'OSM Humanitarian (High Settlement Density)',
-    nameUa: 'OSM Густа мережа населених пунктів (Без ключа)',
-    url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+    id: 'esri_light_gray',
+    nameEn: 'Esri Light Gray Canvas (Clean, No Watermark)',
+    nameUa: 'Esri Світла сіра Canvas (Без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
     tms: false,
-    subdomains: 'abc',
+    subdomains: '',
     maxZoom: 19,
-    attribution: '© OpenStreetMap contributors, HOT',
+    attribution: '© Esri, HERE, NGA, USGS',
     requiresKey: false,
+    isDark: false,
   },
   {
     id: 'osm',
     nameEn: 'OpenStreetMap (Standard)',
-    nameUa: 'OpenStreetMap Стандартна (Без ключа)',
+    nameUa: 'OpenStreetMap Стандартна',
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     tms: false,
     subdomains: 'abc',
     maxZoom: 19,
     attribution: 'Map data © OpenStreetMap contributors',
     requiresKey: false,
+    isDark: false,
   },
   {
-    id: 'opentopomap',
-    nameEn: 'OpenTopoMap (Topographic + Villages)',
-    nameUa: 'OpenTopoMap Топографічна з селами (Без ключа)',
-    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    id: 'esri_satellite',
+    nameEn: 'Esri World Imagery (Satellite)',
+    nameUa: 'Супутникова карта Esri Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     tms: false,
-    subdomains: 'abc',
-    maxZoom: 17,
-    attribution: '© OpenStreetMap contributors, OpenTopoMap',
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
     requiresKey: false,
+    isDark: true,
+  },
+  {
+    id: 'visicom',
+    nameEn: 'Visicom Maps (Requires API Key to remove watermark)',
+    nameUa: 'Візіком Карта (Потрібен API-ключ для прибрання водяного знаку)',
+    url: 'https://tms{s}.visicom.ua/2.0.0/planet3/base/{z}/{x}/{y}.png?key={key}',
+    tms: true,
+    subdomains: '0123',
+    maxZoom: 19,
+    attribution: '© Visicom (Візіком)',
+    requiresKey: true,
+    isDark: false,
   },
 ];
 
@@ -247,7 +277,7 @@ export default function App() {
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
-    return matched || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS.find((l) => l.id === 'carto_light') || TILE_LAYERS[0];
+    return matched || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
   });
 
   const [watermarkText, setWatermarkText] = useState<string>(() => {
@@ -274,6 +304,21 @@ export default function App() {
   const [blurMapOnExport, setBlurMapOnExport] = useState<boolean>(() => {
     const saved = localStorage.getItem('visicom_blur_map_on_export');
     return saved !== null ? saved === 'true' : false;
+  });
+
+  const [showCityBoundary, setShowCityBoundary] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_city_boundary');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [showDistrictBoundary, setShowDistrictBoundary] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_district_boundary');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [showHromadaBoundaries, setShowHromadaBoundaries] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_hromada_boundaries');
+    return saved !== null ? saved === 'true' : true;
   });
 
   const [showSettlementLabels, setShowSettlementLabels] = useState<boolean>(() => {
@@ -471,7 +516,11 @@ export default function App() {
   };
 
   const [visicomKey, setVisicomKey] = useState<string>(() => {
-    return localStorage.getItem('visicom_api_key') || '';
+    const saved = localStorage.getItem('visicom_api_key');
+    if (!saved || saved === '4dda3664eaf5d320c708bc363c45fb16') {
+      return 'a2ecf945d33b9d0639ebc4568a61f82c';
+    }
+    return saved;
   });
 
   const [language, setLanguage] = useState<Language>(() => {
@@ -675,6 +724,18 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('visicom_show_radar_overlay', String(showRadarOverlay));
   }, [showRadarOverlay]);
+
+  useEffect(() => {
+    localStorage.setItem('uamapper_show_city_boundary', String(showCityBoundary));
+  }, [showCityBoundary]);
+
+  useEffect(() => {
+    localStorage.setItem('uamapper_show_district_boundary', String(showDistrictBoundary));
+  }, [showDistrictBoundary]);
+
+  useEffect(() => {
+    localStorage.setItem('uamapper_show_hromada_boundaries', String(showHromadaBoundaries));
+  }, [showHromadaBoundaries]);
 
   // Handler: Select base layer
   const handleSelectTileLayer = (layer: TileLayerConfig) => {
@@ -888,6 +949,10 @@ export default function App() {
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
+            showCityBoundary={showCityBoundary}
+            showDistrictBoundary={showDistrictBoundary}
+            showHromadaBoundaries={showHromadaBoundaries}
+            onToggleHromadaBoundaries={setShowHromadaBoundaries}
             showSettlementLabels={showSettlementLabels}
             settlementLabelMode={settlementLabelMode}
             disabledSettlementCategories={disabledSettlementCategories}
@@ -1134,6 +1199,12 @@ export default function App() {
                 setBlurMapOnExport(val);
                 localStorage.setItem('visicom_blur_map_on_export', val ? 'true' : 'false');
               }}
+              showCityBoundary={showCityBoundary}
+              onUpdateShowCityBoundary={setShowCityBoundary}
+              showDistrictBoundary={showDistrictBoundary}
+              onUpdateShowDistrictBoundary={setShowDistrictBoundary}
+              showHromadaBoundaries={showHromadaBoundaries}
+              onUpdateShowHromadaBoundaries={setShowHromadaBoundaries}
               showSettlementLabels={showSettlementLabels}
               onUpdateShowSettlementLabels={handleToggleSettlementLabels}
               autoHighlightZone={autoHighlightZone}

@@ -23,6 +23,7 @@ import {
   Move,
   Download,
   Copy,
+  AlertCircle,
   Edit3,
   Ruler,
   ShieldAlert,
@@ -70,6 +71,12 @@ interface SidebarProps {
   onUpdateShowRadarOverlay?: (show: boolean) => void;
   blurMapOnExport?: boolean;
   onUpdateBlurMapOnExport?: (blur: boolean) => void;
+  showCityBoundary?: boolean;
+  onUpdateShowCityBoundary?: (show: boolean) => void;
+  showDistrictBoundary?: boolean;
+  onUpdateShowDistrictBoundary?: (show: boolean) => void;
+  showHromadaBoundaries?: boolean;
+  onUpdateShowHromadaBoundaries?: (show: boolean) => void;
   showSettlementLabels?: boolean;
   onUpdateShowSettlementLabels?: (show: boolean) => void;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
@@ -149,6 +156,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateShowRadarOverlay = (_show) => {},
   blurMapOnExport = false,
   onUpdateBlurMapOnExport = (_blur) => {},
+  showCityBoundary = true,
+  onUpdateShowCityBoundary,
+  showDistrictBoundary = true,
+  onUpdateShowDistrictBoundary,
+  showHromadaBoundaries = true,
+  onUpdateShowHromadaBoundaries,
   showSettlementLabels = true,
   onUpdateShowSettlementLabels = (_show) => {},
   settlementLabelMode = 'all',
@@ -322,7 +335,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     btnResetMap: isUa ? 'Скинути карту' : 'Reset Map',
 
     btnSavePng: isUa ? 'Експорт PNG' : 'Export PNG',
-    btnShare: isUa ? 'Копіювати в буфер' : 'Copy to clipboard',
+    btnShare: isUa ? 'БУФЕР' : 'BUFFER',
     btnUndo: isUa ? 'Скасувати' : 'Undo',
     btnClearAll: isUa ? 'Очистити все' : 'Clear All',
     btnSupport: isUa ? 'ПІДТРИМКА' : 'SUPPORT',
@@ -1596,6 +1609,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
 
+              {/* Visicom Watermark Notice */}
+              {activeTileLayer.id === 'visicom' && !visicomKey && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] leading-relaxed">
+                  <p className="font-bold flex items-center gap-1 mb-1">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
+                    <span>{isUa ? 'Водяний знак Visicom' : 'Visicom Watermark'}</span>
+                  </p>
+                  <span>
+                    {isUa 
+                      ? 'Сервер Visicom автоматично додає на тайли текст про обмеження використання. Введіть API-ключ з developer.visicom.ua в налаштуваннях нижче, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
+                      : 'Visicom tiles include a usage watermark unless an API key from developer.visicom.ua is provided. Enter your API key below or select CartoDB/Esri layer for a clean map.'}
+                  </span>
+                </div>
+              )}
+
               {/* Load Custom URL Map */}
               <div className="space-y-1.5 pt-2.5 border-t border-slate-200 dark:border-white/5">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -1720,6 +1748,79 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   />
                   <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                 </label>
+              </div>
+
+              {/* Boundary Outlines Sub-Group */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  {isUa ? 'Обводки та межі території' : 'Territory Boundary Outlines'}
+                </label>
+
+                {/* 1. City Boundary Toggle */}
+                <div className="flex items-center justify-between py-1">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-sky-400 inline-block"></span>
+                      {isUa ? 'Обводка міста' : 'City Boundary'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal">
+                      {isUa ? 'Блакитна пунктирна лінія межі міста (Кривий Ріг)' : 'Sky blue dashed city boundary line'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={showCityBoundary} 
+                      onChange={(e) => onUpdateShowCityBoundary?.(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                  </label>
+                </div>
+
+                {/* 2. District Boundary Toggle */}
+                <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+                      {isUa ? 'Обводка району' : 'District Boundary'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal">
+                      {isUa ? 'Зелена лінія Криворізького району' : 'Green district boundary line'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={showDistrictBoundary} 
+                      onChange={(e) => onUpdateShowDistrictBoundary?.(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                  </label>
+                </div>
+
+                {/* 3. Settlements & Hromadas Boundary Toggle */}
+                <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                      {isUa ? 'Обводка н/п та громад' : 'Settlement & Hromada Boundaries'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal">
+                      {isUa ? 'Темно-сірі межі об\'єднаних громад та населених пунктів' : 'Dark gray community boundary lines'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={showHromadaBoundaries} 
+                      onChange={(e) => onUpdateShowHromadaBoundaries?.(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
               </div>
 
               {/* Show Settlement & District Labels Toggle */}
@@ -1983,16 +2084,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <span className="leading-tight text-center">{t.btnSavePng}</span>
           </button>
 
-          {/* Share */}
+          {/* Share / Buffer Copy */}
           <button
             onClick={onCopyPNG}
-            className={`w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
-              theme === 'light'
-                ? 'bg-[#FFD700] hover:bg-[#E6C200] text-slate-900 border-[#FFD700]/30 shadow-[#FFD700]/10'
-                : 'bg-slate-900/50 border-[#FFD700]/40 text-[#FFD700] hover:bg-[#FFD700]/10 shadow-[#FFD700]/5'
-            }`}
+            className="w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#FFD700]/30 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-lg shadow-[#FFD700]/20"
           >
-            <Copy className={`w-4 h-4 flex-shrink-0 ${theme === 'light' ? 'text-slate-900' : 'text-[#FFD700]'}`} />
+            <Copy className="w-4 h-4 flex-shrink-0 text-slate-950" />
             <span className="leading-tight text-center">{t.btnShare}</span>
           </button>
 

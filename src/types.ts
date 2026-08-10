@@ -25,11 +25,13 @@ export interface TileLayerConfig {
   nameEn: string;
   nameUa: string;
   url: string;
+  overlayUrl?: string;
   tms: boolean;
   subdomains?: string;
   maxZoom: number;
   attribution: string;
   requiresKey: boolean;
+  isDark?: boolean;
 }
 
 export type Language = 'uk' | 'en';

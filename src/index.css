@@ -3,10 +3,14 @@
 @import "leaflet/dist/leaflet.css";
 
 @theme {
-  --font-sans: "Outfit", "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  --font-aptos: "Aptos", "Outfit", "Inter", system-ui, sans-serif;
-  --font-ubuntu: "Ubuntu", sans-serif;
+  --font-sans: "Aptos Display", "Aptos", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+  --font-aptos: "Aptos Display", "Aptos", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ubuntu: "Aptos Display", "Aptos", sans-serif;
+}
+
+html, body {
+  font-family: "Aptos Display", "Aptos", -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "San Francisco", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
 /* Custom Scrollbar Styles for the Sidebar */
@@ -114,8 +118,8 @@
   pointer-events: auto !important;
 }
 
-/* Permanent Neon District Outline */
-.neon-district-outline {
-  filter: drop-shadow(0 0 3px rgba(0, 255, 102, 0.8));
+/* Permanent Clean District & City Outline (No drop-shadow / no neon filter) */
+.clean-district-outline, .neon-district-outline {
   pointer-events: none !important;
+  filter: none !important;
 }

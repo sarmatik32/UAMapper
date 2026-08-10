@@ -120,6 +120,10 @@ interface MapContainerProps {
   disabledSettlementCategories?: SettlementCategory[];
   onToggleSettlementLabels?: (show: boolean) => void;
   onSetSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
+  showCityBoundary?: boolean;
+  showDistrictBoundary?: boolean;
+  showHromadaBoundaries?: boolean;
+  onToggleHromadaBoundaries?: (show: boolean) => void;
   customSettlements?: Settlement[];
   onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
   onEditSettlement?: (settlement: Settlement) => void;
@@ -166,6 +170,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   disabledSettlementCategories = [],
   onToggleSettlementLabels,
   onSetSettlementLabelMode,
+  showCityBoundary = true,
+  showDistrictBoundary = true,
+  showHromadaBoundaries = true,
+  onToggleHromadaBoundaries,
   customSettlements = [],
   onAddCustomSettlementPoint,
   onEditSettlement,
@@ -188,11 +196,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
+  const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
+  const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
+  const hromadasLayerGroupRef = useRef<L.LayerGroup | null>(null);
   
   // Measurement Tool State & Refs
   const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
@@ -1153,13 +1164,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Add new layers
     searchedAreas.forEach((area) => {
       if (!geojsonLayersRef.current[area.id] && area.geojson) {
+        const nameLower = (area.name || '').toLowerCase();
+        const isHromada = area.id.includes('hromada') || nameLower.includes('громада') || nameLower.includes('отг');
+
         const geojsonLayer = L.geoJSON(area.geojson, {
           style: {
-            color: '#ef4444',      // Red contour
-            fillColor: '#ef4444',  // Red fill
-            fillOpacity: 0.15,     // 85% transparency (15% opacity)
-            weight: 2,             // Stroke width
-            opacity: 1,            // Stroke opacity
+            stroke: false,
+            weight: 0,
+            color: 'transparent',
+            fillColor: '#ef4444',            // Red fill
+            fillOpacity: 0.25,               // 25% opacity
+            opacity: 0,                      // No stroke
           }
         });
 
@@ -1249,21 +1264,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       }
 
-      let minZoom = 11;
+      let minZoom = 1;
       if (isUserCustomPoint) {
         minZoom = 1; // Always visible if custom point created by user
       } else if (item.type === 'district') {
-        minZoom = 2.5; // Visible at full country scale
+        minZoom = 1; // Visible at all zoom levels
       } else if (item.priority === 1) {
-        minZoom = 3.0; // Major regional capitals visible at low zoom
+        minZoom = 1; // Major regional capitals & cities visible at all zoom levels
       } else if (item.priority === 2) {
-        minZoom = 5.0;
+        minZoom = 3.5; // Regional cities & district centers
       } else if (item.priority === 3) {
-        minZoom = 7.0;
+        minZoom = 5.5; // Towns & hromada centers
       } else if (item.priority === 4) {
-        minZoom = 9.0;
+        minZoom = 7.0; // Local settlements & villages
       } else {
-        minZoom = 10.5;
+        minZoom = 8.5; // Small hamlets & rural villages
       }
 
       if (currentZoom < minZoom) return;
@@ -1494,9 +1509,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       mapInstanceRef.current = map;
       setIsMapReady(true);
+
+      // Force initial size invalidation
+      setTimeout(() => {
+        map.invalidateSize();
+      }, 100);
+    }
+
+    // Attach ResizeObserver to map container element to automatically handle sidebar/theme layout changes
+    let resizeObserver: ResizeObserver | null = null;
+    if (mapContainerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapInstanceRef.current) {
+          mapInstanceRef.current.invalidateSize();
+        }
+      });
+      resizeObserver.observe(mapContainerRef.current);
     }
 
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -1505,14 +1539,32 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     };
   }, []);
 
-  // Permanent boundary layer for Kryvyi Rih Raion (thin neon green line, no fill)
+  // Helper to keep Kryvyi Rih Raion & City outlines always on top of Hromada boundaries
+  const bringDistrictAndCityToFront = () => {
+    if (kryvyiRihRaionLayerRef.current) {
+      kryvyiRihRaionLayerRef.current.bringToFront();
+    }
+    if (kryvyiRihCityLayerRef.current) {
+      kryvyiRihCityLayerRef.current.bringToFront();
+    }
+  };
+
+  // Permanent boundary layers for Kryvyi Rih Raion (thin line, no neon) & Kryvyi Rih City
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !isMapReady) return;
 
     let isMounted = true;
 
-    const loadKryvyiRihBoundary = async () => {
+    // Load Kryvyi Rih Raion boundary (thin line without neon effect)
+    const loadKryvyiRihRaionBoundary = async () => {
+      if (!showDistrictBoundary) {
+        if (kryvyiRihRaionLayerRef.current) {
+          kryvyiRihRaionLayerRef.current.remove();
+          kryvyiRihRaionLayerRef.current = null;
+        }
+        return;
+      }
       try {
         let geojson = null;
         const cached = localStorage.getItem('uamapper_kryvorizkyi_raion_boundary');
@@ -1535,29 +1587,89 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
         }
 
-        if (geojson && isMounted && mapInstanceRef.current) {
+        if (geojson && isMounted && mapInstanceRef.current && showDistrictBoundary) {
           if (kryvyiRihRaionLayerRef.current) {
             kryvyiRihRaionLayerRef.current.remove();
           }
 
           kryvyiRihRaionLayerRef.current = L.geoJSON(geojson, {
             style: {
-              className: 'neon-district-outline',
-              color: '#00ff66',      // Neon green stroke
-              weight: 2,             // Thin line
-              opacity: 0.95,         // Vibrant neon opacity
+              className: 'clean-district-outline',
+              color: '#10b981',      // Clean green stroke
+              weight: 1.5,           // Clean visible district line
+              opacity: 0.9,          // High visibility above hromada lines
               fill: false,           // No fill
               fillOpacity: 0,        // Completely transparent inside
               interactive: false,    // Clicks pass through to map
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
+
+          bringDistrictAndCityToFront();
         }
       } catch (err) {
         console.error('Error loading Kryvyi Rih district boundary:', err);
       }
     };
 
-    loadKryvyiRihBoundary();
+    // Load Kryvyi Rih City (місто Кривий Ріг) boundary
+    const loadKryvyiRihCityBoundary = async () => {
+      if (!showCityBoundary) {
+        if (kryvyiRihCityLayerRef.current) {
+          kryvyiRihCityLayerRef.current.remove();
+          kryvyiRihCityLayerRef.current = null;
+        }
+        return;
+      }
+      try {
+        let geojson = null;
+        const cached = localStorage.getItem('uamapper_kryvyi_rih_city_boundary');
+        if (cached) {
+          try {
+            geojson = JSON.parse(cached);
+          } catch (e) {}
+        }
+
+        if (!geojson) {
+          const res = await safeFetchNominatim(
+            'https://nominatim.openstreetmap.org/lookup?osm_ids=R1821193&format=json&polygon_geojson=1&accept-language=uk'
+          );
+          if (res.ok && res.data) {
+            const data = res.data;
+            if (data && data[0] && data[0].geojson) {
+              geojson = data[0].geojson;
+              localStorage.setItem('uamapper_kryvyi_rih_city_boundary', JSON.stringify(geojson));
+            }
+          }
+        }
+
+        if (geojson && isMounted && mapInstanceRef.current && showCityBoundary) {
+          if (kryvyiRihCityLayerRef.current) {
+            kryvyiRihCityLayerRef.current.remove();
+          }
+
+          kryvyiRihCityLayerRef.current = L.geoJSON(geojson, {
+            style: {
+              className: 'clean-district-outline',
+              color: '#38bdf8',      // Sky blue thin outline for Kryvyi Rih City
+              weight: 1.8,           // Slightly thicker crisp line
+              dashArray: '4, 4',     // Dotted/dashed border
+              opacity: 0.95,
+              fill: true,
+              fillColor: '#38bdf8',
+              fillOpacity: 0.05,     // Subtle light fill for city bounds
+              interactive: false,    // Clicks pass through to map
+            } as L.PathOptions
+          }).addTo(mapInstanceRef.current);
+
+          bringDistrictAndCityToFront();
+        }
+      } catch (err) {
+        console.error('Error loading Kryvyi Rih city boundary:', err);
+      }
+    };
+
+    loadKryvyiRihRaionBoundary();
+    loadKryvyiRihCityBoundary();
 
     return () => {
       isMounted = false;
@@ -1565,8 +1677,100 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         kryvyiRihRaionLayerRef.current.remove();
         kryvyiRihRaionLayerRef.current = null;
       }
+      if (kryvyiRihCityLayerRef.current) {
+        kryvyiRihCityLayerRef.current.remove();
+        kryvyiRihCityLayerRef.current = null;
+      }
     };
-  }, [isMapReady]);
+  }, [isMapReady, showCityBoundary, showDistrictBoundary]);
+
+  // Permanent & Toggleable Dark Gray Boundary Lines for Hromadas (Межі громад - темно-сірі)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    if (!hromadasLayerGroupRef.current) {
+      hromadasLayerGroupRef.current = L.layerGroup().addTo(map);
+    } else {
+      hromadasLayerGroupRef.current.clearLayers();
+    }
+
+    if (!showHromadaBoundaries) return;
+
+    let isMounted = true;
+
+    const HROMADAS_LIST = [
+      { id: 'hromada_lozuwatka', name: 'Лозуватська ОТГ', query: 'Лозуватська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_hleiuvatska', name: 'Глеюватська ОТГ', query: 'Глеюватська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_grechanopody', name: 'Гречаноподівська ОТГ', query: 'Гречаноподівська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_novopillia', name: 'Новопільська ОТГ', query: 'Новопільська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_sofiivka', name: 'Софіївська ОТГ', query: 'Софіївська селищна громада, Дніпропетровська область' },
+      { id: 'hromada_shyroke', name: 'Широківська ОТГ', query: 'Широківська селищна громада, Дніпропетровська область' },
+      { id: 'hromada_apostolove', name: 'Апостолівська ОТГ', query: 'Апостолівська міська громада, Дніпропетровська область' },
+      { id: 'hromada_zelenodolsk', name: 'Зеленодольська ОТГ', query: 'Зеленодольська міська громада, Дніпропетровська область' },
+      { id: 'hromada_devladove', name: 'Девладівська ОТГ', query: 'Девладівська селищна громада, Дніпропетровська область' },
+      { id: 'hromada_vakulove', name: 'Вакулівська ОТГ', query: 'Вакулівська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_karpivka', name: 'Карпівська ОТГ', query: 'Карпівська сільська громада, Дніпропетровська область' },
+      { id: 'hromada_nyvatrudivska', name: 'Нива Трудівська ОТГ', query: 'Нива Трудівська сільська громада, Дніпропетровська область' },
+    ];
+
+    const loadHromadaBoundaries = async () => {
+      for (const item of HROMADAS_LIST) {
+        if (!isMounted) break;
+        try {
+          let geojson = null;
+          const cacheKey = `uamapper_boundary_${item.id}`;
+          const cached = localStorage.getItem(cacheKey);
+          if (cached) {
+            try { geojson = JSON.parse(cached); } catch (e) {}
+          }
+
+          if (!geojson) {
+            const res = await safeFetchNominatim(
+              `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(item.query)}&format=json&polygon_geojson=1&accept-language=uk&limit=1`
+            );
+            if (res.ok && res.data && res.data[0] && res.data[0].geojson) {
+              geojson = res.data[0].geojson;
+              localStorage.setItem(cacheKey, JSON.stringify(geojson));
+            }
+          }
+
+          if (geojson && isMounted && hromadasLayerGroupRef.current) {
+            const layer = L.geoJSON(geojson, {
+              style: {
+                className: 'clean-hromada-outline',
+                color: '#374151',        // Dark gray demarcation line (Slate 700)
+                weight: 1.4,             // Crisp thin boundary stroke
+                dashArray: '4, 4',       // Dashed border line for communities
+                opacity: 0.85,           // Clear dark gray visibility
+                fill: true,
+                fillColor: '#4b5563',    // Dark gray tint
+                fillOpacity: 0.02,       // Very faint transparent fill
+                interactive: false,      // Clicks pass through to map
+              } as L.PathOptions
+            });
+            layer.addTo(hromadasLayerGroupRef.current);
+            // Ensure District & City outlines stay on top of hromada lines
+            bringDistrictAndCityToFront();
+          }
+        } catch (err) {
+          console.error('Error loading hromada boundary:', item.id, err);
+        }
+      }
+      if (isMounted) {
+        bringDistrictAndCityToFront();
+      }
+    };
+
+    loadHromadaBoundaries();
+
+    return () => {
+      isMounted = false;
+      if (hromadasLayerGroupRef.current) {
+        hromadasLayerGroupRef.current.clearLayers();
+      }
+    };
+  }, [showHromadaBoundaries, isMapReady]);
 
   // Synchronize Measurement Tool Graphics on Map
   useEffect(() => {
@@ -1655,11 +1859,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   // Handle Tile Layer changes
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map) return;
+    if (!map || !isMapReady) return;
 
     // Remove existing tile layer if any
     if (tileLayerInstanceRef.current) {
       map.removeLayer(tileLayerInstanceRef.current);
+      tileLayerInstanceRef.current = null;
+    }
+    if (tileOverlayInstanceRef.current) {
+      map.removeLayer(tileOverlayInstanceRef.current);
+      tileOverlayInstanceRef.current = null;
     }
 
     // Format tile URL
@@ -1668,9 +1877,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       url = url.replace('{key}', visicomKey || '');
     }
 
-    // Replace {r} with @2x on high-DPI screens, or empty string on standard screens
-    const isRetina = L.Browser.retina;
-    url = url.replace('{r}', isRetina ? '@2x' : '');
+    // Clean up url parameters
+    url = url.replace('{r}', '');
 
     // Create Leaflet TileLayer with appropriate settings
     const tileLayer = L.tileLayer(url, {
@@ -1679,13 +1887,44 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      crossOrigin: 'anonymous', // Enable CORS for screenshots
-      detectRetina: false, // Prevent double-zoom on non-retina-supported tiles like OSM (fixes slow load & 404s)
+      detectRetina: false,
     });
 
     tileLayer.addTo(map);
     tileLayerInstanceRef.current = tileLayer;
+
+    // Optional reference overlay layer (e.g. Esri Dark Gray Reference for oblasts/hromadas/settlements)
+    if (activeTileLayer.overlayUrl) {
+      const overlayLayer = L.tileLayer(activeTileLayer.overlayUrl, {
+        maxZoom: activeTileLayer.maxZoom,
+        maxNativeZoom: activeTileLayer.maxZoom || 19,
+        subdomains: activeTileLayer.subdomains || 'abc',
+        detectRetina: false,
+        zIndex: 250, // Render on top of base tiles
+      });
+      overlayLayer.addTo(map);
+      tileOverlayInstanceRef.current = overlayLayer;
+    }
+
+    // Force tile layer redraw and map size update immediately
+    map.invalidateSize();
+    tileLayer.redraw();
   }, [activeTileLayer, visicomKey, isMapReady]);
+
+  // Handle Theme changes & recalculate map layout
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+      if (tileLayerInstanceRef.current) {
+        tileLayerInstanceRef.current.redraw();
+      }
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [theme, isMapReady]);
 
   // Synchronize Markers (Add, Update, Remove)
   useEffect(() => {
@@ -2758,7 +2997,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = document.getElementById('map-stage-wrapper');
     if (!mapElement) return;
     mapElement.classList.add('exporting-map');
-    if (theme === 'dark') {
+    if (theme === 'dark' && !activeTileLayer.isDark) {
       mapElement.classList.add('exporting-dark-map');
     }
     if (blurMapOnExport) {
@@ -2858,7 +3097,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = document.getElementById('map-stage-wrapper');
     if (!mapElement) return;
     mapElement.classList.add('exporting-map');
-    if (theme === 'dark') {
+    if (theme === 'dark' && !activeTileLayer.isDark) {
       mapElement.classList.add('exporting-dark-map');
     }
     if (blurMapOnExport) {
@@ -3003,7 +3242,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         <div 
           id="visicom-leaflet-map"
           ref={mapContainerRef} 
-          className={`w-full h-full z-10 ${theme === 'dark' ? 'dark-map' : ''}`}
+          className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark ? 'dark-map' : ''}`}
         />
 
         {/* Floating Search Panel */}
@@ -3087,6 +3326,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
               {/* Other Boundaries, Settlements & Custom Saved Quick Zones */}
               <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {/* Toggle for Dark Gray Hromada Demarcation Lines */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleHromadaBoundaries?.(!showHromadaBoundaries);
+                  }}
+                  title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
+                    showHromadaBoundaries
+                      ? 'bg-slate-700 hover:bg-slate-800 border-slate-600 text-white shadow-sm ring-1 ring-slate-500/50 font-extrabold'
+                      : theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
+                        : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-400'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
+                  <span>{language === 'uk' ? 'Межі громад (темно-сірі)' : 'Hromada Boundaries (Dark Gray)'}</span>
+                </button>
+
                 {allQuickZones.map((dist) => {
                   const isHighlighted = searchedAreas.some(
                     (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
