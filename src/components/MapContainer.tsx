@@ -1882,7 +1882,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
       crossOrigin: 'anonymous',
-      detectRetina: true,
+      detectRetina: false,
     });
 
     tileLayer.addTo(map);
@@ -1895,7 +1895,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
         crossOrigin: 'anonymous',
-        detectRetina: true,
+        detectRetina: false,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -2989,84 +2989,287 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const [isCopying, setIsCopying] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState<string | null>(null);
 
-  const handleExportPNG = async () => {
-    const mapElement = document.getElementById('map-stage-wrapper');
-    if (!mapElement) return;
-    mapElement.classList.add('exporting-map');
-    if (theme === 'dark' && !activeTileLayer.isDark) {
-      mapElement.classList.add('exporting-dark-map');
+  /**
+   * Visicom high-resolution export background.
+   *
+   * Leaflet displays Visicom as 256x256 raster tiles. Enlarging those tiles
+   * cannot recover detail. For export we therefore request Visicom fragments
+   * directly. A fragment is a native map image/vector document centred on a
+   * coordinate; SVG is used here because it stays sharp when html-to-image
+   * rasterizes the final composition at 2-3x.
+   *
+   * The viewport is split into <=2048px chunks so 4K/ultrawide maps are also
+   * supported without stretching a single low-resolution fragment.
+   */
+  const VISICOM_FRAGMENT_MAX = 2048;
+
+  const getVisicomFragmentBaseUrl = useCallback(() => {
+    if (activeTileLayer.id !== 'visicom' || !visicomKey) return null;
+    return 'https://tms.visicom.ua/2.0.0/planet3/base';
+  }, [activeTileLayer.id, visicomKey]);
+
+  const getFragmentUrl = useCallback((center: L.LatLng, width: number, height: number) => {
+    const base = getVisicomFragmentBaseUrl();
+    if (!base) return null;
+    const lang = language === 'uk' ? '?lang=uk' : '?lang=en';
+    const separator = lang.includes('?') ? '&' : '?';
+    return `${base}/${mapInstanceRef.current?.getZoom() ?? 13}/${center.lng},${center.lat}/${Math.round(width)}/${Math.round(height)}.svg${lang}${separator}key=${encodeURIComponent(visicomKey)}`;
+  }, [getVisicomFragmentBaseUrl, language, visicomKey]);
+
+  const waitForImageDecode = async (img: HTMLImageElement) => {
+    if (!img.complete) {
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          img.removeEventListener('load', done);
+          img.removeEventListener('error', done);
+          resolve();
+        };
+        img.addEventListener('load', done, { once: true });
+        img.addEventListener('error', done, { once: true });
+      });
     }
+    if (typeof img.decode === 'function' && img.complete) {
+      await img.decode().catch(() => undefined);
+    }
+  };
+
+  const installVisicomHQBackground = async (mapElement: HTMLElement) => {
+    const map = mapInstanceRef.current;
+    if (!map || !getVisicomFragmentBaseUrl()) return null;
+
+    const width = Math.max(1, Math.round(mapElement.clientWidth));
+    const height = Math.max(1, Math.round(mapElement.clientHeight));
+    const zoom = map.getZoom();
+    const mapPixelOrigin = map.project(map.getCenter(), zoom);
+
+    const background = document.createElement('div');
+    background.className = 'visicom-hq-export-background';
+    background.style.position = 'absolute';
+    background.style.inset = '0';
+    background.style.width = `${width}px`;
+    background.style.height = `${height}px`;
+    background.style.overflow = 'hidden';
+    background.style.pointerEvents = 'none';
+    background.style.zIndex = '0';
     if (blurMapOnExport) {
-      mapElement.classList.add('exporting-map-blur');
+      background.style.filter = 'blur(2px) brightness(0.95) contrast(1.05)';
+      background.style.transform = 'scale(1.004)';
     }
-    setIsExporting(true);
-    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (Ultra HQ)...' : 'Preparing map (Ultra HQ)...');
-    
+    background.setAttribute('aria-hidden', 'true');
+
+    // Keep the original Leaflet map above the temporary background, but hide
+    // only its raster tile images. Vector overlays/markers remain available
+    // for the final html-to-image capture.
+    const tilePane = mapElement.querySelector('.leaflet-tile-pane') as HTMLElement | null;
+    const previousTilePaneOpacity = tilePane?.style.opacity ?? '';
+    if (tilePane) tilePane.style.opacity = '0';
+
+    const urls: string[] = [];
+    const objectUrls: string[] = [];
+
     try {
-      // Hide standard Leaflet UI controls and editing handles briefly
-      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon');
-      elementsToHide.forEach((el) => {
-        (el as HTMLElement).style.opacity = '0';
-      });
+      for (let top = 0; top < height; top += VISICOM_FRAGMENT_MAX) {
+        for (let left = 0; left < width; left += VISICOM_FRAGMENT_MAX) {
+          const fragmentWidth = Math.min(VISICOM_FRAGMENT_MAX, width - left);
+          const fragmentHeight = Math.min(VISICOM_FRAGMENT_MAX, height - top);
 
-      // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
-      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-pane, .leaflet-layer, .leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
-      elementsWithTransform.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const transform = htmlEl.style.transform;
-        if (transform && transform.includes('translate3d')) {
-          const newTransform = transform.replace(/translate3d\(([^,]+),\s*([^,]+),\s*[^)]+\)/g, 'translate($1, $2)');
-          htmlEl.setAttribute('data-original-transform', transform);
-          htmlEl.style.transform = newTransform;
+          // Fragment centre in Leaflet's global pixel coordinate system.
+          const globalX = mapPixelOrigin.x + left - width / 2 + fragmentWidth / 2;
+          const globalY = mapPixelOrigin.y + top - height / 2 + fragmentHeight / 2;
+          const fragmentCenter = map.unproject(L.point(globalX, globalY), zoom);
+          const url = getFragmentUrl(fragmentCenter, fragmentWidth, fragmentHeight);
+          if (!url) throw new Error('Visicom fragment URL unavailable');
+          urls.push(url);
+
+          // Fetch + inline as a Blob URL. This avoids asking html-to-image to
+          // dereference a remote SVG during its own clone/render pass.
+          const response = await fetch(url, { mode: 'cors', credentials: 'omit' });
+          if (!response.ok) {
+            throw new Error(`Visicom fragment HTTP ${response.status}`);
+          }
+          const svgBlob = await response.blob();
+          if (!svgBlob.size) throw new Error('Empty Visicom SVG fragment');
+          const objectUrl = URL.createObjectURL(svgBlob);
+          objectUrls.push(objectUrl);
+
+          const img = document.createElement('img');
+          img.alt = '';
+          img.draggable = false;
+          img.decoding = 'async';
+          img.style.position = 'absolute';
+          img.style.left = `${left}px`;
+          img.style.top = `${top}px`;
+          img.style.width = `${fragmentWidth}px`;
+          img.style.height = `${fragmentHeight}px`;
+          img.style.display = 'block';
+          img.style.maxWidth = 'none';
+          img.style.maxHeight = 'none';
+          img.src = objectUrl;
+
+          background.appendChild(img);
+          await waitForImageDecode(img);
         }
-      });
+      }
 
-      // Fast layout sync delay
-      await new Promise((resolve) => setTimeout(resolve, 30));
+      mapElement.insertBefore(background, mapElement.firstChild);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
 
-      setScreenshotStatus(language === 'uk' ? 'Генерація зображення...' : 'Generating image...');
+      return {
+        background,
+        restore: () => {
+          if (tilePane) tilePane.style.opacity = previousTilePaneOpacity;
+          background.remove();
+          objectUrls.forEach((url) => URL.revokeObjectURL(url));
+        },
+      };
+    } catch (error) {
+      if (tilePane) tilePane.style.opacity = previousTilePaneOpacity;
+      background.remove();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      console.warn('Visicom HQ fragment export unavailable; using normal Leaflet capture.', error);
+      throw error;
+    }
+  };
+
+  /**
+   * Captures the map exactly once and returns a PNG Blob.
+   * Export and clipboard use the same Blob, so there is never a second render.
+   */
+  const captureMapBlob = async (): Promise<Blob> => {
+    const mapElement = document.getElementById('map-stage-wrapper');
+    if (!mapElement) throw new Error('Map element not found');
+
+    const hiddenElements = Array.from(
+      mapElement.querySelectorAll(
+        '.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon'
+      )
+    ) as HTMLElement[];
+
+    const originalOpacity = new Map<HTMLElement, string>();
+    hiddenElements.forEach((el) => {
+      originalOpacity.set(el, el.style.opacity);
+      el.style.opacity = '0';
+    });
+
+    const transformedElements = Array.from(
+      mapElement.querySelectorAll(
+        '.leaflet-pane, .leaflet-layer, .leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated'
+      )
+    ) as HTMLElement[];
+
+    const originalTransforms = new Map<HTMLElement, string>();
+    transformedElements.forEach((el) => {
+      const transform = el.style.transform;
+      if (transform && transform.includes('translate3d')) {
+        originalTransforms.set(el, transform);
+        el.style.transform = transform.replace(
+          /translate3d\(([^,]+),\s*([^,]+),\s*[^)]+\)/g,
+          'translate($1, $2)'
+        );
+      }
+    });
+
+    let hqBackground: Awaited<ReturnType<typeof installVisicomHQBackground>> = null;
+
+    try {
+      mapInstanceRef.current?.invalidateSize({ animate: false });
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+
+      // Prefer the native Visicom fragment background. If the API key, CORS,
+      // network, or account restrictions prevent it, fall back to the normal
+      // Leaflet capture instead of breaking export altogether.
+      if (getVisicomFragmentBaseUrl()) {
+        try {
+          hqBackground = await installVisicomHQBackground(mapElement);
+        } catch {
+          hqBackground = null;
+        }
+      }
+
+      if (!hqBackground) {
+        const tileImages = Array.from(
+          mapElement.querySelectorAll('.leaflet-tile-pane img.leaflet-tile')
+        ) as HTMLImageElement[];
+        await Promise.all(tileImages.map((img) => waitForImageDecode(img).catch(() => undefined)));
+      }
 
       const filterNode = (node: HTMLElement) => {
-        if (node && node.classList) {
-          if (
-            node.classList.contains('leaflet-control-container') ||
-            node.classList.contains('screenshot-exclude') ||
-            node.classList.contains('draft-line-node') ||
-            node.classList.contains('line-vertex-edit-handle') ||
-            node.classList.contains('custom-end-handle') ||
-            node.classList.contains('measure-node-icon')
-          ) {
-            return false;
-          }
-        }
-        return true;
+        if (!node?.classList) return true;
+        return !(
+          node.classList.contains('leaflet-control-container') ||
+          node.classList.contains('screenshot-exclude') ||
+          node.classList.contains('draft-line-node') ||
+          node.classList.contains('line-vertex-edit-handle') ||
+          node.classList.contains('custom-end-handle') ||
+          node.classList.contains('measure-node-icon')
+        );
       };
 
-      const capturePixelRatio = Math.max(2, Math.min(3, Math.round((window.devicePixelRatio || 1) * 2)));
+      const width = mapElement.clientWidth;
+      const height = mapElement.clientHeight;
+      const maxOutputDimension = 4096;
+      const requestedRatio = 2;
+      const browserPixelRatio = window.devicePixelRatio || 1;
+      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
+      const capturePixelRatio = Math.max(
+        1,
+        Math.min(requestedRatio, browserPixelRatio, sizeCapRatio)
+      );
 
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         pixelRatio: capturePixelRatio,
         quality: 1,
-        skipFonts: true,
-        fontEmbedCSS: '',
-        imagePlaceholder: undefined,
+        skipFonts: false,
         filter: filterNode as any,
       };
 
-      const dataUrl = await toPng(mapElement, captureOptions);
-
-      // Restore elements
-      elementsToHide.forEach((el) => {
-        (el as HTMLElement).style.opacity = '1';
+      const blob = await toBlob(mapElement, captureOptions);
+      if (!blob || blob.size === 0) throw new Error('PNG blob creation failed');
+      return blob;
+    } finally {
+      hqBackground?.restore();
+      hiddenElements.forEach((el) => {
+        el.style.opacity = originalOpacity.get(el) ?? '';
       });
+      originalTransforms.forEach((transform, el) => {
+        el.style.transform = transform;
+      });
+    }
+  };
 
+  const prepareExportState = () => {
+    const mapElement = document.getElementById('map-stage-wrapper');
+    if (!mapElement) return null;
+    mapElement.classList.add('exporting-map');
+    if (theme === 'dark' && !activeTileLayer.isDark) mapElement.classList.add('exporting-dark-map');
+    if (blurMapOnExport) mapElement.classList.add('exporting-map-blur');
+    return mapElement;
+  };
+
+  const cleanupExportState = (mapElement: HTMLElement | null) => {
+    if (!mapElement) return;
+    mapElement.classList.remove('exporting-map', 'exporting-dark-map', 'exporting-map-blur');
+  };
+
+  const handleExportPNG = async () => {
+    const mapElement = prepareExportState();
+    if (!mapElement) return;
+    setIsExporting(true);
+    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (Visicom HQ)...' : 'Preparing map (Visicom HQ)...');
+    try {
+      const blob = await captureMapBlob();
+      const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.download = `tactical_map_${Date.now()}.png`;
-      link.href = dataUrl;
+      link.href = url;
       link.click();
-
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       setScreenshotStatus(language === 'uk' ? 'Зображення завантажено!' : 'Map downloaded successfully!');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
@@ -3074,145 +3277,44 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       setScreenshotStatus(language === 'uk' ? 'Помилка експорту' : 'Export failed');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } finally {
-      // Restore CSS transforms
-      const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
-      elementsWithTransform.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const origTransform = htmlEl.getAttribute('data-original-transform');
-        if (origTransform) {
-          htmlEl.style.transform = origTransform;
-          htmlEl.removeAttribute('data-original-transform');
-        }
-      });
-
-      mapElement.classList.remove('exporting-map');
-      mapElement.classList.remove('exporting-dark-map');
-      mapElement.classList.remove('exporting-map-blur');
+      cleanupExportState(mapElement);
       setIsExporting(false);
     }
   };
 
   const handleCopyPNG = async () => {
-    const mapElement = document.getElementById('map-stage-wrapper');
+    const mapElement = prepareExportState();
     if (!mapElement) return;
-    mapElement.classList.add('exporting-map');
-    if (theme === 'dark' && !activeTileLayer.isDark) {
-      mapElement.classList.add('exporting-dark-map');
-    }
-    if (blurMapOnExport) {
-      mapElement.classList.add('exporting-map-blur');
-    }
     setIsCopying(true);
     setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер...' : 'Copying to clipboard...');
-    
+    let blob: Blob | null = null;
     try {
-      // Hide standard UI controls
-      const elementsToHide = mapElement.querySelectorAll('.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon');
-      elementsToHide.forEach((el) => {
-        (el as HTMLElement).style.opacity = '0';
-      });
-
-      // Convert translate3d to 2D translate for proper SVG serialization in html-to-image while preserving rotates/scales
-      const elementsWithTransform = mapElement.querySelectorAll('.leaflet-pane, .leaflet-layer, .leaflet-tile-pane img, .leaflet-marker-pane img, .leaflet-marker-pane div, .leaflet-shadow-pane img, .leaflet-overlay-pane svg, .leaflet-zoom-animated');
-      elementsWithTransform.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const transform = htmlEl.style.transform;
-        if (transform && transform.includes('translate3d')) {
-          const newTransform = transform.replace(/translate3d\(([^,]+),\s*([^,]+),\s*[^)]+\)/g, 'translate($1, $2)');
-          htmlEl.setAttribute('data-original-transform', transform);
-          htmlEl.style.transform = newTransform;
-        }
-      });
-
-      // Fast layout sync delay
-      await new Promise((resolve) => setTimeout(resolve, 30));
-
-      const filterNode = (node: HTMLElement) => {
-        if (node && node.classList) {
-          if (
-            node.classList.contains('leaflet-control-container') ||
-            node.classList.contains('screenshot-exclude') ||
-            node.classList.contains('draft-line-node') ||
-            node.classList.contains('line-vertex-edit-handle') ||
-            node.classList.contains('custom-end-handle') ||
-            node.classList.contains('measure-node-icon')
-          ) {
-            return false;
-          }
-        }
-        return true;
-      };
-
-      const capturePixelRatio = Math.max(2, Math.min(3, Math.round((window.devicePixelRatio || 1) * 2)));
-
-      const captureOptions = {
-        cacheBust: false,
-        backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        pixelRatio: capturePixelRatio,
-        quality: 1,
-        skipFonts: true,
-        fontEmbedCSS: '',
-        imagePlaceholder: undefined,
-        filter: filterNode as any,
-      };
-
-      // Direct single-pass Blob generation
-      const blob = await toBlob(mapElement, captureOptions);
-
-      // Restore elements
-      elementsToHide.forEach((el) => {
-        (el as HTMLElement).style.opacity = '1';
-      });
-
-      if (blob) {
-        if (navigator.clipboard && window.ClipboardItem) {
-          try {
-            await navigator.clipboard.write([
-              new ClipboardItem({
-                'image/png': blob
-              })
-            ]);
-            setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
-          } catch (clipErr) {
-            console.warn('Clipboard write blocked, using fallback download:', clipErr);
-            const dataUrl = await toPng(mapElement, captureOptions);
-            const link = document.createElement('a');
-            link.download = `tactical_map_${Date.now()}.png`;
-            link.href = dataUrl;
-            link.click();
-            setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
-          }
-        } else {
-          const dataUrl = await toPng(mapElement, captureOptions);
-          const link = document.createElement('a');
-          link.download = `tactical_map_${Date.now()}.png`;
-          link.href = dataUrl;
-          link.click();
-          setScreenshotStatus(language === 'uk' ? 'Завантажено (копіювання недоступне)' : 'Downloaded (copy unavailable)');
-        }
-      } else {
-        throw new Error('Blob creation failed');
+      blob = await captureMapBlob();
+      if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
+        throw new Error('Clipboard image API is unavailable');
       }
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+      setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
-      console.error('Clipboard copy error', err);
-      setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
-      setTimeout(() => setScreenshotStatus(null), 2500);
+      console.warn('Clipboard write failed, using the same rendered PNG as fallback:', err);
+      try {
+        if (!blob) throw new Error('PNG blob was not created');
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.download = `tactical_map_${Date.now()}.png`;
+        link.href = url;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
+        setTimeout(() => setScreenshotStatus(null), 2500);
+      } catch (fallbackErr) {
+        console.error('Clipboard fallback failed:', fallbackErr);
+        setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
+        setTimeout(() => setScreenshotStatus(null), 2500);
+      }
     } finally {
-      // Restore CSS transforms
-      const elementsWithTransform = mapElement.querySelectorAll('[data-original-transform]');
-      elementsWithTransform.forEach((el) => {
-        const htmlEl = el as HTMLElement;
-        const origTransform = htmlEl.getAttribute('data-original-transform');
-        if (origTransform) {
-          htmlEl.style.transform = origTransform;
-          htmlEl.removeAttribute('data-original-transform');
-        }
-      });
-
-      mapElement.classList.remove('exporting-map');
-      mapElement.classList.remove('exporting-dark-map');
-      mapElement.classList.remove('exporting-map-blur');
+      cleanupExportState(mapElement);
       setIsCopying(false);
     }
   };
@@ -3862,11 +3964,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-dark-map .leaflet-tile-pane {
             filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
           }
-          /* Prevent blur of map tiles during export by using crisp edges sharpness */
+          /* Let the browser use high-quality interpolation for raster map tiles.
+             crisp-edges made 256px tiles visibly jagged in high-resolution PNGs. */
           .exporting-map .leaflet-tile-pane img,
           .exporting-map img {
-            image-rendering: -webkit-optimize-contrast !important;
-            image-rendering: crisp-edges !important;
+            image-rendering: auto !important;
           }
           .exporting-map img, .exporting-map svg, .exporting-map canvas {
             -webkit-font-smoothing: antialiased !important;

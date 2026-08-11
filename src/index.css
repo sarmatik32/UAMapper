@@ -104,10 +104,18 @@ html, body {
   color: #60a5fa !important;
 }
 
-/* Custom blur on export option */
+/* Export-only blur option preserved, but never applied at the time the export capture is created. */
 .exporting-map-blur .leaflet-tile-pane {
-  filter: blur(2px) brightness(0.95) contrast(1.05) !important;
+  filter: blur(0px) !important;
   transition: filter 0.3s ease;
+}
+
+.leaflet-tile-pane img,
+.leaflet-marker-pane img,
+.leaflet-shadow-pane img,
+.leaflet-overlay-pane svg {
+  image-rendering: auto !important;
+  image-rendering: -webkit-optimize-contrast !important;
 }
 
 /* Settlement and district label markers */
