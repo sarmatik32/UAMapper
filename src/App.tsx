@@ -517,8 +517,8 @@ export default function App() {
 
   const [visicomKey, setVisicomKey] = useState<string>(() => {
     const saved = localStorage.getItem('visicom_api_key');
-    if (!saved || saved === '4dda3664eaf5d320c708bc363c45fb16') {
-      return 'a2ecf945d33b9d0639ebc4568a61f82c';
+    if (!saved || saved === '3526483023228b81241c7c4a406a1fd9') {
+      return 'da8a72ade6f663ff3743cd79f3c2d9f3';
     }
     return saved;
   });

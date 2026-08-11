@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { 
   Map, 
   Settings, 
@@ -245,19 +246,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
     }));
   };
 
-  const saveToLibrary = (name: string, dataUrl: string) => {
+  const saveToLibrary = async (name: string, rawDataUrl: string) => {
+    const optimizedDataUrl = await optimizeIconDataUrl(rawDataUrl);
     const newItem = {
       id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       name,
-      dataUrl,
+      dataUrl: optimizedDataUrl,
     };
-    const updated = [...customLibrary, newItem];
-    setCustomLibrary(updated);
-    try {
-      localStorage.setItem('visicom_custom_library', JSON.stringify(updated));
-    } catch (e) {
-      console.error('LocalStorage write failed', e);
-    }
+    setCustomLibrary((prev) => {
+      const updated = [...prev, newItem];
+      safeSetItem('visicom_custom_library', JSON.stringify(updated));
+      return updated;
+    });
     return newItem.dataUrl;
   };
 
@@ -265,11 +265,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     e.stopPropagation();
     const updated = customLibrary.filter((item) => item.id !== id);
     setCustomLibrary(updated);
-    try {
-      localStorage.setItem('visicom_custom_library', JSON.stringify(updated));
-    } catch (e) {
-      console.error(e);
-    }
+    safeSetItem('visicom_custom_library', JSON.stringify(updated));
   };
 
   const handleFileImportSettlements = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -358,12 +354,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const file = event.target.files?.[0];
       if (file) {
         const reader = new FileReader();
-        reader.onload = (readerEvent) => {
+        reader.onload = async (readerEvent) => {
           const base64 = readerEvent.target?.result as string;
           const defaultName = file.name.replace(/\.[^/.]+$/, "");
           const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
           
-          const savedUrl = saveToLibrary(name, base64);
+          const savedUrl = await saveToLibrary(name, base64);
           
           handlePropsChange({
             customIconUrl: savedUrl,

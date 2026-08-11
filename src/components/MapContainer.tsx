@@ -329,7 +329,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let endLat = m.endLat;
         let endLng = m.endLng;
         if (endLat === undefined || endLng === undefined) {
-          const angleRad = (((m.rotation || 0) - 9) * Math.PI) / 180;
+          const angleRad = ((m.rotation || 0) * Math.PI) / 180;
           endLat = m.lat + Math.cos(angleRad) * 0.003;
           endLng = m.lng + Math.sin(angleRad) * 0.005;
         }
@@ -355,7 +355,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return '';
   };
 
-  // Handle Auto-highlight Zone creation at coordinates (supports Kryvyi Rih districts, city districts, hromadas, rural areas)
+  // Handle Auto-highlight Zone creation at coordinates (highlights the hromada/district polygon where the point is located)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
     if (!autoHighlightZoneRef.current) return;
 
@@ -436,8 +436,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         return;
       }
 
-      // Throttle queue: wait 600ms between requests to respect rate limits
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await new Promise((resolve) => setTimeout(resolve, 400));
 
       try {
         const zoomLevels = [14, 12, 10, 8];
@@ -450,18 +449,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const fetchRes = await safeFetchNominatim(url);
 
           if (fetchRes.status === 429) {
-            // Rate limited: pause for 2000ms
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await new Promise((resolve) => setTimeout(resolve, 1500));
             break;
           }
 
           if (fetchRes.ok && fetchRes.data?.geojson && (fetchRes.data.geojson.type === 'Polygon' || fetchRes.data.geojson.type === 'MultiPolygon')) {
             resData = fetchRes.data;
-            break; // Found valid polygon boundary!
+            break;
           }
 
-          // If no polygon returned at this zoom level, pause 300ms before trying next zoom level
-          await new Promise((resolve) => setTimeout(resolve, 300));
+          await new Promise((resolve) => setTimeout(resolve, 200));
         }
 
         if (resData && resData.geojson && (resData.geojson.type === 'Polygon' || resData.geojson.type === 'MultiPolygon')) {
@@ -469,7 +466,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const districtOrSuburb = resData.name || address.borough || address.suburb || address.city_district || address.village || address.town;
           const cityName = formatCityName(address);
 
-          let placeName = districtOrSuburb || cityName || resData.display_name?.split(',')[0] || 'Зона';
+          let placeName = districtOrSuburb || cityName || resData.display_name?.split(',')[0] || 'Громада';
           if (districtOrSuburb && cityName && districtOrSuburb !== cityName && !districtOrSuburb.includes(cityName)) {
             placeName = `${districtOrSuburb} (${cityName})`;
           }
@@ -1485,7 +1482,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
 
               // Auto-highlight direction end point for the new marker
-              const angleRad = -9 * Math.PI / 180; // default initial rotation is 0deg (-9deg shift)
+              const angleRad = 0; // default initial rotation is 0deg
               const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
               const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
               handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
@@ -1877,17 +1874,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       url = url.replace('{key}', visicomKey || '');
     }
 
-    // Clean up url parameters
-    url = url.replace('{r}', '');
-
-    // Create Leaflet TileLayer with appropriate settings
+    // Create Leaflet TileLayer with high-resolution / retina support
     const tileLayer = L.tileLayer(url, {
       tms: activeTileLayer.tms,
       maxZoom: activeTileLayer.maxZoom,
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      detectRetina: false,
+      crossOrigin: 'anonymous',
+      detectRetina: true,
     });
 
     tileLayer.addTo(map);
@@ -1899,7 +1894,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
-        detectRetina: false,
+        crossOrigin: 'anonymous',
+        detectRetina: true,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -2048,7 +2044,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let effectiveTargetEndLat = endLat;
           let effectiveTargetEndLng = endLng;
           if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
-            const angleRad = (((rotation || 0) - 9) * Math.PI) / 180;
+            const angleRad = (((rotation || 0)) * Math.PI) / 180;
             effectiveTargetEndLat = lat + Math.cos(angleRad) * 0.003;
             effectiveTargetEndLng = lng + Math.sin(angleRad) * 0.005;
           }
@@ -2079,7 +2075,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let finalEndLat = originalEndLat;
           let finalEndLng = originalEndLng;
           if (finalEndLat === undefined || finalEndLng === undefined) {
-            const angleRad = ((rotation - 9) * Math.PI) / 180;
+            const angleRad = (rotation * Math.PI) / 180;
             finalEndLat = lat + Math.cos(angleRad) * 0.003;
             finalEndLng = lng + Math.sin(angleRad) * 0.005;
           }
@@ -2107,7 +2103,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let finalEndLat = originalEndLat;
           let finalEndLng = originalEndLng;
           if (finalEndLat === undefined || finalEndLng === undefined) {
-            const angleRad = ((rotation - 9) * Math.PI) / 180;
+            const angleRad = (rotation * Math.PI) / 180;
             finalEndLat = lat + Math.cos(angleRad) * 0.003;
             finalEndLng = lng + Math.sin(angleRad) * 0.005;
           }
@@ -2140,7 +2136,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               updatedEndLng = updatedEndLng + dLng;
             } else {
               // Calculate default offset end position if none exists
-              const angleRad = ((rotation - 9) * Math.PI) / 180;
+              const angleRad = (rotation * Math.PI) / 180;
               updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
               updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
             }
@@ -2159,7 +2155,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let effectiveTargetEndLat = updatedEndLat;
         let effectiveTargetEndLng = updatedEndLng;
         if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
-          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          const angleRad = (rotation * Math.PI) / 180;
           effectiveTargetEndLat = position.lat + Math.cos(angleRad) * 0.003;
           effectiveTargetEndLng = position.lng + Math.sin(angleRad) * 0.005;
         }
@@ -2187,7 +2183,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLng = endLng;
 
         if (finalEndLat === undefined || finalEndLng === undefined) {
-          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          const angleRad = (rotation * Math.PI) / 180;
           finalEndLat = lat + Math.cos(angleRad) * 0.003;
           finalEndLng = lng + Math.sin(angleRad) * 0.005;
         }
@@ -2220,7 +2216,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLng = endLng;
 
         if (finalEndLat === undefined || finalEndLng === undefined) {
-          const angleRad = ((rotation - 9) * Math.PI) / 180;
+          const angleRad = (rotation * Math.PI) / 180;
           finalEndLat = lat + Math.cos(angleRad) * 0.003;
           finalEndLng = lng + Math.sin(angleRad) * 0.005;
         }
@@ -2248,8 +2244,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             iconAnchor: [size / 2, size / 2],
           });
         } else if (endPointStyle === 'line') {
-          // Arrowhead pointing in the direction of the line (rotation - 9)
-          const arrowRotation = (rotation - 9) % 360;
+          // Arrowhead pointing in the direction of the line
+          const arrowRotation = rotation % 360;
           const arrowHtml = `
             <div class="flex items-center justify-center" style="
               width: 32px;
@@ -2328,12 +2324,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             linesRef.current[id].setLatLngs([[lat, lng], [endPosition.lat, endPosition.lng]]);
           }
 
-          // Update rotation real-time inside DOM (with 9 degrees shift)
+          // Update rotation real-time inside DOM
           const mainMarkerEl = markersRef.current[id]?.getElement();
           if (mainMarkerEl) {
             const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]');
             if (rotatingDiv) {
-              (rotatingDiv as HTMLElement).style.transform = `rotate(${(angleDeg + 9) % 360}deg)`;
+              (rotatingDiv as HTMLElement).style.transform = `rotate(${angleDeg % 360}deg)`;
             }
           }
         });
@@ -2351,7 +2347,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               ...markerData,
               endLat: endPosition.lat,
               endLng: endPosition.lng,
-              rotation: Math.round((angleDeg + 9) % 360),
+              rotation: Math.round(angleDeg % 360),
             });
           }
 
@@ -3046,10 +3042,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         return true;
       };
 
+      const capturePixelRatio = Math.max(2, Math.min(3, Math.round((window.devicePixelRatio || 1) * 2)));
+
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        pixelRatio: Math.min(2, window.devicePixelRatio || 2),
+        pixelRatio: capturePixelRatio,
+        quality: 1,
         skipFonts: true,
         fontEmbedCSS: '',
         imagePlaceholder: undefined,
@@ -3144,10 +3143,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         return true;
       };
 
+      const capturePixelRatio = Math.max(2, Math.min(3, Math.round((window.devicePixelRatio || 1) * 2)));
+
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
-        pixelRatio: Math.min(2, window.devicePixelRatio || 2),
+        pixelRatio: capturePixelRatio,
+        quality: 1,
         skipFonts: true,
         fontEmbedCSS: '',
         imagePlaceholder: undefined,
@@ -3860,10 +3862,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-dark-map .leaflet-tile-pane {
             filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
           }
-          /* Prevent blur of map tiles during export by using high contrast sharpness */
-          .exporting-map .leaflet-tile-pane img {
+          /* Prevent blur of map tiles during export by using crisp edges sharpness */
+          .exporting-map .leaflet-tile-pane img,
+          .exporting-map img {
             image-rendering: -webkit-optimize-contrast !important;
-            image-rendering: auto !important;
+            image-rendering: crisp-edges !important;
           }
           .exporting-map img, .exporting-map svg, .exporting-map canvas {
             -webkit-font-smoothing: antialiased !important;
