@@ -283,21 +283,21 @@ export function createMarkerHtml(
       <!-- Circular tactical zone (rendered behind the main icon) -->
       ${zoneHtml}
 
-      <!-- Main rotating icon -->
-      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); transition: transform 0.1s ease; z-index: 2;">
+      <!-- Main rotating icon container (rotates icon and label together) -->
+      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); transition: transform 0.1s ease; z-index: 2; position: relative;">
         ${innerContent}
+
+        <!-- Label directly below icon, rotating at the exact same angle -->
+        ${labelVisible ? `
+          <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%); margin-top: 5px; z-index: 1000;">
+            <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${borderColor}; border-radius: 5px; padding: 2px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em;">
+              ${title || 'Маркер'}
+            </div>
+          </div>
+        ` : ''}
       </div>
       
       ${decoratorHtml}
-      
-      <!-- Label directly below or above the icon -->
-      ${labelVisible ? `
-        <div class="absolute select-none pointer-events-none" style="bottom: -28px; left: 50%; transform: translateX(-50%); z-index: 1000;">
-          <div style="background-color: #0f172a; color: #f8fafc; border: 1px solid ${borderColor}; border-radius: 4px; padding: 1.5px 5.5px; font-size: 7.7px; font-weight: 600; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.4);">
-            ${title || 'Маркер'}
-          </div>
-        </div>
-      ` : ''}
     </div>
   `;
 }

@@ -206,6 +206,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [customTileUrl, setCustomTileUrl] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
 
   // Custom PNG Library State
   const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
@@ -1408,12 +1409,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                   <input
                     type="text"
-                    value={selectedMarker ? activeTitle : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                    value={selectedMarker ? activeTitle : (activeStyle.title || customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (selectedMarker) {
                         handlePropChange('title', val);
                       } else {
+                        handlePropChange('title', val);
                         onUpdateCustomIconTitle(activeIconType, val);
                       }
                     }}
@@ -1540,19 +1542,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           style={{ backgroundColor: m.color === 'transparent' ? '#ffffff' : m.color }}
                           className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${m.color === 'transparent' ? 'border border-dashed border-slate-300' : ''}`}
                         ></span>
-                        <span className="font-semibold truncate">
-                          {m.title || (isUa ? 'Без назви' : 'Untitled')}
-                        </span>
+                        {renamingMarkerId === m.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={m.title}
+                            onChange={(e) => onUpdateMarker({ ...m, title: e.target.value })}
+                            onBlur={() => setRenamingMarkerId(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') setRenamingMarkerId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-white/20 dark:bg-black/40 border border-blue-500 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-900 dark:text-white w-full focus:outline-none"
+                          />
+                        ) : (
+                          <span 
+                            className="font-semibold truncate"
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingMarkerId(m.id);
+                            }}
+                          >
+                            {m.title || (isUa ? 'Без назви' : 'Untitled')}
+                          </span>
+                        )}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteMarker(m.id);
-                        }}
-                        className="text-slate-400 hover:text-red-500 p-1"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingMarkerId(renamingMarkerId === m.id ? null : m.id);
+                          }}
+                          className="text-slate-400 hover:text-blue-500 p-1 rounded transition-colors"
+                          title={isUa ? 'Перейменувати' : 'Rename'}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteMarker(m.id);
+                          }}
+                          className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors"
+                          title={isUa ? 'Видалити' : 'Delete'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

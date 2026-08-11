@@ -2009,8 +2009,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       let markerInstance: L.Marker;
 
       if (existingMarker) {
-        existingMarker.setLatLng([lat, lng]);
-        existingMarker.setIcon(customIcon);
+        const isDragging = (existingMarker as any)._isDragging || (existingMarker.dragging as any)?._draggable?._moving;
+        if (!isDragging) {
+          existingMarker.setLatLng([lat, lng]);
+          existingMarker.setIcon(customIcon);
+        }
         if (draggable) {
           existingMarker.dragging?.enable();
         } else {
@@ -2290,8 +2293,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let endMarkerInstance = endMarkersRef.current[id];
 
         if (endMarkerInstance) {
-          endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
-          endMarkerInstance.setIcon(endMarkerIcon);
+          const isEndDragging = (endMarkerInstance as any)._isDragging || (endMarkerInstance.dragging as any)?._draggable?._moving;
+          if (!isEndDragging) {
+            endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
+            endMarkerInstance.setIcon(endMarkerIcon);
+          }
           if (isSelected) {
             endMarkerInstance.dragging?.enable();
           } else {
@@ -2834,11 +2840,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       marker.on('drag', (e: L.LeafletEvent) => {
         const dragged = e.target as L.Marker;
         const newPos = dragged.getLatLng();
-        setDraftLinePoints((prev) => {
-          const next = [...prev];
-          if (next[idx]) next[idx] = [newPos.lat, newPos.lng];
-          return next;
-        });
+        if (layers.polyline) {
+          const latLngs = layers.polyline.getLatLngs() as L.LatLng[];
+          if (latLngs[idx]) {
+            latLngs[idx] = newPos;
+            layers.polyline.setLatLngs(latLngs);
+          }
+        }
       });
 
       marker.on('dragend', (e: L.LeafletEvent) => {
@@ -3689,200 +3697,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
-        {/* Active Mode Floating Banners (Distance Measurement / Red Zone / Line Drawing / Point Drawing) */}
-        {!(isExporting || isCopying) && interactionMode === 'draw' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-blue-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            <PenTool className="w-4 h-4 text-blue-400 flex-shrink-0 animate-pulse" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Режим нанесення точок / значків' : 'Point / Marker Placement Mode'}
-              </span>
-              <span className="text-xs font-medium truncate text-slate-200">
-                {language === 'uk' ? 'Клацайте на карті для додавання значків' : 'Click anywhere on map to place markers'}
-              </span>
-            </div>
-            <button
-              onClick={() => onSelectInteractionMode?.('pan')}
-              className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 hover:border-slate-500 rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 shadow-md"
-              title={language === 'uk' ? 'Вимкнути нанесення (перейти в режим переміщення)' : 'Turn off drawing (switch to pan mode)'}
-            >
-              <Hand className="w-3 h-3 text-amber-400" />
-              <span>{language === 'uk' ? 'Вимкнути' : 'Turn Off'}</span>
-            </button>
-          </div>
-        )}
-
-        {!(isExporting || isCopying) && interactionMode === 'line' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-indigo-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            <Spline className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Режим малювання ліній' : 'Line Drawing Mode'}
-              </span>
-              <span className="text-xs font-mono font-bold truncate text-slate-200">
-                {draftLinePoints.length === 0
-                  ? (language === 'uk' ? 'Клікніть на карту, щоб поставити першу точку' : 'Click on map to place start point')
-                  : `${draftLinePoints.length} ${language === 'uk' ? 'точок (Enter - завершити)' : 'pts (Enter to finish)'}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {draftLinePoints.length >= 2 && (
-                <button
-                  onClick={handleFinishDraftLine}
-                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-md"
-                >
-                  <Check className="w-3 h-3" />
-                  <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
-                </button>
-              )}
-              {draftLinePoints.length > 0 && (
-                <button
-                  onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
-                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  {language === 'uk' ? 'Назад' : 'Undo'}
-                </button>
-              )}
-              {draftLinePoints.length > 0 && (
-                <button
-                  onClick={() => setDraftLinePoints([])}
-                  className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  {language === 'uk' ? 'Скинути' : 'Reset'}
-                </button>
-              )}
-              <button
-                onClick={() => onSelectInteractionMode?.('draw')}
-                title={language === 'uk' ? 'Закрити режим' : 'Close mode'}
-                className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Selected Line Editing Banner */}
-        {!(isExporting || isCopying) && selectedLineId && interactionMode !== 'line' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-indigo-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            <PenTool className="w-4 h-4 text-indigo-400 flex-shrink-0 animate-pulse" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Редагування лінії' : 'Line Editing Mode'}
-              </span>
-              <span className="text-xs font-mono truncate text-slate-200">
-                {language === 'uk'
-                  ? 'Перетягуйте вузли для зміни форми. Правий клік — видалити вузол.'
-                  : 'Drag nodes to reshape. Right click to delete node.'}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                onClick={() => onSelectLine(null)}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-md"
-              >
-                <Check className="w-3 h-3" />
-                <span>{language === 'uk' ? 'Готово' : 'Done'}</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (selectedLineId) onDeleteDrawnLine(selectedLineId);
-                }}
-                className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                title={language === 'uk' ? 'Видалити лінію' : 'Delete line'}
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!(isExporting || isCopying) && interactionMode === 'measure' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-yellow-400/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            <Ruler className="w-4 h-4 text-yellow-400 flex-shrink-0 animate-pulse" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-yellow-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Вимірювання відстані' : 'Distance Measurement'}
-              </span>
-              <span className="text-xs font-mono font-extrabold truncate">
-                {language === 'uk' ? 'Загальна:' : 'Total:'} <span className="text-yellow-300">{formatDistance(totalMeasureDistance)}</span> ({measurePoints.length} {language === 'uk' ? 'точок' : 'pts'})
-              </span>
-            </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {measurePoints.length > 0 && (
-                <button
-                  onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))}
-                  className="px-2 py-1 bg-white/10 hover:bg-white/20 text-slate-200 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  {language === 'uk' ? 'Скасувати' : 'Undo'}
-                </button>
-              )}
-              {measurePoints.length > 0 && (
-                <button
-                  onClick={() => setMeasurePoints([])}
-                  className="px-2 py-1 bg-red-500/20 text-red-300 hover:bg-red-500 hover:text-white rounded-lg text-[10px] font-bold transition-all cursor-pointer"
-                >
-                  {language === 'uk' ? 'Очистити' : 'Clear'}
-                </button>
-              )}
-              <button
-                onClick={() => onSelectInteractionMode?.('draw')}
-                title={language === 'uk' ? 'Закрити лінійку' : 'Close ruler'}
-                className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!(isExporting || isCopying) && interactionMode === 'settlement' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-blue-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            <MapPin className="w-4 h-4 text-blue-400 flex-shrink-0 animate-bounce" />
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Режим виставлення населених пунктів' : 'Settlement Placement Mode'}
-              </span>
-              <span className="text-xs font-medium truncate">
-                {language === 'uk' ? 'Клікніть на карті в потрібному місці, щоб додати точку та назву' : 'Click anywhere on the map to place a settlement dot & label'}
-              </span>
-            </div>
-            <button
-              onClick={() => onSelectInteractionMode?.('draw')}
-              title={language === 'uk' ? 'Вийти з режиму' : 'Exit mode'}
-              className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer flex-shrink-0"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {!(isExporting || isCopying) && interactionMode === 'redzone' && (
-          <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-red-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
-            {isAddingRedZone ? (
-              <Loader2 className="w-4 h-4 text-red-500 animate-spin flex-shrink-0" />
-            ) : (
-              <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0 animate-bounce" />
-            )}
-            <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-bold text-red-400 uppercase tracking-wider">
-                {language === 'uk' ? 'Режим червоних зон' : 'Red Zone Mode'}
-              </span>
-              <span className="text-xs font-medium truncate">
-                {isAddingRedZone
-                  ? (language === 'uk' ? 'Завантаження населеного пункту...' : 'Loading settlement boundary...')
-                  : (language === 'uk' ? 'Клікніть на карті, щоб виділити населений пункт червоним' : 'Click anywhere on the map to mark red zone')}
-              </span>
-            </div>
-            <button
-              onClick={() => onSelectInteractionMode?.('draw')}
-              title={language === 'uk' ? 'Вийти з режиму' : 'Exit mode'}
-              className="p-1 rounded-full hover:bg-white/10 text-slate-400 hover:text-slate-200 cursor-pointer flex-shrink-0"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+        {/* Active Mode Floating Banners removed per user request */}
 
         {!(isExporting || isCopying) && lastAutoZoneName && (
           <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
@@ -4071,8 +3886,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             max-width: 88% !important;
           }
           .exporting-map .tactical-legend-text {
-            font-size: 10px !important;
-            line-height: 1.4 !important;
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            line-height: 1.45 !important;
             white-space: normal !important;
             text-align: center !important;
             max-width: 100% !important;

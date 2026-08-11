@@ -4,7 +4,7 @@ import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
 import { Settlement, SettlementCategory } from './data/settlements';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2 } from 'lucide-react';
+import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
@@ -776,6 +776,7 @@ export default function App() {
 
     const baseStyle = activeStyle;
     const currentIconType = baseStyle.iconType || 'pin';
+    // Label/caption equals icon name when adding
     const defaultTitle = customIconTitles[currentIconType] || getDefaultIconName(currentIconType, language);
 
     const newId = 'marker_' + Date.now();
@@ -802,8 +803,9 @@ export default function App() {
     setMarkers((prev) => [...prev, newMarker]);
     setSelectedMarkerId(newId);
 
-    // Explicitly update activeStyle to the newly created marker's style so it immediately propagates to any subsequent markers
+    // Explicitly update activeStyle
     setActiveStyle({
+      title: newMarker.title,
       color: newMarker.color,
       borderColor: newMarker.borderColor || '#ffffff',
       size: newMarker.size,
@@ -852,13 +854,9 @@ export default function App() {
     setMarkers((prev) =>
       prev.map((m) => (m.id === updatedMarker.id ? updatedMarker : m))
     );
-    // If the title is customized, save it!
-    if (updatedMarker.title && updatedMarker.iconType) {
-      handleUpdateCustomIconTitle(updatedMarker.iconType, updatedMarker.title);
-    }
     // Also keep the activeStyle synchronized!
     setActiveStyle({
-      color: updatedMarker.color,
+      title: updatedMarker.title,
       borderColor: updatedMarker.borderColor || '#ffffff',
       size: updatedMarker.size,
       rotation: updatedMarker.rotation,
@@ -1033,11 +1031,11 @@ export default function App() {
                 </button>
               )}
 
-              {/* Open Sidebar Toggle (No label, just count badge) */}
+              {/* Open Sidebar Toggle */}
               <button
                 onClick={() => setMobileView('sidebar')}
                 title={language === 'uk' ? 'Параметри' : 'Settings'}
-                className="w-11 h-11 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all cursor-pointer flex-shrink-0 flex items-center justify-center relative active:scale-95"
+                className="w-11 h-11 rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/30 hover:bg-blue-700 transition-all cursor-pointer flex-shrink-0 flex items-center justify-center relative active:scale-95 md:hidden"
               >
                 <Sliders className="w-5 h-5" />
                 {markers.length > 0 && (
@@ -1049,25 +1047,37 @@ export default function App() {
             </div>
           )}
 
-          {/* Quick Mobile Editor Panel (When a marker is selected) */}
-          {selectedMarker && mobileView === 'map' && (
-            <div className="absolute bottom-14 md:bottom-10 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-sm px-4 py-4 border rounded-3xl shadow-2xl flex flex-col gap-3 backdrop-blur-xl bg-slate-900/95 border-white/10 text-white md:hidden animate-slide-up">
-              {/* Header: Title edit & Delete */}
-              <div className="flex items-center justify-between gap-2 border-b border-white/5 pb-2">
-                <input
-                  type="text"
-                  value={selectedMarker.title}
-                  onChange={(e) => handleUpdateMarker({ ...selectedMarker, title: e.target.value })}
-                  placeholder={language === 'uk' ? 'Назва маркеру' : 'Marker name'}
-                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-blue-500"
-                />
-                <button
-                  onClick={() => handleDeleteMarker(selectedMarker.id)}
-                  className="p-2 bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all cursor-pointer"
-                  title={language === 'uk' ? 'Видалити маркер' : 'Delete marker'}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+          {/* Quick Floating Editor Panel (When a marker is selected) */}
+          {selectedMarker && (
+            <div className="absolute bottom-14 md:bottom-8 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-md px-4 py-3.5 border rounded-3xl shadow-2xl flex flex-col gap-2.5 backdrop-blur-xl bg-slate-900/95 border-blue-500/30 text-white animate-slide-up">
+              {/* Header: Rename title & Controls */}
+              <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                  <Edit2 className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  <input
+                    type="text"
+                    value={selectedMarker.title}
+                    onChange={(e) => handleUpdateMarker({ ...selectedMarker, title: e.target.value })}
+                    placeholder={language === 'uk' ? 'Назва / підпис іконки' : 'Icon title / label'}
+                    className="w-full bg-white/10 border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white font-bold focus:outline-none focus:border-blue-400 focus:bg-white/15 transition-all"
+                  />
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onClick={() => handleDeleteMarker(selectedMarker.id)}
+                    className="p-1.5 bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all cursor-pointer"
+                    title={language === 'uk' ? 'Видалити маркер' : 'Delete marker'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setSelectedMarkerId(null)}
+                    className="p-1.5 bg-white/10 text-slate-300 hover:bg-white/20 hover:text-white rounded-xl transition-all cursor-pointer"
+                    title={language === 'uk' ? 'Закрити' : 'Close'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
               {/* Color Presets & Toggle Label */}
@@ -1122,14 +1132,14 @@ export default function App() {
               <div className="flex items-center justify-between gap-2 pt-1">
                 <button
                   onClick={() => setMobileView('sidebar')}
-                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-slate-200 transition-all cursor-pointer"
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/15 text-slate-200 transition-all cursor-pointer md:hidden"
                 >
                   <Sliders className="w-3.5 h-3.5 text-blue-400" />
                   <span>{language === 'uk' ? 'Параметри' : 'Full Settings'}</span>
                 </button>
                 <button
                   onClick={() => setSelectedMarkerId(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1 transition-all cursor-pointer shadow-lg shadow-blue-500/25"
+                  className="flex-1 py-1.5 px-4 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-1 transition-all cursor-pointer shadow-lg shadow-blue-500/25"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>{language === 'uk' ? 'Готово' : 'Done'}</span>
