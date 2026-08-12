@@ -1902,7 +1902,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
       crossOrigin: 'anonymous',
-      detectRetina: false,
+      detectRetina: true,
     });
 
     tileLayer.addTo(map);
@@ -1915,7 +1915,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
         crossOrigin: 'anonymous',
-        detectRetina: false,
+        detectRetina: true,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -2075,8 +2075,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       markerInstance.off('dragstart drag dragend');
 
       const hasEndPoint = endPointStyle && endPointStyle !== 'none';
-      const hasEndHandle = (endPointStyle === 'explosion') || 
-                           (endPointStyle === 'line' && isSelected);
+      const hasEndHandle = isSelected || (endPointStyle && endPointStyle !== 'none') || !!markerData.hasZone;
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
@@ -2286,9 +2285,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             iconAnchor: [16, 16],
           });
         } else {
-          // endPointStyle === 'none', only show white handle when selected
+          // endPointStyle === 'none', show white handle dot when selected/active for adjusting direction & zones
           endMarkerIcon = L.divIcon({
-            className: 'custom-end-handle',
+            className: 'custom-end-handle screenshot-exclude',
             html: `
               <div class="flex items-center justify-center" style="
                 width: 14px;
@@ -2406,8 +2405,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const marker = markers.find((m) => m.id === id);
       const isSelected = id === selectedMarkerId;
       const hasEndHandle = marker && (
-        (marker.endPointStyle === 'explosion') ||
-        (marker.endPointStyle === 'line' && isSelected)
+        isSelected ||
+        (marker.endPointStyle && marker.endPointStyle !== 'none') ||
+        !!marker.hasZone
       );
       if (!hasEndHandle) {
         if (endMarkersRef.current[id]) {
@@ -3038,12 +3038,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return 'https://tms.visicom.ua/2.0.0/planet3/base';
   }, [activeTileLayer.id, visicomKey]);
 
-  const getFragmentUrl = useCallback((center: L.LatLng, width: number, height: number) => {
+  const getFragmentUrl = useCallback((center: L.LatLng, width: number, height: number, dpr = 1) => {
     const base = getVisicomFragmentBaseUrl();
     if (!base) return null;
     const lang = language === 'uk' ? '?lang=uk' : '?lang=en';
     const separator = lang.includes('?') ? '&' : '?';
-    return `${base}/${mapInstanceRef.current?.getZoom() ?? 13}/${center.lng},${center.lat}/${Math.round(width)}/${Math.round(height)}.svg${lang}${separator}key=${encodeURIComponent(visicomKey)}`;
+    const reqWidth = Math.round(width * dpr);
+    const reqHeight = Math.round(height * dpr);
+    return `${base}/${mapInstanceRef.current?.getZoom() ?? 13}/${center.lng},${center.lat}/${reqWidth}/${reqHeight}.svg${lang}${separator}key=${encodeURIComponent(visicomKey)}`;
   }, [getVisicomFragmentBaseUrl, language, visicomKey]);
 
   const waitForImageDecode = async (img: HTMLImageElement) => {
@@ -3063,7 +3065,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  const installVisicomHQBackground = async (mapElement: HTMLElement) => {
+  const installVisicomHQBackground = async (mapElement: HTMLElement, exportScale = 2) => {
     const map = mapInstanceRef.current;
     if (!map || !getVisicomFragmentBaseUrl()) return null;
 
@@ -3097,6 +3099,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const urls: string[] = [];
     const objectUrls: string[] = [];
 
+    // Scale fragment density so vector map remains razor-sharp on high DPI / mobile exports
+    const fragmentDpr = Math.max(1, Math.min(2.5, exportScale));
+
     try {
       for (let top = 0; top < height; top += VISICOM_FRAGMENT_MAX) {
         for (let left = 0; left < width; left += VISICOM_FRAGMENT_MAX) {
@@ -3107,7 +3112,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const globalX = mapPixelOrigin.x + left - width / 2 + fragmentWidth / 2;
           const globalY = mapPixelOrigin.y + top - height / 2 + fragmentHeight / 2;
           const fragmentCenter = map.unproject(L.point(globalX, globalY), zoom);
-          const url = getFragmentUrl(fragmentCenter, fragmentWidth, fragmentHeight);
+          const url = getFragmentUrl(fragmentCenter, fragmentWidth, fragmentHeight, fragmentDpr);
           if (!url) throw new Error('Visicom fragment URL unavailable');
           urls.push(url);
 
@@ -3117,27 +3122,31 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (!response.ok) {
             throw new Error(`Visicom fragment HTTP ${response.status}`);
           }
-          const svgBlob = await response.blob();
-          if (!svgBlob.size) throw new Error('Empty Visicom SVG fragment');
-          const objectUrl = URL.createObjectURL(svgBlob);
-          objectUrls.push(objectUrl);
+          const svgText = await response.text();
+          if (!svgText || !svgText.includes('<svg')) {
+            throw new Error('Invalid Visicom SVG fragment response');
+          }
 
-          const img = document.createElement('img');
-          img.alt = '';
-          img.draggable = false;
-          img.decoding = 'async';
-          img.style.position = 'absolute';
-          img.style.left = `${left}px`;
-          img.style.top = `${top}px`;
-          img.style.width = `${fragmentWidth}px`;
-          img.style.height = `${fragmentHeight}px`;
-          img.style.display = 'block';
-          img.style.maxWidth = 'none';
-          img.style.maxHeight = 'none';
-          img.src = objectUrl;
+          const fragmentDiv = document.createElement('div');
+          fragmentDiv.className = 'visicom-svg-fragment';
+          fragmentDiv.style.position = 'absolute';
+          fragmentDiv.style.left = `${left}px`;
+          fragmentDiv.style.top = `${top}px`;
+          fragmentDiv.style.width = `${fragmentWidth}px`;
+          fragmentDiv.style.height = `${fragmentHeight}px`;
+          fragmentDiv.style.overflow = 'hidden';
+          fragmentDiv.style.pointerEvents = 'none';
+          fragmentDiv.innerHTML = svgText;
 
-          background.appendChild(img);
-          await waitForImageDecode(img);
+          const innerSvg = fragmentDiv.querySelector('svg');
+          if (innerSvg) {
+            innerSvg.style.width = '100%';
+            innerSvg.style.height = '100%';
+            innerSvg.style.display = 'block';
+            innerSvg.style.pointerEvents = 'none';
+          }
+
+          background.appendChild(fragmentDiv);
         }
       }
 
@@ -3212,9 +3221,22 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Prefer the native Visicom fragment background. If the API key, CORS,
       // network, or account restrictions prevent it, fall back to the normal
       // Leaflet capture instead of breaking export altogether.
+      const width = mapElement.clientWidth;
+      const height = mapElement.clientHeight;
+      const maxOutputDimension = 4096;
+
+      // Ensure crisp high-definition export width (at least ~2560px wide even on narrow mobile viewports)
+      const minTargetWidth = 2560;
+      const mobileWidthRatio = minTargetWidth / Math.max(width, 1);
+      const browserPixelRatio = window.devicePixelRatio || 1;
+      const desiredRatio = Math.max(2.5, browserPixelRatio * 1.5, mobileWidthRatio);
+
+      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
+      const capturePixelRatio = Math.max(1.5, Math.min(desiredRatio, sizeCapRatio));
+
       if (getVisicomFragmentBaseUrl()) {
         try {
-          hqBackground = await installVisicomHQBackground(mapElement);
+          hqBackground = await installVisicomHQBackground(mapElement, capturePixelRatio);
         } catch {
           hqBackground = null;
         }
@@ -3226,17 +3248,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         ) as HTMLImageElement[];
         await Promise.all(tileImages.map((img) => waitForImageDecode(img).catch(() => undefined)));
       }
-
-      const width = mapElement.clientWidth;
-      const height = mapElement.clientHeight;
-      const maxOutputDimension = 4096;
-      const requestedRatio = 2.5;
-      const browserPixelRatio = window.devicePixelRatio || 1;
-      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
-      const capturePixelRatio = Math.max(
-        1.5,
-        Math.min(requestedRatio, Math.max(2, browserPixelRatio), sizeCapRatio)
-      );
 
       const filterNode = (node: HTMLElement) => {
         if (!node?.classList) return true;
@@ -3291,15 +3302,39 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = prepareExportState();
     if (!mapElement) return;
     setIsExporting(true);
-    setScreenshotStatus(language === 'uk' ? 'Підготовка карти (Visicom HQ)...' : 'Preparing map (Visicom HQ)...');
+    setScreenshotStatus(language === 'uk' ? 'Підготовка HD карти...' : 'Preparing HD map...');
     try {
       const blob = await captureMapBlob();
+      const filename = `tactical_map_${Date.now()}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+      if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: language === 'uk' ? 'Тактична карта (UA Mapper)' : 'Tactical Map (UA Mapper)',
+          });
+          setScreenshotStatus(language === 'uk' ? 'Зображення збережено / поширено!' : 'Map saved / shared!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return;
+        } catch (shareErr) {
+          if ((shareErr as Error).name === 'AbortError') {
+            setScreenshotStatus(null);
+            return;
+          }
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.download = `tactical_map_${Date.now()}.png`;
+      link.download = filename;
       link.href = url;
+      document.body.appendChild(link);
       link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
       setScreenshotStatus(language === 'uk' ? 'Зображення завантажено!' : 'Map downloaded successfully!');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
@@ -3316,7 +3351,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = prepareExportState();
     if (!mapElement) return;
     setIsCopying(true);
-    setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер...' : 'Copying to clipboard...');
+    setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер (HD)...' : 'Copying to clipboard (HD)...');
     let blob: Blob | null = null;
     try {
       blob = await captureMapBlob();
@@ -3327,15 +3362,31 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
-      console.warn('Clipboard write failed, using the same rendered PNG as fallback:', err);
+      console.warn('Clipboard write failed, using Web Share / download fallback:', err);
       try {
         if (!blob) throw new Error('PNG blob was not created');
+        const filename = `tactical_map_${Date.now()}.png`;
+        const file = new File([blob], filename, { type: 'image/png' });
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+
+        if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            files: [file],
+            title: language === 'uk' ? 'Тактична карта (UA Mapper)' : 'Tactical Map (UA Mapper)',
+          });
+          setScreenshotStatus(language === 'uk' ? 'Зображення збережено / поширено!' : 'Map saved / shared!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return;
+        }
+
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.download = `tactical_map_${Date.now()}.png`;
+        link.download = filename;
         link.href = url;
+        document.body.appendChild(link);
         link.click();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
         setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
         setTimeout(() => setScreenshotStatus(null), 2500);
       } catch (fallbackErr) {

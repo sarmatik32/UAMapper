@@ -999,9 +999,9 @@ export default function App() {
           />
 
 
-          {/* Floating Action Bar (When no marker is selected) */}
+          {/* Floating Action Bar (When no marker is selected, Mobile Only) */}
           {selectedMarkerId === null && (
-            <div className="absolute bottom-14 md:bottom-8 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white animate-fade-in">
+            <div className="md:hidden absolute bottom-14 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-1.5rem)] max-w-sm px-3 py-2 border rounded-full shadow-2xl flex items-center justify-between gap-1 backdrop-blur-xl bg-slate-900/90 border-white/10 text-white animate-fade-in">
               {/* Interaction Mode Toggle (Cycles through all modes) */}
               <button
                 onClick={handleCycleInteractionMode}
@@ -1069,9 +1069,9 @@ export default function App() {
             </div>
           )}
 
-          {/* Quick Floating Editor Panel (When a marker is selected) */}
+          {/* Quick Floating Editor Panel (When a marker is selected, Mobile Only) */}
           {selectedMarker && (
-            <div className="absolute bottom-14 md:bottom-8 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-md px-4 py-3.5 border rounded-3xl shadow-2xl flex flex-col gap-2.5 backdrop-blur-xl bg-slate-900/95 border-blue-500/30 text-white animate-slide-up">
+            <div className="md:hidden absolute bottom-14 left-1/2 -translate-x-1/2 z-30 w-[calc(100%-2rem)] max-w-md px-4 py-3.5 border rounded-3xl shadow-2xl flex flex-col gap-2.5 backdrop-blur-xl bg-slate-900/95 border-blue-500/30 text-white animate-slide-up">
               {/* Header: Rename title & Controls */}
               <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
                 <div className="flex items-center gap-1.5 flex-1 min-w-0">
@@ -1201,7 +1201,7 @@ export default function App() {
                   setMobileView('map');
                   setTimeout(() => {
                     mapRef.current?.exportPNG();
-                  }, 350);
+                  }, 450);
                 } else {
                   mapRef.current?.exportPNG();
                 }
@@ -1211,7 +1211,7 @@ export default function App() {
                   setMobileView('map');
                   setTimeout(() => {
                     mapRef.current?.copyPNG();
-                  }, 350);
+                  }, 450);
                 } else {
                   mapRef.current?.copyPNG();
                 }
