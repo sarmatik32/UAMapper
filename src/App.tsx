@@ -121,7 +121,7 @@ const DEFAULT_MARKERS: CustomMarker[] = [
     iconType: 'uav-recon',
     draggable: true,
     labelVisible: true,
-    endPointStyle: 'line',
+    endPointStyle: 'none',
     endLat: 47.83,
     endLng: 33.22,
   },
@@ -138,7 +138,7 @@ const DEFAULT_MARKERS: CustomMarker[] = [
     iconType: 'bomb-air',
     draggable: true,
     labelVisible: true,
-    endPointStyle: 'explosion',
+    endPointStyle: 'none',
     endLat: 47.91,
     endLng: 33.39,
   },
@@ -155,7 +155,7 @@ const DEFAULT_MARKERS: CustomMarker[] = [
     iconType: 'uav-kamikaze',
     draggable: true,
     labelVisible: true,
-    endPointStyle: 'line',
+    endPointStyle: 'none',
     endLat: 47.75,
     endLng: 33.42,
   },
@@ -206,8 +206,16 @@ export default function App() {
   };
 
   const [markers, setMarkers] = useState<CustomMarker[]>(() => {
-    const saved = localStorage.getItem('visicom_custom_markers');
-    return saved ? JSON.parse(saved) : DEFAULT_MARKERS;
+    try {
+      const saved = localStorage.getItem('visicom_custom_markers');
+      const loaded = saved ? JSON.parse(saved) : DEFAULT_MARKERS;
+      return loaded.map((m: any) => ({
+        ...m,
+        endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
+      }));
+    } catch (e) {
+      return DEFAULT_MARKERS;
+    }
   });
 
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
@@ -216,7 +224,17 @@ export default function App() {
   const [drawnLines, setDrawnLines] = useState<DrawnLine[]>(() => {
     try {
       const saved = localStorage.getItem('visicom_drawn_lines');
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((l: any) => ({
+            ...l,
+            startPointStyle: l.startPointStyle === 'arrow' || l.startPointStyle === 'explosion' || l.startPointStyle === 'custom_icon' ? l.startPointStyle : 'none',
+            endPointStyle: l.endPointStyle === 'arrow' || l.endPointStyle === 'explosion' || l.endPointStyle === 'custom_icon' ? l.endPointStyle : 'none',
+          }));
+        }
+      }
+      return [];
     } catch (e) {
       return [];
     }
@@ -230,8 +248,10 @@ export default function App() {
   const [lineSmoothed, setLineSmoothed] = useState<boolean>(true);
   const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('none');
   const [lineStartCustomIcon, setLineStartCustomIcon] = useState<string>('');
-  const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('arrow');
+  const [lineStartIconRotation, setLineStartIconRotation] = useState<number>(0);
+  const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('none');
   const [lineEndCustomIcon, setLineEndCustomIcon] = useState<string>('');
+  const [lineEndIconRotation, setLineEndIconRotation] = useState<number>(0);
   const [lineDashStyle, setLineDashStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
 
   const handleAddDrawnLine = (newLine: DrawnLine) => {
@@ -666,7 +686,7 @@ export default function App() {
       iconType: 'uav-recon',
       draggable: true,
       labelVisible: true,
-      endPointStyle: 'line',
+      endPointStyle: 'none',
       hasZone: false,
       zoneColor: '#ef4444',
       zoneSize: 60,
@@ -971,8 +991,10 @@ export default function App() {
             lineSmoothed={lineSmoothed}
             lineStartStyle={lineStartStyle}
             lineStartCustomIcon={lineStartCustomIcon}
+            lineStartIconRotation={lineStartIconRotation}
             lineEndStyle={lineEndStyle}
             lineEndCustomIcon={lineEndCustomIcon}
+            lineEndIconRotation={lineEndIconRotation}
             lineDashStyle={lineDashStyle}
           />
 
@@ -1248,10 +1270,14 @@ export default function App() {
               onChangeLineStartStyle={setLineStartStyle}
               lineStartCustomIcon={lineStartCustomIcon}
               onChangeLineStartCustomIcon={setLineStartCustomIcon}
+              lineStartIconRotation={lineStartIconRotation}
+              onChangeLineStartIconRotation={setLineStartIconRotation}
               lineEndStyle={lineEndStyle}
               onChangeLineEndStyle={setLineEndStyle}
               lineEndCustomIcon={lineEndCustomIcon}
               onChangeLineEndCustomIcon={setLineEndCustomIcon}
+              lineEndIconRotation={lineEndIconRotation}
+              onChangeLineEndIconRotation={setLineEndIconRotation}
               lineDashStyle={lineDashStyle}
               onChangeLineDashStyle={setLineDashStyle}
             />

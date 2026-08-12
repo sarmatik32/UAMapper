@@ -113,10 +113,14 @@ interface SidebarProps {
   onChangeLineStartStyle?: (style: LineEndpointType) => void;
   lineStartCustomIcon?: string;
   onChangeLineStartCustomIcon?: (url: string) => void;
+  lineStartIconRotation?: number;
+  onChangeLineStartIconRotation?: (rot: number) => void;
   lineEndStyle?: LineEndpointType;
   onChangeLineEndStyle?: (style: LineEndpointType) => void;
   lineEndCustomIcon?: string;
   onChangeLineEndCustomIcon?: (url: string) => void;
+  lineEndIconRotation?: number;
+  onChangeLineEndIconRotation?: (rot: number) => void;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
   onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
 }
@@ -192,14 +196,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeLineWeight = (_weight) => {},
   lineSmoothed = true,
   onChangeLineSmoothed = (_smoothed) => {},
-  lineStartStyle = 'fade',
+  lineStartStyle = 'none',
   onChangeLineStartStyle = (_style) => {},
   lineStartCustomIcon = '',
   onChangeLineStartCustomIcon = (_url) => {},
-  lineEndStyle = 'arrow',
+  lineStartIconRotation = 0,
+  onChangeLineStartIconRotation = (_rot) => {},
+  lineEndStyle = 'none',
   onChangeLineEndStyle = (_style) => {},
   lineEndCustomIcon = '',
   onChangeLineEndCustomIcon = (_url) => {},
+  lineEndIconRotation = 0,
+  onChangeLineEndIconRotation = (_rot) => {},
   lineDashStyle = 'solid',
   onChangeLineDashStyle = (_style) => {},
 }) => {
@@ -234,8 +242,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currLineSmoothed = selectedLine ? selectedLine.smoothed : lineSmoothed;
   const currLineStartStyle = selectedLine ? selectedLine.startPointStyle : lineStartStyle;
   const currLineStartCustomIcon = selectedLine ? (selectedLine.startCustomIconUrl || '') : lineStartCustomIcon;
+  const currLineStartIconRotation = selectedLine ? (selectedLine.startIconRotation || 0) : (lineStartIconRotation || 0);
   const currLineEndStyle = selectedLine ? selectedLine.endPointStyle : lineEndStyle;
   const currLineEndCustomIcon = selectedLine ? (selectedLine.endCustomIconUrl || '') : lineEndCustomIcon;
+  const currLineEndIconRotation = selectedLine ? (selectedLine.endIconRotation || 0) : (lineEndIconRotation || 0);
   const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
@@ -954,6 +964,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     )}
                   </div>
                 )}
+
+                {(currLineStartStyle === 'custom_icon' || currLineStartStyle === 'arrow') && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Поворот / напрям іконки' : 'Icon Rotation'}</span>
+                      <span className="font-mono text-emerald-400">{currLineStartIconRotation}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="359"
+                      value={currLineStartIconRotation}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startIconRotation: val });
+                        else onChangeLineStartIconRotation(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 6. End Point Style */}
@@ -1041,6 +1072,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ))}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {(currLineEndStyle === 'custom_icon' || currLineEndStyle === 'arrow') && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Поворот / напрям іконки' : 'Icon Rotation'}</span>
+                      <span className="font-mono text-emerald-400">{currLineEndIconRotation}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="359"
+                      value={currLineEndIconRotation}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endIconRotation: val });
+                        else onChangeLineEndIconRotation(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
                   </div>
                 )}
               </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star } from 'lucide-react';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
@@ -140,8 +140,10 @@ interface MapContainerProps {
   lineSmoothed?: boolean;
   lineStartStyle?: LineEndpointType;
   lineStartCustomIcon?: string;
+  lineStartIconRotation?: number;
   lineEndStyle?: LineEndpointType;
   lineEndCustomIcon?: string;
+  lineEndIconRotation?: number;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
 }
 
@@ -187,10 +189,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   lineColor = '#ef4444',
   lineWeight = 5,
   lineSmoothed = true,
-  lineStartStyle = 'fade' as LineEndpointType,
+  lineStartStyle = 'none' as LineEndpointType,
   lineStartCustomIcon = '',
-  lineEndStyle = 'arrow' as LineEndpointType,
+  lineStartIconRotation = 0,
+  lineEndStyle = 'none' as LineEndpointType,
   lineEndCustomIcon = '',
+  lineEndIconRotation = 0,
   lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -236,6 +240,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     nodeMarkers: L.Marker[];
   }>({ nodeMarkers: [] });
 
+  const calculateDraftLineDistance = useCallback(() => {
+    if (draftLinePoints.length < 2) return 0;
+    let totalMeters = 0;
+    for (let i = 0; i < draftLinePoints.length - 1; i++) {
+      const pt1 = L.latLng(draftLinePoints[i][0], draftLinePoints[i][1]);
+      const pt2 = L.latLng(draftLinePoints[i + 1][0], draftLinePoints[i + 1][1]);
+      totalMeters += pt1.distanceTo(pt2);
+    }
+    return totalMeters;
+  }, [draftLinePoints]);
+
   const handleFinishDraftLine = useCallback(() => {
     if (draftLinePoints.length < 2) return;
     const newLine: DrawnLine = {
@@ -247,12 +262,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       dashStyle: lineDashStyle,
       startPointStyle: lineStartStyle,
       startCustomIconUrl: lineStartCustomIcon,
+      startIconRotation: lineStartIconRotation,
       endPointStyle: lineEndStyle,
       endCustomIconUrl: lineEndCustomIcon,
+      endIconRotation: lineEndIconRotation,
     };
     onAddDrawnLine(newLine);
     setDraftLinePoints([]);
-  }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineEndStyle, lineEndCustomIcon, onAddDrawnLine]);
+  }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineStartIconRotation, lineEndStyle, lineEndCustomIcon, lineEndIconRotation, onAddDrawnLine]);
 
   const handleFinishDraftLineRef = useRef(handleFinishDraftLine);
   useEffect(() => {
@@ -1964,10 +1981,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const mId = a.id.replace('autozone_marker_', '');
           return validMarkerIds.has(mId);
         }
-        if (a.id.startsWith('autozone_')) {
-          const mId = a.id.replace('autozone_', '');
-          return validMarkerIds.has(mId);
-        }
         return true;
       });
       if (filtered.length === prev.length) return prev;
@@ -2063,8 +2076,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       const hasEndPoint = endPointStyle && endPointStyle !== 'none';
       const hasEndHandle = (endPointStyle === 'explosion') || 
-                           (endPointStyle === 'line') || 
-                           (endPointStyle === 'none' && isSelected);
+                           (endPointStyle === 'line' && isSelected);
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
@@ -2395,8 +2407,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const isSelected = id === selectedMarkerId;
       const hasEndHandle = marker && (
         (marker.endPointStyle === 'explosion') ||
-        (marker.endPointStyle === 'line' && isSelected) ||
-        (marker.endPointStyle === 'none' && isSelected)
+        (marker.endPointStyle === 'line' && isSelected)
       );
       if (!hasEndHandle) {
         if (endMarkersRef.current[id]) {
@@ -2487,7 +2498,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           displayPoints,
           isFadeStart,
           isFadeEnd,
-          0.9
+          0.9,
+          30
         );
 
         existing.fadingPolylines = fadingSegments.map((seg) => {
@@ -2496,7 +2508,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             weight: line.weight,
             opacity: seg.opacity,
             dashArray: dashArray,
-            lineCap: 'round',
+            lineCap: 'butt',
             lineJoin: 'round',
             pane: 'drawnLinesPane',
           }).addTo(map);
@@ -2545,22 +2557,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         style: LineEndpointType,
         customIconUrl: string,
         p1: [number, number],
-        p2: [number, number]
+        p2: [number, number],
+        isEnd: boolean
       ): L.DivIcon | null => {
-        if (style === 'none') return null;
+        if (style === 'none' || style === 'fade') return null;
+        const rotOffset = isEnd ? (line.endIconRotation || 0) : (line.startIconRotation || 0);
+        const bearing = calculateBearing(p1, p2) + rotOffset;
 
-        if (style === 'fade') {
-          return createFadeGlowIcon(line.color, Math.max(2, line.weight - 2));
-        }
         if (style === 'explosion') {
           return createExplosionIcon(line.color, line.weight);
         }
         if (style === 'custom_icon') {
-          const bearing = calculateBearing(p1, p2);
-          return createCustomImageIcon(customIconUrl || '', line.weight, bearing);
+          return createCustomImageIcon(customIconUrl || '', line.color, line.weight, bearing);
         }
         if (style === 'arrow') {
-          const bearing = calculateBearing(p1, p2);
           return createArrowIcon(line.color, bearing, line.weight);
         }
         if (style === 'dot') {
@@ -2580,7 +2590,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         line.startPointStyle,
         line.startCustomIconUrl || '',
         startCoord,
-        secondCoord
+        secondCoord,
+        false
       );
 
       if (startIcon) {
@@ -2609,7 +2620,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         line.endPointStyle,
         line.endCustomIconUrl || '',
         prevEndCoord,
-        endCoord
+        endCoord,
+        true
       );
 
       if (endIcon) {
@@ -2778,7 +2790,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         displayPoints,
         isFadeStart,
         isFadeEnd,
-        0.85
+        0.85,
+        30
       );
 
       layers.fadingPolylines = fadingSegments.map((seg) =>
@@ -2787,7 +2800,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           weight: lineWeight,
           opacity: seg.opacity,
           dashArray: dashArray,
-          lineCap: 'round',
+          lineCap: 'butt',
           lineJoin: 'round',
           pane: 'drawnLinesPane',
         }).addTo(map)
@@ -2827,9 +2840,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       const nodeIcon = L.divIcon({
         className: 'draft-line-node screenshot-exclude',
-        html: `<div style="background-color: white; border: 2.5px solid ${ringColor}; width: 14px; height: 14px; border-radius: 9999px; box-shadow: 0 2px 6px rgba(0,0,0,0.4); transform: translate(-50%, -50%); cursor: grab;" title="${language === 'uk' ? 'Перетягніть для зсуву точки, ПКМ — видалити' : 'Drag to move vertex, Right click to remove'}"></div>`,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
+        html: `
+          <div style="display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; margin-left: -18px; margin-top: -18px; cursor: grab; touch-action: none;" title="${language === 'uk' ? 'Перетягніть для зсуву точки, ПКМ — видалити' : 'Drag to move vertex, Right click to remove'}">
+            <div style="background-color: #ffffff; border: 3px solid ${ringColor}; width: 16px; height: 16px; border-radius: 9999px; box-shadow: 0 2px 8px rgba(0,0,0,0.5); transition: transform 0.15s ease;"></div>
+          </div>
+        `,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
 
       const marker = L.marker(pt, {
@@ -2877,12 +2894,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const endCoord = displayPoints[displayPoints.length - 1];
       const prevEndCoord = displayPoints[displayPoints.length - 2] || endCoord;
 
-      if (lineStartStyle !== 'none') {
+      if (lineStartStyle !== 'none' && lineStartStyle !== 'fade') {
         let startIcon: L.DivIcon | null = null;
-        if (lineStartStyle === 'fade') startIcon = createFadeGlowIcon(lineColor, lineWeight);
+        const startBearing = calculateBearing(startCoord, secondCoord) + (lineStartIconRotation || 0);
         if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineWeight, calculateBearing(startCoord, secondCoord));
-        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, calculateBearing(startCoord, secondCoord), lineWeight);
+        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineColor, lineWeight, startBearing);
+        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, startBearing, lineWeight);
         if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight);
 
         if (startIcon) {
@@ -2898,12 +2915,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         layers.startMarker = undefined;
       }
 
-      if (lineEndStyle !== 'none') {
+      if (lineEndStyle !== 'none' && lineEndStyle !== 'fade') {
         let endIcon: L.DivIcon | null = null;
-        if (lineEndStyle === 'fade') endIcon = createFadeGlowIcon(lineColor, lineWeight);
+        const endBearing = calculateBearing(prevEndCoord, endCoord) + (lineEndIconRotation || 0);
         if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineWeight, calculateBearing(prevEndCoord, endCoord));
-        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, calculateBearing(prevEndCoord, endCoord), lineWeight);
+        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineColor, lineWeight, endBearing);
+        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, endBearing, lineWeight);
         if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight);
 
         if (endIcon) {
@@ -2927,8 +2944,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     lineDashStyle,
     lineStartStyle,
     lineStartCustomIcon,
+    lineStartIconRotation,
     lineEndStyle,
     lineEndCustomIcon,
+    lineEndIconRotation,
     interactionMode,
     isMapReady,
   ]);
@@ -3700,7 +3719,79 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
-        {/* Active Mode Floating Banners removed per user request */}
+        {/* Floating Line Drawing Mobile/Desktop Control Toolbar */}
+        {!(isExporting || isCopying) && interactionMode === 'line' && (
+          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[95vw] animate-fade-in">
+            <div className={`px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 ${
+              theme === 'light'
+                ? 'bg-slate-900/90 border-slate-700/80 text-white'
+                : 'bg-slate-950/90 border-white/20 text-white'
+            }`}>
+              {/* Line Status Info */}
+              <div className="flex items-center gap-2 border-r border-white/20 pr-2.5 sm:pr-3.5">
+                <PenTool className="w-4 h-4 text-emerald-400 animate-pulse flex-shrink-0" />
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
+                    {language === 'uk' ? 'Нанесення лінії' : 'Line Drawing'}
+                  </span>
+                  <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
+                    {draftLinePoints.length === 0 ? (
+                      <span className="text-slate-400 italic">
+                        {language === 'uk' ? 'Торкніться карти...' : 'Tap on map...'}
+                      </span>
+                    ) : (
+                      <>
+                        <strong>{draftLinePoints.length}</strong> {language === 'uk' ? 'точок' : 'pts'}
+                        {draftLinePoints.length >= 2 && (
+                          <span className="ml-1.5 text-amber-300 font-bold">
+                            ({(calculateDraftLineDistance() >= 1000 
+                              ? `${(calculateDraftLineDistance() / 1000).toFixed(2)} км` 
+                              : `${Math.round(calculateDraftLineDistance())} м`)})
+                          </span>
+                        )}
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+
+              {/* Control Action Buttons */}
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                {/* Undo last vertex point */}
+                <button
+                  onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
+                  disabled={draftLinePoints.length === 0}
+                  className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
+                  title={language === 'uk' ? 'Скасувати останню точку' : 'Undo last vertex'}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати точку' : 'Undo Point'}</span>
+                </button>
+
+                {/* Finish Line */}
+                <button
+                  onClick={handleFinishDraftLine}
+                  disabled={draftLinePoints.length < 2}
+                  className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-400/50 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
+                </button>
+
+                {/* Clear / Cancel */}
+                {draftLinePoints.length > 0 && (
+                  <button
+                    onClick={() => setDraftLinePoints([])}
+                    className="p-1.5 sm:p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all border border-red-500/30 cursor-pointer active:scale-95"
+                    title={language === 'uk' ? 'Очистити чернетку' : 'Clear draft'}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {!(isExporting || isCopying) && lastAutoZoneName && (
           <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">

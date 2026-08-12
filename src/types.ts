@@ -50,9 +50,11 @@ export interface DrawnLine {
   
   startPointStyle: LineEndpointType;
   startCustomIconUrl?: string;
+  startIconRotation?: number;
   
   endPointStyle: LineEndpointType;
   endCustomIconUrl?: string;
+  endIconRotation?: number;
   
   label?: string;
 }

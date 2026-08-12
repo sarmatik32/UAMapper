@@ -18,15 +18,47 @@ export function createExplosionIcon(color: string, sizeMultiplier = 1) {
   });
 }
 
-export function createCustomImageIcon(dataUrl: string, sizeMultiplier = 1, angleDegrees?: number) {
-  const size = Math.max(28, Math.min(56, 24 + sizeMultiplier * 2));
+export function createCustomImageIcon(
+  dataUrl: string,
+  color: string,
+  sizeMultiplier = 1,
+  angleDegrees?: number
+) {
+  const size = Math.max(24, Math.min(60, 22 + sizeMultiplier * 2));
   const rotateStyle = angleDegrees !== undefined ? `transform: rotate(${angleDegrees - 90}deg);` : '';
-  const imgContent = dataUrl
-    ? `<img src="${dataUrl}" class="w-full h-full object-contain pointer-events-none" alt="icon" />`
-    : `<span class="text-amber-400 text-xs font-bold">🖼️</span>`;
+  
+  let iconContent = '';
+  if (dataUrl) {
+    if (color && color !== 'transparent' && color !== 'none') {
+      iconContent = `
+        <div style="
+          width: 100%;
+          height: 100%;
+          background-color: ${color};
+          -webkit-mask-image: url('${dataUrl}');
+          mask-image: url('${dataUrl}');
+          -webkit-mask-size: contain;
+          mask-size: contain;
+          -webkit-mask-repeat: no-repeat;
+          mask-repeat: no-repeat;
+          -webkit-mask-position: center;
+          mask-position: center;
+        "></div>
+      `;
+    } else {
+      iconContent = `<img src="${dataUrl}" class="w-full h-full object-contain pointer-events-none" alt="icon" />`;
+    }
+  } else {
+    iconContent = `
+      <svg width="${size * 0.8}" height="${size * 0.8}" viewBox="0 0 24 24" fill="${color || '#ef4444'}" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+      </svg>
+    `;
+  }
+
   const html = `
-    <div class="flex items-center justify-center p-1 rounded-full bg-slate-900/90 border-2 border-amber-400 shadow-lg shadow-black/60" style="width: ${size}px; height: ${size}px; ${rotateStyle}">
-      ${imgContent}
+    <div class="flex items-center justify-center pointer-events-none" style="width: ${size}px; height: ${size}px; ${rotateStyle}">
+      ${iconContent}
     </div>
   `;
   return L.divIcon({
@@ -73,7 +105,7 @@ export function createArrowIcon(color: string, angleDegrees: number, sizeMultipl
 export function createDotIcon(color: string, sizeMultiplier = 1) {
   const size = Math.max(12, Math.min(28, 10 + sizeMultiplier * 2));
   const html = `
-    <div class="rounded-full border-2 border-white/90 shadow-md shadow-black/40" style="width: ${size}px; height: ${size}px; background-color: ${color};"></div>
+    <div class="rounded-full shadow-sm" style="width: ${size}px; height: ${size}px; background-color: ${color};"></div>
   `;
   return L.divIcon({
     html,

@@ -56,7 +56,7 @@ export function generateFadingPolylineSegments(
   fadeStart: boolean,
   fadeEnd: boolean,
   baseOpacity = 0.9,
-  steps = 14
+  steps = 30
 ): FadingSegment[] {
   if (!points || points.length < 2) return [];
 
