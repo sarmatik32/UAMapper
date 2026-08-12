@@ -1269,13 +1269,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       } else if (item.priority === 1) {
         minZoom = 1; // Major regional capitals & cities visible at all zoom levels
       } else if (item.priority === 2) {
-        minZoom = 3.5; // Regional cities & district centers
+        minZoom = 3.0; // Regional cities & district centers
       } else if (item.priority === 3) {
-        minZoom = 5.5; // Towns & hromada centers
+        minZoom = 5.0; // Towns & hromada centers
       } else if (item.priority === 4) {
-        minZoom = 7.0; // Local settlements & villages
+        minZoom = 6.0; // Local settlements & villages
       } else {
-        minZoom = 8.5; // Small hamlets & rural villages
+        minZoom = 7.0; // Small hamlets & rural villages
       }
 
       if (currentZoom < minZoom) return;
@@ -1286,35 +1286,35 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (item.type === 'district') {
         dotHtml = `<span class="w-3.5 h-3.5 rounded-full bg-amber-400 ring-2 ring-amber-500/80 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse shrink-0"></span>`;
         labelHtml = `
-          <div class="text-amber-300 text-[12px] font-black tracking-widest uppercase whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
+          <div class="bg-slate-950/95 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded-md text-[12px] font-black tracking-wider uppercase whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 1) {
         dotHtml = `<span class="w-3 h-3 rounded-full bg-cyan-400 ring-2 ring-blue-500/80 shadow-[0_0_10px_rgba(34,211,238,0.9)] shrink-0"></span>`;
         labelHtml = `
-          <div class="text-white text-[12px] font-extrabold tracking-wide whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
+          <div class="bg-slate-950/95 text-cyan-300 border border-cyan-400/80 px-2 py-0.5 rounded-md text-[11.5px] font-extrabold tracking-wide whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 2) {
         dotHtml = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1.5 ring-emerald-500/70 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0"></span>`;
         labelHtml = `
-          <div class="text-slate-100 text-[11px] font-bold whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
+          <div class="bg-slate-950/90 text-emerald-300 border border-emerald-400/70 px-1.5 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 3) {
         dotHtml = `<span class="w-2 h-2 rounded-full bg-sky-300 ring-1 ring-sky-400/60 shadow-[0_0_5px_rgba(186,230,253,0.7)] shrink-0"></span>`;
         labelHtml = `
-          <div class="text-slate-200 text-[10px] font-semibold whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
+          <div class="bg-slate-950/90 text-sky-200 border border-sky-400/60 px-1.5 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
             ${item.name}
           </div>
         `;
       } else {
         dotHtml = `<span class="w-1.5 h-1.5 rounded-full bg-slate-200 ring-1 ring-slate-400/50 shadow-[0_0_4px_rgba(255,255,255,0.5)] shrink-0"></span>`;
         labelHtml = `
-          <div class="text-slate-200 text-[9.5px] font-medium whitespace-nowrap transition-transform group-hover:scale-105 [text-shadow:_-1px_-1px_0_#000,_1px_-1px_0_#000,_-1px_1px_0_#000,_1px_1px_0_#000,_0_2px_4px_rgba(0,0,0,0.9)]">
+          <div class="bg-slate-950/85 text-slate-100 border border-slate-700/80 px-1.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-[0_2px_5px_rgba(0,0,0,0.8)]">
             ${item.name}
           </div>
         `;
@@ -1424,6 +1424,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         center: defaultCenter,
         zoom: defaultZoom,
         zoomControl: false, // We'll add our own styled zoom control or position it beautifully
+        zoomSnap: 0.25,
+        zoomDelta: 0.25,
+        wheelPxPerZoomLevel: 120,
       });
 
       // Add a styled zoom control at top-right
@@ -3205,6 +3208,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         await Promise.all(tileImages.map((img) => waitForImageDecode(img).catch(() => undefined)));
       }
 
+      const width = mapElement.clientWidth;
+      const height = mapElement.clientHeight;
+      const maxOutputDimension = 4096;
+      const requestedRatio = 2.5;
+      const browserPixelRatio = window.devicePixelRatio || 1;
+      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
+      const capturePixelRatio = Math.max(
+        1.5,
+        Math.min(requestedRatio, Math.max(2, browserPixelRatio), sizeCapRatio)
+      );
+
       const filterNode = (node: HTMLElement) => {
         if (!node?.classList) return true;
         return !(
@@ -3216,17 +3230,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           node.classList.contains('measure-node-icon')
         );
       };
-
-      const width = mapElement.clientWidth;
-      const height = mapElement.clientHeight;
-      const maxOutputDimension = 4096;
-      const requestedRatio = 2;
-      const browserPixelRatio = window.devicePixelRatio || 1;
-      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
-      const capturePixelRatio = Math.max(
-        1,
-        Math.min(requestedRatio, browserPixelRatio, sizeCapRatio)
-      );
 
       const captureOptions = {
         cacheBust: false,
@@ -3779,16 +3782,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-dark-map .leaflet-tile-pane {
             filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important;
           }
-          /* Let the browser use high-quality interpolation for raster map tiles.
-             crisp-edges made 256px tiles visibly jagged in high-resolution PNGs. */
+          /* Ensure maximum sharpness and contrast during export */
           .exporting-map .leaflet-tile-pane img,
-          .exporting-map img {
-            image-rendering: auto !important;
+          .exporting-map img,
+          .exporting-map canvas {
+            image-rendering: -webkit-optimize-contrast !important;
+            image-rendering: high-quality !important;
           }
-          .exporting-map img, .exporting-map svg, .exporting-map canvas {
+          .exporting-map img, .exporting-map svg, .exporting-map canvas, .exporting-map div {
             -webkit-font-smoothing: antialiased !important;
             -moz-osx-font-smoothing: grayscale !important;
-            text-rendering: optimizeLegibility !important;
+            text-rendering: geometricPrecision !important;
           }
           .exporting-map svg path,
           .exporting-map svg line,
