@@ -91,6 +91,8 @@ interface SidebarProps {
   onClearAllCustomSettlements?: () => void;
   onExportCustomSettlements?: () => void;
   onImportCustomSettlements?: (settlements: Settlement[]) => void;
+  onExportAllSettings?: () => void;
+  onImportAllSettings?: (file: File) => void;
   autoHighlightZone?: boolean;
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
@@ -180,6 +182,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClearAllCustomSettlements = () => {},
   onExportCustomSettlements = () => {},
   onImportCustomSettlements = (_settlements) => {},
+  onExportAllSettings,
+  onImportAllSettings,
   autoHighlightZone = false,
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
@@ -1766,14 +1770,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <div className="flex items-center gap-2">
-              <Compass className="w-3.5 h-3.5 text-blue-500" />
-              <span>{isUa ? 'Накладки на мапі' : 'Map Overlays'}</span>
+              <Settings className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'НАЛАШТУВАННЯ' : 'SETTINGS'}</span>
             </div>
             {expandedSections.overlays ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
           </button>
 
           {expandedSections.overlays && (
             <div className="p-3 space-y-3.5">
+              {/* Full Settings & Data Export / Import Block */}
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
+                    {isUa ? 'Експорт усіх налаштувань' : 'Export All Settings'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Перенести всі позначки, лінії та опції на інший пристрій' : 'Transfer all markers, lines & config to another device'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={onExportAllSettings}
+                    className="py-2 px-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
+                    title={isUa ? 'Експортувати всі налаштування та дані у файл JSON' : 'Export all settings and data to JSON file'}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Експорт усіх' : 'Export All'}</span>
+                  </button>
+
+                  <label
+                    className="py-2 px-2 rounded-lg bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/20 font-bold text-xs text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Імпортувати всі налаштування з файлу JSON' : 'Import all settings from JSON file'}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isUa ? 'Імпорт' : 'Import'}</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file && onImportAllSettings) {
+                          onImportAllSettings(file);
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
               {/* Watermark Input */}
               <div className="space-y-1.5">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">

@@ -926,6 +926,184 @@ export default function App() {
     setSelectedMarkerId(null);
   };
 
+  // Handler: Export all settings & data
+  const handleExportAllSettings = () => {
+    const exportData = {
+      version: 1,
+      type: 'uamapper_full_backup',
+      exportedAt: new Date().toISOString(),
+      settings: {
+        theme,
+        language,
+        watermarkText,
+        legendOverlayText,
+        showLegendOverlay,
+        showRadarOverlay,
+        blurMapOnExport,
+        showCityBoundary,
+        showDistrictBoundary,
+        showHromadaBoundaries,
+        showSettlementLabels,
+        settlementLabelMode,
+        disabledSettlementCategories,
+        activeTileLayerId: activeTileLayer.id,
+        autoHighlightZone,
+        visicomKey,
+        customIconTitles,
+        activeStyle,
+      },
+      data: {
+        markers,
+        drawnLines,
+        customSettlements: customSettlements.filter(
+          (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
+        ),
+        customQuickZones: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('uamapper_custom_quick_zones') || '[]');
+          } catch {
+            return [];
+          }
+        })(),
+        searchedAreas: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('visicom_searched_areas') || '[]');
+          } catch {
+            return [];
+          }
+        })(),
+      },
+    };
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.download = `uamapper_settings_backup_${dateStr}.json`;
+    link.href = url;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Handler: Import all settings & data
+  const handleImportAllSettings = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const parsed = JSON.parse(content);
+
+        if (!parsed || (parsed.type !== 'uamapper_full_backup' && !parsed.settings && !parsed.data)) {
+          alert(language === 'uk' ? 'Недійсний файл налаштувань!' : 'Invalid settings backup file!');
+          return;
+        }
+
+        const { settings, data } = parsed;
+
+        if (settings) {
+          if (settings.theme) {
+            setTheme(settings.theme);
+            localStorage.setItem('visicom_theme', settings.theme);
+          }
+          if (settings.language) {
+            setLanguage(settings.language);
+            localStorage.setItem('visicom_ui_lang', settings.language);
+          }
+          if (settings.watermarkText !== undefined) {
+            setWatermarkText(settings.watermarkText);
+            localStorage.setItem('visicom_watermark_text', settings.watermarkText);
+          }
+          if (settings.legendOverlayText !== undefined) {
+            setLegendOverlayText(settings.legendOverlayText);
+            localStorage.setItem('visicom_legend_overlay_text', settings.legendOverlayText);
+          }
+          if (settings.showLegendOverlay !== undefined) {
+            setShowLegendOverlay(settings.showLegendOverlay);
+            localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
+          }
+          if (settings.showRadarOverlay !== undefined) {
+            setShowRadarOverlay(settings.showRadarOverlay);
+            localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
+          }
+          if (settings.blurMapOnExport !== undefined) {
+            setBlurMapOnExport(settings.blurMapOnExport);
+            localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
+          }
+          if (settings.showCityBoundary !== undefined) {
+            setShowCityBoundary(settings.showCityBoundary);
+            localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
+          }
+          if (settings.showDistrictBoundary !== undefined) {
+            setShowDistrictBoundary(settings.showDistrictBoundary);
+            localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
+          }
+          if (settings.showHromadaBoundaries !== undefined) {
+            setShowHromadaBoundaries(settings.showHromadaBoundaries);
+            localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
+          }
+          if (settings.showSettlementLabels !== undefined) {
+            setShowSettlementLabels(settings.showSettlementLabels);
+            localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
+          }
+          if (settings.settlementLabelMode) {
+            setSettlementLabelMode(settings.settlementLabelMode);
+            localStorage.setItem('visicom_settlement_label_mode', settings.settlementLabelMode);
+          }
+          if (Array.isArray(settings.disabledSettlementCategories)) {
+            setDisabledSettlementCategories(settings.disabledSettlementCategories);
+            localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(settings.disabledSettlementCategories));
+          }
+          if (settings.activeTileLayerId) {
+            const matchedLayer = TILE_LAYERS.find((l) => l.id === settings.activeTileLayerId);
+            if (matchedLayer) {
+              setActiveTileLayer(matchedLayer);
+              localStorage.setItem('visicom_active_layer', matchedLayer.id);
+            }
+          }
+          if (settings.autoHighlightZone !== undefined) {
+            setAutoHighlightZone(settings.autoHighlightZone);
+            localStorage.setItem('visicom_auto_highlight_zone', settings.autoHighlightZone ? 'true' : 'false');
+          }
+          if (settings.customIconTitles) {
+            setCustomIconTitles(settings.customIconTitles);
+            localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
+          }
+          if (settings.activeStyle) {
+            setActiveStyle(settings.activeStyle);
+            localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
+          }
+        }
+
+        if (data) {
+          if (Array.isArray(data.markers)) {
+            setMarkers(data.markers);
+            localStorage.setItem('visicom_custom_markers', JSON.stringify(data.markers));
+          }
+          if (Array.isArray(data.drawnLines)) {
+            setDrawnLines(data.drawnLines);
+            localStorage.setItem('visicom_drawn_lines', JSON.stringify(data.drawnLines));
+          }
+          if (Array.isArray(data.customSettlements)) {
+            handleImportCustomSettlements(data.customSettlements);
+          }
+          if (Array.isArray(data.customQuickZones)) {
+            localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(data.customQuickZones));
+          }
+          if (Array.isArray(data.searchedAreas)) {
+            localStorage.setItem('visicom_searched_areas', JSON.stringify(data.searchedAreas));
+          }
+        }
+
+        alert(language === 'uk' ? 'Усі налаштування та дані успішно імпортовано!' : 'All settings and data successfully imported!');
+      } catch (err) {
+        console.error('Error importing backup:', err);
+        alert(language === 'uk' ? 'Помилка зчитування файлу налаштувань!' : 'Error reading settings file!');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
 
   return (
@@ -1252,6 +1430,8 @@ export default function App() {
               onClearAllCustomSettlements={handleClearAllCustomSettlements}
               onExportCustomSettlements={handleExportCustomSettlements}
               onImportCustomSettlements={handleImportCustomSettlements}
+              onExportAllSettings={handleExportAllSettings}
+              onImportAllSettings={handleImportAllSettings}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
               drawnLines={drawnLines}
