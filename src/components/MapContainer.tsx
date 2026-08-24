@@ -3083,6 +3083,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     background.style.overflow = 'hidden';
     background.style.pointerEvents = 'none';
     background.style.zIndex = '0';
+    background.style.imageRendering = 'auto';
+    background.style.transform = 'translateZ(0)';
+    background.style.willChange = 'transform';
     if (blurMapOnExport) {
       background.style.filter = 'blur(2px) brightness(0.95) contrast(1.05)';
       background.style.transform = 'scale(1.004)';
@@ -3099,13 +3102,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const urls: string[] = [];
     const objectUrls: string[] = [];
 
-    // Scale fragment density so vector map remains razor-sharp on high DPI / mobile exports
-    const fragmentDpr = Math.max(1, Math.min(2.5, exportScale));
+    // Visicom's fragment endpoint has an official 2048x2048 maximum.
+    // Keep the fragment itself at 1:1 CSS pixels and let html-to-image
+    // rasterize the SVG at the final export pixel ratio. Requesting
+    // 3.5x/4x fragments exceeds the API limit and silently caused the code
+    // to fall back to Leaflet's 256px raster tiles — the source of the blur.
+    const fragmentDpr = 1;
 
     try {
-      // Build all fragments first, then fetch them concurrently. The previous
-      // implementation fetched every tile one-by-one, which made HD export
-      // noticeably slow on maps containing many fragments.
+      // Build all fragments first, then fetch them concurrently.
       const jobs: Array<{ left: number; top: number; width: number; height: number; url: string }> = [];
       for (let top = 0; top < height; top += VISICOM_FRAGMENT_MAX) {
         for (let left = 0; left < width; left += VISICOM_FRAGMENT_MAX) {
@@ -3148,6 +3153,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           innerSvg.style.display = 'block';
           innerSvg.style.pointerEvents = 'none';
           innerSvg.setAttribute('shape-rendering', 'geometricPrecision');
+          innerSvg.setAttribute('text-rendering', 'geometricPrecision');
+          innerSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
         }
         background.appendChild(fragmentDiv);
       }
@@ -3178,7 +3185,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
    * Captures the map exactly once and returns a PNG Blob.
    * Export and clipboard use the same Blob, so there is never a second render.
    */
-  const captureMapBlob = async (): Promise<Blob> => {
+  const captureMapBlob = async (mode: 'export' | 'clipboard' = 'export'): Promise<Blob> => {
     const mapElement = document.getElementById('map-stage-wrapper');
     if (!mapElement) throw new Error('Map element not found');
 
@@ -3223,18 +3230,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Leaflet capture instead of breaking export altogether.
       const width = mapElement.clientWidth;
       const height = mapElement.clientHeight;
-      const maxOutputDimension = 6000;
+      const maxOutputDimension = 8000;
 
-      // Ensure crisp high-definition export width (at least ~2560px wide even on narrow mobile viewports)
-      const minTargetWidth = 3000;
-      const mobileWidthRatio = minTargetWidth / Math.max(width, 1);
       const browserPixelRatio = window.devicePixelRatio || 1;
-      const desiredRatio = Math.max(3, browserPixelRatio * 1.5, mobileWidthRatio);
 
-      const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
-      const capturePixelRatio = Math.max(2, Math.min(desiredRatio, sizeCapRatio));
+      // Clipboard capture should look like a native browser screenshot (Lightshot):
+      // keep the map at its native rendered pixel size instead of enlarging the
+      // 256px Leaflet tiles or replacing them with a different export background.
+      // PNG download remains HD and can use the dedicated Visicom SVG background.
+      const capturePixelRatio = mode === 'clipboard'
+        ? Math.max(1, Math.min(browserPixelRatio, 2))
+        : (() => {
+            const minTargetWidth = 3600;
+            const mobileWidthRatio = minTargetWidth / Math.max(width, 1);
+            const desiredRatio = Math.max(3.5, browserPixelRatio * 2, mobileWidthRatio);
+            const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
+            return Math.max(2, Math.min(desiredRatio, sizeCapRatio));
+          })();
 
-      if (getVisicomFragmentBaseUrl()) {
+      if (mode === 'export' && getVisicomFragmentBaseUrl()) {
         try {
           hqBackground = await installVisicomHQBackground(mapElement, capturePixelRatio);
         } catch {
@@ -3354,7 +3368,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер (HD)...' : 'Copying to clipboard (HD)...');
     let blob: Blob | null = null;
     try {
-      blob = await captureMapBlob();
+      // Clipboard is intentionally captured at native browser scale.
+      // This matches what Lightshot sees and avoids making Leaflet's raster
+      // tiles look soft by enlarging them 3.5x+ before copying.
+      blob = await captureMapBlob('clipboard');
       if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
         throw new Error('Clipboard image API is unavailable');
       }
@@ -3928,8 +3945,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-map .leaflet-tile-pane img,
           .exporting-map img,
           .exporting-map canvas {
+            image-rendering: auto !important;
             image-rendering: -webkit-optimize-contrast !important;
-            image-rendering: high-quality !important;
           }
           .exporting-map img, .exporting-map svg, .exporting-map canvas, .exporting-map div {
             -webkit-font-smoothing: antialiased !important;

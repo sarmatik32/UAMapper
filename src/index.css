@@ -115,7 +115,6 @@ html, body {
 .leaflet-shadow-pane img,
 .leaflet-overlay-pane svg {
   image-rendering: auto !important;
-  image-rendering: -webkit-optimize-contrast !important;
 }
 
 /* Settlement and district label markers */
