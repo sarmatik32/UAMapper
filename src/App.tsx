@@ -877,6 +877,7 @@ export default function App() {
     // Also keep the activeStyle synchronized!
     setActiveStyle({
       title: updatedMarker.title,
+      color: updatedMarker.color,
       borderColor: updatedMarker.borderColor || '#ffffff',
       size: updatedMarker.size,
       rotation: updatedMarker.rotation,

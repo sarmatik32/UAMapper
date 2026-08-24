@@ -131,3 +131,40 @@ html, body {
   pointer-events: none !important;
   filter: none !important;
 }
+
+
+/* Modern control-panel skin */
+.modern-sidebar {
+  --panel-radius: 18px;
+  --control-radius: 12px;
+}
+.modern-sidebar .flex-1.overflow-y-auto {
+  scrollbar-gutter: stable;
+}
+.modern-sidebar .flex-1.overflow-y-auto > div {
+  border-radius: var(--panel-radius) !important;
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.08);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.modern-sidebar .flex-1.overflow-y-auto > div:hover {
+  border-color: rgba(59, 130, 246, 0.22) !important;
+}
+.modern-sidebar input:not([type="checkbox"]):not([type="range"]),
+.modern-sidebar select,
+.modern-sidebar textarea {
+  border-radius: var(--control-radius) !important;
+  min-height: 34px;
+  transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+.modern-sidebar input:not([type="checkbox"]):not([type="range"]):focus,
+.modern-sidebar select:focus,
+.modern-sidebar textarea:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+.modern-sidebar button {
+  -webkit-tap-highlight-color: transparent;
+}
+.modern-sidebar .grid button,
+.modern-sidebar .space-y-1\.5 > button {
+  border-radius: var(--control-radius);
+}

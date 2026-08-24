@@ -48,7 +48,7 @@ export function safeSetItem(key: string, value: string): boolean {
   }
 }
 
-export function optimizeIconDataUrl(dataUrl: string, maxDim: number = 128): Promise<string> {
+export function optimizeIconDataUrl(dataUrl: string, maxDim: number = 512): Promise<string> {
   return new Promise((resolve) => {
     if (!dataUrl || dataUrl.startsWith('data:image/svg+xml') || dataUrl.length < 30000) {
       resolve(dataUrl);

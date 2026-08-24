@@ -3103,51 +3103,53 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const fragmentDpr = Math.max(1, Math.min(2.5, exportScale));
 
     try {
+      // Build all fragments first, then fetch them concurrently. The previous
+      // implementation fetched every tile one-by-one, which made HD export
+      // noticeably slow on maps containing many fragments.
+      const jobs: Array<{ left: number; top: number; width: number; height: number; url: string }> = [];
       for (let top = 0; top < height; top += VISICOM_FRAGMENT_MAX) {
         for (let left = 0; left < width; left += VISICOM_FRAGMENT_MAX) {
           const fragmentWidth = Math.min(VISICOM_FRAGMENT_MAX, width - left);
           const fragmentHeight = Math.min(VISICOM_FRAGMENT_MAX, height - top);
-
-          // Fragment centre in Leaflet's global pixel coordinate system.
           const globalX = mapPixelOrigin.x + left - width / 2 + fragmentWidth / 2;
           const globalY = mapPixelOrigin.y + top - height / 2 + fragmentHeight / 2;
           const fragmentCenter = map.unproject(L.point(globalX, globalY), zoom);
           const url = getFragmentUrl(fragmentCenter, fragmentWidth, fragmentHeight, fragmentDpr);
           if (!url) throw new Error('Visicom fragment URL unavailable');
           urls.push(url);
-
-          // Fetch + inline as a Blob URL. This avoids asking html-to-image to
-          // dereference a remote SVG during its own clone/render pass.
-          const response = await fetch(url, { mode: 'cors', credentials: 'omit' });
-          if (!response.ok) {
-            throw new Error(`Visicom fragment HTTP ${response.status}`);
-          }
-          const svgText = await response.text();
-          if (!svgText || !svgText.includes('<svg')) {
-            throw new Error('Invalid Visicom SVG fragment response');
-          }
-
-          const fragmentDiv = document.createElement('div');
-          fragmentDiv.className = 'visicom-svg-fragment';
-          fragmentDiv.style.position = 'absolute';
-          fragmentDiv.style.left = `${left}px`;
-          fragmentDiv.style.top = `${top}px`;
-          fragmentDiv.style.width = `${fragmentWidth}px`;
-          fragmentDiv.style.height = `${fragmentHeight}px`;
-          fragmentDiv.style.overflow = 'hidden';
-          fragmentDiv.style.pointerEvents = 'none';
-          fragmentDiv.innerHTML = svgText;
-
-          const innerSvg = fragmentDiv.querySelector('svg');
-          if (innerSvg) {
-            innerSvg.style.width = '100%';
-            innerSvg.style.height = '100%';
-            innerSvg.style.display = 'block';
-            innerSvg.style.pointerEvents = 'none';
-          }
-
-          background.appendChild(fragmentDiv);
+          jobs.push({ left, top, width: fragmentWidth, height: fragmentHeight, url });
         }
+      }
+
+      const results = await Promise.all(jobs.map(async (job) => {
+        const response = await fetch(job.url, { mode: 'cors', credentials: 'omit' });
+        if (!response.ok) throw new Error(`Visicom fragment HTTP ${response.status}`);
+        const svgText = await response.text();
+        if (!svgText || !svgText.includes('<svg')) throw new Error('Invalid Visicom SVG fragment response');
+        return { ...job, svgText };
+      }));
+
+      for (const { left, top, width: fragmentWidth, height: fragmentHeight, svgText } of results) {
+        const fragmentDiv = document.createElement('div');
+        fragmentDiv.className = 'visicom-svg-fragment';
+        fragmentDiv.style.position = 'absolute';
+        fragmentDiv.style.left = `${left}px`;
+        fragmentDiv.style.top = `${top}px`;
+        fragmentDiv.style.width = `${fragmentWidth}px`;
+        fragmentDiv.style.height = `${fragmentHeight}px`;
+        fragmentDiv.style.overflow = 'hidden';
+        fragmentDiv.style.pointerEvents = 'none';
+        fragmentDiv.innerHTML = svgText;
+
+        const innerSvg = fragmentDiv.querySelector('svg');
+        if (innerSvg) {
+          innerSvg.style.width = '100%';
+          innerSvg.style.height = '100%';
+          innerSvg.style.display = 'block';
+          innerSvg.style.pointerEvents = 'none';
+          innerSvg.setAttribute('shape-rendering', 'geometricPrecision');
+        }
+        background.appendChild(fragmentDiv);
       }
 
       mapElement.insertBefore(background, mapElement.firstChild);
@@ -3214,25 +3216,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     try {
       mapInstanceRef.current?.invalidateSize({ animate: false });
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-      );
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
       // Prefer the native Visicom fragment background. If the API key, CORS,
       // network, or account restrictions prevent it, fall back to the normal
       // Leaflet capture instead of breaking export altogether.
       const width = mapElement.clientWidth;
       const height = mapElement.clientHeight;
-      const maxOutputDimension = 4096;
+      const maxOutputDimension = 6000;
 
       // Ensure crisp high-definition export width (at least ~2560px wide even on narrow mobile viewports)
-      const minTargetWidth = 2560;
+      const minTargetWidth = 3000;
       const mobileWidthRatio = minTargetWidth / Math.max(width, 1);
       const browserPixelRatio = window.devicePixelRatio || 1;
-      const desiredRatio = Math.max(2.5, browserPixelRatio * 1.5, mobileWidthRatio);
+      const desiredRatio = Math.max(3, browserPixelRatio * 1.5, mobileWidthRatio);
 
       const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
-      const capturePixelRatio = Math.max(1.5, Math.min(desiredRatio, sizeCapRatio));
+      const capturePixelRatio = Math.max(2, Math.min(desiredRatio, sizeCapRatio));
 
       if (getVisicomFragmentBaseUrl()) {
         try {

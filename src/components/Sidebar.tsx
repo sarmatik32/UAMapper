@@ -469,7 +469,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
 
   return (
-    <div className={`w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 ${
+    <div className={`modern-sidebar w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 ${
       theme === 'light'
         ? 'bg-white border-l border-slate-200 text-slate-700 shadow-xl'
         : 'bg-[#161a22] border-l border-[#262c38] text-slate-300 shadow-2xl'

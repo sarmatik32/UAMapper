@@ -3,6 +3,8 @@ import React from 'react';
 // Definitions of beautiful vector icons
 export const ICON_TYPES = [
   { id: 'uav-recon', nameUa: 'БПЛА Розвідник 🛩️', nameEn: 'Recon UAV 🛩️' },
+  { id: 'standard-aircraft', nameUa: 'Літак — стандарт', nameEn: 'Aircraft — standard' },
+  { id: 'standard-symbol-2', nameUa: 'Іконка 2 — стандарт', nameEn: 'Symbol 2 — standard' },
   { id: 'uav-kamikaze', nameUa: 'БПЛА-Камікадзе ⚡', nameEn: 'Kamikaze UAV ⚡' },
   { id: 'uav-strike', nameUa: 'Ударний БПЛА 💥', nameEn: 'Strike UAV 💥' },
   { id: 'uav-flyingwing', nameUa: 'БПЛА "Летюче Крило" 🦅', nameEn: 'Stealth Flying Wing 🦅' },
@@ -44,6 +46,18 @@ export function getIconSvgContent(type: string, fillColor: string = 'currentColo
   const strokeWidth = isTransparent ? '2.5' : '1.5';
 
   switch (type) {
+    case 'standard-aircraft':
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" class="w-full h-full">
+          <image href="/img/icon_aircraft_custom.png" x="0" y="0" width="128" height="128" preserveAspectRatio="xMidYMid meet" />
+        </svg>
+      `;
+    case 'standard-symbol-2':
+      return `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-full h-full">
+          <image href="/img/icon_custom_2.png" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet" />
+        </svg>
+      `;
     case 'uav-recon':
       return `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" class="w-full h-full">
@@ -226,7 +240,20 @@ export function createMarkerHtml(
   zoneSize?: number
 ): string {
   let innerContent = '';
-  if (customIconUrl) {
+  const standardAssetUrl = iconType === 'standard-aircraft'
+    ? '/img/icon_aircraft_custom.png'
+    : iconType === 'standard-symbol-2'
+      ? '/img/icon_custom_2.png'
+      : '';
+
+  if (standardAssetUrl) {
+    // Treat the supplied raster silhouettes as built-in symbols, not uploaded
+    // user icons, so their color/size/rotation settings behave like every
+    // other standard icon.
+    innerContent = color && color !== 'transparent' && color !== 'none' && color !== '#ffffff'
+      ? `<div style="width:100%;height:100%;background-color:${color};-webkit-mask-image:url('${standardAssetUrl}');mask-image:url('${standardAssetUrl}');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;"></div>`
+      : `<img src="${standardAssetUrl}" alt="${title}" style="width:100%;height:100%;object-fit:contain;" />`;
+  } else if (customIconUrl) {
     if (color && color !== 'transparent' && color !== 'none' && color !== '#ffffff') {
       innerContent = `
         <div style="
