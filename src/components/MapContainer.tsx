@@ -1,6 +1,125 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from 'leaflet';
 import { toPng, toBlob } from 'html-to-image';
+
+// Global safeguard for Leaflet against undefined DOM elements in getPosition, setPosition, Draggable, and MarkerDrag
+if (typeof window !== 'undefined' && L) {
+  // 1. Safeguard L.DomUtil.getPosition
+  if (L.DomUtil && typeof L.DomUtil.getPosition === 'function') {
+    const originalGetPosition = L.DomUtil.getPosition;
+    L.DomUtil.getPosition = function (el: HTMLElement) {
+      if (!el) {
+        return new L.Point(0, 0);
+      }
+      try {
+        const pos = originalGetPosition.call(this, el);
+        return pos || (el as any)?._leaflet_pos || new L.Point(0, 0);
+      } catch {
+        return (el as any)?._leaflet_pos || new L.Point(0, 0);
+      }
+    };
+  }
+
+  // 2. Safeguard L.DomUtil.setPosition
+  if (L.DomUtil && typeof L.DomUtil.setPosition === 'function') {
+    const originalSetPosition = L.DomUtil.setPosition;
+    L.DomUtil.setPosition = function (el: HTMLElement, point: L.Point) {
+      if (!el) return;
+      try {
+        originalSetPosition.call(this, el, point);
+      } catch {
+        if (el) (el as any)._leaflet_pos = point;
+      }
+    };
+  }
+
+  // 3. Safeguard L.Marker.prototype.setIcon to properly rebind dragging
+  if (L.Marker && L.Marker.prototype) {
+    const origSetIcon = L.Marker.prototype.setIcon;
+    L.Marker.prototype.setIcon = function (icon: L.Icon | L.DivIcon) {
+      const isDraggingEnabled = this.dragging && this.dragging.enabled();
+      if (isDraggingEnabled) {
+        this.dragging.disable();
+      }
+      const res = origSetIcon.call(this, icon);
+      if (isDraggingEnabled && this._map) {
+        this.dragging.enable();
+      }
+      return res;
+    };
+  }
+
+  // 4. Safeguard L.Handler.MarkerDrag
+  if ((L.Handler as any)?.MarkerDrag?.prototype) {
+    const dragProto = (L.Handler as any).MarkerDrag.prototype;
+    const origOnDrag = dragProto._onDrag;
+    if (origOnDrag) {
+      dragProto._onDrag = function (e: any) {
+        if (!this._marker || !this._marker._icon || !this._marker._map) return;
+        try {
+          origOnDrag.call(this, e);
+        } catch (err) {
+          // Suppress benign intermediate drag coordinate calculation failure
+        }
+      };
+    }
+
+    const origAdjustPan = dragProto._adjustPan;
+    if (origAdjustPan) {
+      dragProto._adjustPan = function (e: any) {
+        if (!this._marker || !this._marker._icon || !this._marker._map) return;
+        try {
+          origAdjustPan.call(this, e);
+        } catch (err) {
+          // Suppress benign adjust pan error
+        }
+      };
+    }
+  }
+
+  // 5. Safeguard L.Draggable
+  if (L.Draggable?.prototype) {
+    const draggableProto = L.Draggable.prototype as any;
+    const origOnDown = draggableProto._onDown;
+    if (origOnDown) {
+      draggableProto._onDown = function (e: any) {
+        if (!this._element) return;
+        try {
+          origOnDown.call(this, e);
+        } catch (err) {
+          // Suppress
+        }
+      };
+    }
+
+    const origOnMove = draggableProto._onMove;
+    if (origOnMove) {
+      draggableProto._onMove = function (e: any) {
+        if (!this._element) return;
+        try {
+          origOnMove.call(this, e);
+        } catch (err) {
+          // Suppress
+        }
+      };
+    }
+  }
+
+  // 6. Safeguard L.PosAnimation
+  if (L.PosAnimation?.prototype) {
+    const origPosAnimRun = L.PosAnimation.prototype.run;
+    if (origPosAnimRun) {
+      L.PosAnimation.prototype.run = function (el: HTMLElement, newPos: L.Point, duration?: number, easeLinearity?: number) {
+        if (!el) return;
+        try {
+          origPosAnimRun.call(this, el, newPos, duration, easeLinearity);
+        } catch (err) {
+          // Suppress
+        }
+      };
+    }
+  }
+}
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
 import { createMarkerHtml } from './IconLibrary';
@@ -699,16 +818,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       };
 
       setSearchedAreas((prev) => [...prev, newArea]);
-
-      if (mapInstanceRef.current && itemGeojson) {
-        try {
-          const tempLayer = L.geoJSON(itemGeojson);
-          const bounds = tempLayer.getBounds();
-          if (bounds.isValid()) {
-            mapInstanceRef.current.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-          }
-        } catch (e) {}
-      }
     } catch (e) {
       // Suppress
     }
@@ -784,16 +893,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         };
 
         setSearchedAreas((prev) => [...prev, newArea]);
-
-        if (mapInstanceRef.current && settlementGeojson) {
-          try {
-            const tempLayer = L.geoJSON(settlementGeojson);
-            const bounds = tempLayer.getBounds();
-            if (bounds.isValid()) {
-              mapInstanceRef.current.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-            }
-          } catch (e) {}
-        }
       } else {
         // 2. CLICKED NOT ON A SETTLEMENT (fields / countryside) -> Highlight HROMADA (громада)!
         const hromadaRes = await safeFetchNominatim(
@@ -851,16 +950,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         };
 
         setSearchedAreas((prev) => [...prev, newArea]);
-
-        if (mapInstanceRef.current && hromadaGeojson) {
-          try {
-            const tempLayer = L.geoJSON(hromadaGeojson);
-            const bounds = tempLayer.getBounds();
-            if (bounds.isValid()) {
-              mapInstanceRef.current.fitBounds(bounds, { maxZoom: 13, animate: true, padding: [20, 20] });
-            }
-          } catch (e) {}
-        }
       }
     } catch (e) {
       // Suppress
@@ -1042,18 +1131,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             if (prev.some((a) => a.id === newArea.id || a.districtId === district.id)) return prev;
             return [...prev, newArea];
           });
-
-          try {
-            const tempLayer = L.geoJSON(item.geojson);
-            const bounds = tempLayer.getBounds();
-            if (bounds.isValid()) {
-              map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-            } else {
-              map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
-            }
-          } catch (e) {
-            map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
-          }
         }
       }
     } catch (e) {
