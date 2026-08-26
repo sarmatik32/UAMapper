@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
@@ -34,7 +34,10 @@ import {
   Spline,
   Sparkles,
   Plus,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Radio,
+  Bell,
+  RefreshCw
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -62,8 +65,18 @@ interface SidebarProps {
   onCopyPNG?: () => void;
   activeStyle?: Partial<CustomMarker>;
   onUpdateActiveStyle?: React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>;
+  watermarkType?: WatermarkType;
+  onUpdateWatermarkType?: (type: WatermarkType) => void;
   watermarkText?: string;
   onUpdateWatermarkText?: (text: string) => void;
+  watermarkImageUrl?: string;
+  onUpdateWatermarkImageUrl?: (url: string) => void;
+  watermarkSize?: number;
+  onUpdateWatermarkSize?: (size: number) => void;
+  watermarkOpacity?: number;
+  onUpdateWatermarkOpacity?: (opacity: number) => void;
+  watermarkRotation?: number;
+  onUpdateWatermarkRotation?: (rotation: number) => void;
   showLegendOverlay?: boolean;
   onUpdateShowLegendOverlay?: (show: boolean) => void;
   legendOverlayText?: string;
@@ -125,6 +138,23 @@ interface SidebarProps {
   onChangeLineEndIconRotation?: (rot: number) => void;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
   onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
+
+  // Air Alerts Props
+  activeAlerts?: AirAlert[];
+  showAlerts?: boolean;
+  onToggleShowAlerts?: () => void;
+  showAirAlertsPanel?: boolean;
+  onToggleShowAirAlertsPanel?: () => void;
+  showAlertPolygons?: boolean;
+  onToggleShowAlertPolygons?: () => void;
+  showAlertMarkers?: boolean;
+  onToggleShowAlertMarkers?: () => void;
+  alertsOpacity?: number;
+  onChangeAlertsOpacity?: (opacity: number) => void;
+  alertsStrokeWidth?: number;
+  onChangeAlertsStrokeWidth?: (width: number) => void;
+  onRefreshAlerts?: () => void;
+  isLoadingAlerts?: boolean;
 }
 
 
@@ -153,8 +183,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onCopyPNG = () => {},
   activeStyle = {} as Partial<CustomMarker>,
   onUpdateActiveStyle = (() => {}) as React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>,
+  watermarkType = 'text',
+  onUpdateWatermarkType = (_type) => {},
   watermarkText = 'UA Mapper',
   onUpdateWatermarkText = (_text) => {},
+  watermarkImageUrl = '',
+  onUpdateWatermarkImageUrl = (_url) => {},
+  watermarkSize,
+  onUpdateWatermarkSize = (_size) => {},
+  watermarkOpacity,
+  onUpdateWatermarkOpacity = (_opacity) => {},
+  watermarkRotation,
+  onUpdateWatermarkRotation = (_rotation) => {},
   showLegendOverlay = true,
   onUpdateShowLegendOverlay = (_show) => {},
   legendOverlayText = '',
@@ -190,6 +230,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateCustomIconTitle = (_type, _val) => {},
   drawnLines = [],
   selectedLineId = null,
+  activeAlerts = [],
+  showAlerts = false,
+  onToggleShowAlerts,
+  showAirAlertsPanel = false,
+  onToggleShowAirAlertsPanel,
+  showAlertPolygons = true,
+  onToggleShowAlertPolygons,
+  showAlertMarkers = true,
+  onToggleShowAlertMarkers,
+  alertsOpacity = 0.30,
+  onChangeAlertsOpacity,
+  alertsStrokeWidth = 2.5,
+  onChangeAlertsStrokeWidth,
+  onRefreshAlerts,
+  isLoadingAlerts = false,
   onSelectLine = (_id) => {},
   onUpdateLine = (_line) => {},
   onDeleteLine = (_id) => {},
@@ -229,6 +284,40 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return [];
     }
   });
+
+  const handleWatermarkImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert(language === 'uk' ? 'Будь ласка, оберіть файл зображення (PNG, JPG, SVG, WebP)' : 'Please select an image file (PNG, JPG, SVG, WebP)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+
+      try {
+        const optimized = await optimizeIconDataUrl(rawDataUrl, 384);
+        onUpdateWatermarkImageUrl(optimized);
+        onUpdateWatermarkType('image');
+        if (!watermarkSize || watermarkSize === 14) {
+          onUpdateWatermarkSize(48);
+        }
+        if (watermarkOpacity === undefined || watermarkOpacity === 0.10) {
+          onUpdateWatermarkOpacity(0.20);
+        }
+      } catch (err) {
+        console.error('Failed to optimize watermark image:', err);
+        onUpdateWatermarkImageUrl(rawDataUrl);
+        onUpdateWatermarkType('image');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
 
   const [expandedSections, setExpandedSections] = useState({
     mode: false,
@@ -331,6 +420,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     lblLineColor: isUa ? 'Колір обводки' : 'Outline Color',
     btnNoColor: isUa ? 'Без кольору' : 'No Color',
     lblEndPoint: isUa ? 'Кінцевий маркер' : 'End Decorator',
+    lblLineWidth: isUa ? 'Товщина роздільної лінії' : 'Dividing Line Thickness',
     
     lblTitle: isUa ? 'Назва точки' : 'Point Title',
     lblSize: isUa ? 'Розмір іконки' : 'Icon Size',
@@ -457,6 +547,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeColor = selectedMarker ? selectedMarker.color : (activeStyle.color || '#ef4444');
   const activeBorderColor = selectedMarker ? selectedMarker.borderColor || '#ffffff' : (activeStyle.borderColor || '#ffffff');
   const activeEndPointStyle = selectedMarker ? selectedMarker.endPointStyle || 'none' : (activeStyle.endPointStyle || 'none');
+  const activeLineWidth = selectedMarker ? (selectedMarker.lineWidth !== undefined ? selectedMarker.lineWidth : 3) : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3);
   const activeTitle = selectedMarker ? selectedMarker.title : '';
   const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
@@ -1391,6 +1482,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </button>
                   ))}
                 </div>
+
+                {/* Dividing Line Thickness (Товщина роздільної лінії) */}
+                {activeEndPointStyle === 'line' && (
+                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-white/5 space-y-1.5 animate-fade-in">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span>{t.lblLineWidth}</span>
+                      <span className="font-mono text-blue-500 font-bold">{activeLineWidth}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="15"
+                      value={activeLineWidth}
+                      onChange={(e) => handlePropChange('lineWidth', Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-[#181d28] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* TACTICAL ZONE CONTROLS */}
@@ -1778,6 +1887,137 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {expandedSections.overlays && (
             <div className="p-3 space-y-3.5">
+              {/* Air Raid Alerts (alerts.in.ua) Block */}
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      {showAlerts && activeAlerts.length > 0 && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeAlerts.length > 0 ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+                    </span>
+                    <span className="text-[10px] font-extrabold text-red-500 dark:text-red-400 uppercase tracking-wider">
+                      {isUa ? 'Повітряні тривоги (alerts.in.ua)' : 'Air Raid Alerts (alerts.in.ua)'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={onRefreshAlerts}
+                      disabled={isLoadingAlerts}
+                      className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                      title={isUa ? 'Оновити дані тривог' : 'Refresh alert data'}
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingAlerts ? 'animate-spin' : ''}`} />
+                    </button>
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={showAlerts} 
+                        onChange={() => onToggleShowAlerts?.()}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-8 h-4 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-red-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                  <span>{isUa ? 'Активних тривог у країні:' : 'Active alerts:'}</span>
+                  <span className="font-mono font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded-md">
+                    {activeAlerts.length}
+                  </span>
+                </div>
+
+                {showAlerts && (
+                  <div className="space-y-2 pt-2 border-t border-red-500/20 animate-fade-in">
+                    {/* Floating Panel Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Віджет панелі тривог' : 'Floating Alert Widget'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAirAlertsPanel} 
+                          onChange={() => onToggleShowAirAlertsPanel?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Polygon highlights toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Підсвітка областей/районів' : 'Highlight Polygons'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAlertPolygons} 
+                          onChange={() => onToggleShowAlertPolygons?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Siren markers toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Радарні значки сирен' : 'Radar Siren Markers'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAlertMarkers} 
+                          onChange={() => onToggleShowAlertMarkers?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Opacity slider */}
+                    <div className="space-y-1 pt-1">
+                      <div className="flex justify-between items-center text-[9px] text-slate-400">
+                        <span>{isUa ? 'Прозорість заливки зон' : 'Zone Fill Opacity'}</span>
+                        <span className="font-mono text-red-400 font-bold">{Math.round(alertsOpacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="80"
+                        step="5"
+                        value={Math.round(alertsOpacity * 100)}
+                        onChange={(e) => onChangeAlertsOpacity?.(Number(e.target.value) / 100)}
+                        className="w-full accent-red-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Border / Outline Thickness slider (Товщина роздільної лінії / контуру) */}
+                    <div className="space-y-1 pt-1 border-t border-red-500/10">
+                      <div className="flex justify-between items-center text-[9px] text-slate-400">
+                        <span>{isUa ? 'Товщина роздільної лінії / контуру' : 'Border / Outline Thickness'}</span>
+                        <span className="font-mono text-red-400 font-bold">{alertsStrokeWidth}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        step="0.5"
+                        value={alertsStrokeWidth}
+                        onChange={(e) => onChangeAlertsStrokeWidth?.(Number(e.target.value))}
+                        className="w-full accent-red-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Full Settings & Data Export / Import Block */}
               <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
                 <div className="flex flex-col">
@@ -1821,22 +2061,204 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </label>
                 </div>
               </div>
-              {/* Watermark Input */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                  {isUa ? 'Текст водяного знаку' : 'Watermark Text'}
-                </label>
-                <input
-                  type="text"
-                  value={watermarkText}
-                  onChange={(e) => onUpdateWatermarkText(e.target.value)}
-                  placeholder={isUa ? 'Наприклад, UA Mapper...' : 'E.g., UA Mapper...'}
-                  className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
-                    theme === 'light' 
-                      ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
-                      : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
-                  }`}
-                />
+              {/* Watermark Configuration Block */}
+              <div className="p-3 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    {isUa ? 'Водяний знак' : 'Watermark'}
+                  </span>
+                  
+                  {/* Segmented Switcher: Text vs Image */}
+                  <div className="flex p-0.5 bg-slate-200/80 dark:bg-black/40 rounded-lg border border-slate-300/50 dark:border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateWatermarkType('text')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        watermarkType === 'text'
+                          ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{isUa ? 'Текст' : 'Text'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateWatermarkType('image')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        watermarkType === 'image'
+                          ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      <ImageIcon className="w-3 h-3" />
+                      <span>{isUa ? 'Зображення' : 'Image'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {watermarkType === 'text' ? (
+                  <div className="space-y-2.5">
+                    {/* Text Input */}
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Текст водяного знаку' : 'Watermark Text'}
+                      </label>
+                      <input
+                        type="text"
+                        value={watermarkText}
+                        onChange={(e) => onUpdateWatermarkText(e.target.value)}
+                        placeholder={isUa ? 'Наприклад, UA Mapper...' : 'E.g., UA Mapper...'}
+                        className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                          theme === 'light' 
+                            ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                            : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                        }`}
+                      />
+                    </div>
+
+                    {/* Font Size slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Розмір тексту' : 'Text Size'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{watermarkSize || 14}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="8"
+                        max="36"
+                        step="1"
+                        value={watermarkSize || 14}
+                        onChange={(e) => onUpdateWatermarkSize(Number(e.target.value))}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Opacity slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Прозорість' : 'Opacity'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{Math.round((watermarkOpacity ?? 0.10) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round((watermarkOpacity ?? 0.10) * 100)}
+                        onChange={(e) => onUpdateWatermarkOpacity(Number(e.target.value) / 100)}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {/* Image Upload / Preview Area */}
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Зображення водяного знаку' : 'Watermark Image'}
+                      </label>
+                      
+                      {watermarkImageUrl ? (
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#181d28] border border-slate-200 dark:border-white/10 shadow-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-center overflow-hidden p-1 shrink-0">
+                              <img 
+                                src={watermarkImageUrl} 
+                                alt="Watermark Preview" 
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                                {isUa ? 'Власне зображення' : 'Custom Image'}
+                              </span>
+                              <span className="text-[8.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                {isUa ? 'Активне на карті' : 'Active on map'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <label
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 cursor-pointer transition-all flex items-center gap-1 text-[9px] font-semibold"
+                              title={isUa ? 'Замінити зображення' : 'Replace image'}
+                            >
+                              <Upload className="w-3.5 h-3.5 text-blue-500" />
+                              <span className="hidden sm:inline">{isUa ? 'Замінити' : 'Replace'}</span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                                onChange={handleWatermarkImageUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateWatermarkImageUrl('')}
+                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-all"
+                              title={isUa ? 'Видалити зображення' : 'Delete image'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label
+                          className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-300 dark:border-white/15 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 bg-white/60 dark:bg-white/[0.02] cursor-pointer transition-all group"
+                        >
+                          <Upload className="w-5 h-5 text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 mb-1 transition-colors" />
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 text-center">
+                            {isUa ? 'Завантажити логотип (PNG, JPG, SVG)' : 'Upload image (PNG, JPG, SVG)'}
+                          </span>
+                          <span className="text-[8.5px] text-slate-400 text-center mt-0.5">
+                            {isUa ? 'Натисніть для вибору файлу' : 'Click to browse file'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                            onChange={handleWatermarkImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Image Size slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Розмір зображення' : 'Image Size'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{watermarkSize || 48}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="16"
+                        max="160"
+                        step="2"
+                        value={watermarkSize || 48}
+                        onChange={(e) => onUpdateWatermarkSize(Number(e.target.value))}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Image Opacity slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Прозорість' : 'Opacity'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{Math.round((watermarkOpacity ?? 0.20) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round((watermarkOpacity ?? 0.20) * 100)}
+                        onChange={(e) => onUpdateWatermarkOpacity(Number(e.target.value) / 100)}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Show Legend toggle */}

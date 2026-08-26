@@ -1,4 +1,4 @@
-import L from 'leaflet';
+import L from '../leaflet-fix';
 
 export function createExplosionIcon(color: string, sizeMultiplier = 1) {
   const size = Math.max(32, Math.min(64, 28 + sizeMultiplier * 2));

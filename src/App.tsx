@@ -1,10 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from './types';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
-import { Settlement, SettlementCategory } from './data/settlements';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X } from 'lucide-react';
+import { AirAlertsPanel } from './components/AirAlertsPanel';
+import { fetchActiveAlerts } from './utils/alertsService';
+import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
+import { safeSetItem } from './utils/storage';
+import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
@@ -300,8 +303,31 @@ export default function App() {
     return matched || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
   });
 
+  const [watermarkType, setWatermarkType] = useState<WatermarkType>(() => {
+    return (localStorage.getItem('visicom_watermark_type') as WatermarkType) || 'text';
+  });
+
   const [watermarkText, setWatermarkText] = useState<string>(() => {
     return localStorage.getItem('visicom_watermark_text') || 'UA Mapper';
+  });
+
+  const [watermarkImageUrl, setWatermarkImageUrl] = useState<string>(() => {
+    return localStorage.getItem('visicom_watermark_image_url') || '';
+  });
+
+  const [watermarkSize, setWatermarkSize] = useState<number>(() => {
+    const saved = localStorage.getItem('visicom_watermark_size');
+    return saved ? Number(saved) : 14;
+  });
+
+  const [watermarkOpacity, setWatermarkOpacity] = useState<number>(() => {
+    const saved = localStorage.getItem('visicom_watermark_opacity');
+    return saved !== null ? Number(saved) : 0.10;
+  });
+
+  const [watermarkRotation, setWatermarkRotation] = useState<number>(() => {
+    const saved = localStorage.getItem('visicom_watermark_rotation');
+    return saved !== null ? Number(saved) : -25;
   });
 
   const [showLegendOverlay, setShowLegendOverlay] = useState<boolean>(() => {
@@ -554,6 +580,75 @@ export default function App() {
   const [showAlert, setShowAlert] = useState<boolean>(true);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('draw');
 
+  // --- Real-Time Air Raid Alerts (alerts.in.ua) State ---
+  const [activeAlerts, setActiveAlerts] = useState<AirAlert[]>([]);
+  const [isLoadingAlerts, setIsLoadingAlerts] = useState<boolean>(false);
+  const [lastAlertsUpdated, setLastAlertsUpdated] = useState<string | null>(null);
+  const [showAlerts, setShowAlerts] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_alerts');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [showAirAlertsPanel, setShowAirAlertsPanel] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_alerts_panel');
+    return saved !== null ? saved === 'true' : false;
+  });
+  const [showAlertPolygons, setShowAlertPolygons] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_alert_polygons');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [showAlertMarkers, setShowAlertMarkers] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_alert_markers');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [alertsOpacity, setAlertsOpacity] = useState<number>(() => {
+    const saved = localStorage.getItem('uamapper_alerts_opacity');
+    return saved !== null ? Number(saved) : 0.30;
+  });
+  const [alertsStrokeWidth, setAlertsStrokeWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('uamapper_alerts_stroke_width');
+    return saved !== null ? Number(saved) : 2.5;
+  });
+  const [alertSoundEnabled, setAlertSoundEnabled] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_alert_sound');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  const refreshAlerts = useCallback(async () => {
+    setIsLoadingAlerts(true);
+    try {
+      const data = await fetchActiveAlerts();
+      setActiveAlerts(data.alerts || []);
+      setLastAlertsUpdated(data.last_updated_at);
+    } catch (err) {
+      console.error('Failed to fetch active alerts:', err);
+    } finally {
+      setIsLoadingAlerts(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshAlerts();
+    const interval = setInterval(refreshAlerts, 15000);
+    return () => clearInterval(interval);
+  }, [refreshAlerts]);
+
+  const handleSelectAlert = useCallback((alert: AirAlert, customLat?: number, customLng?: number) => {
+    if (customLat !== undefined && customLng !== undefined) {
+      mapRef.current?.centerOnLocation(customLat, customLng);
+      return;
+    }
+
+    const normAlertTitle = alert.location_title.toLowerCase().replace(/[\s\-_'’`ʼ\.]/g, '');
+    const matched = SETTLEMENTS.find((s) => {
+      const normName = s.name.toLowerCase().replace(/[\s\-_'’`ʼ\.]/g, '');
+      return normAlertTitle.includes(normName) || normName.includes(normAlertTitle);
+    });
+
+    if (matched) {
+      mapRef.current?.centerOnLocation(matched.lat, matched.lng);
+    }
+  }, []);
+
   const ALL_INTERACTION_MODES: InteractionMode[] = ['draw', 'pan', 'line', 'measure', 'redzone', 'settlement'];
 
   const handleCycleInteractionMode = () => {
@@ -668,6 +763,7 @@ export default function App() {
             draggable: lastMarker.draggable,
             labelVisible: lastMarker.labelVisible,
             endPointStyle: lastMarker.endPointStyle || 'none',
+            lineWidth: lastMarker.lineWidth !== undefined ? lastMarker.lineWidth : 3,
             customIconUrl: lastMarker.customIconUrl,
             hasZone: lastMarker.hasZone || false,
             zoneColor: lastMarker.zoneColor || lastMarker.color || '#ef4444',
@@ -687,6 +783,7 @@ export default function App() {
       draggable: true,
       labelVisible: true,
       endPointStyle: 'none',
+      lineWidth: 3,
       hasZone: false,
       zoneColor: '#ef4444',
       zoneSize: 60,
@@ -730,8 +827,32 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    localStorage.setItem('visicom_watermark_type', watermarkType);
+  }, [watermarkType]);
+
+  useEffect(() => {
     localStorage.setItem('visicom_watermark_text', watermarkText);
   }, [watermarkText]);
+
+  useEffect(() => {
+    if (watermarkImageUrl) {
+      safeSetItem('visicom_watermark_image_url', watermarkImageUrl);
+    } else {
+      localStorage.removeItem('visicom_watermark_image_url');
+    }
+  }, [watermarkImageUrl]);
+
+  useEffect(() => {
+    localStorage.setItem('visicom_watermark_size', String(watermarkSize));
+  }, [watermarkSize]);
+
+  useEffect(() => {
+    localStorage.setItem('visicom_watermark_opacity', String(watermarkOpacity));
+  }, [watermarkOpacity]);
+
+  useEffect(() => {
+    localStorage.setItem('visicom_watermark_rotation', String(watermarkRotation));
+  }, [watermarkRotation]);
 
   useEffect(() => {
     localStorage.setItem('visicom_show_legend_overlay', String(showLegendOverlay));
@@ -779,6 +900,7 @@ export default function App() {
           draggable: selectedMarker.draggable,
           labelVisible: selectedMarker.labelVisible,
           endPointStyle: selectedMarker.endPointStyle || 'none',
+          lineWidth: selectedMarker.lineWidth !== undefined ? selectedMarker.lineWidth : 3,
           customIconUrl: selectedMarker.customIconUrl,
           hasZone: selectedMarker.hasZone || false,
           zoneColor: selectedMarker.zoneColor || selectedMarker.color || '#ef4444',
@@ -814,6 +936,7 @@ export default function App() {
       draggable: baseStyle.draggable !== undefined ? baseStyle.draggable : true,
       labelVisible: baseStyle.labelVisible !== undefined ? baseStyle.labelVisible : true,
       endPointStyle: baseStyle.endPointStyle || 'none',
+      lineWidth: baseStyle.lineWidth !== undefined ? baseStyle.lineWidth : 3,
       customIconUrl: baseStyle.customIconUrl,
       hasZone: baseStyle.hasZone || false,
       zoneColor: baseStyle.zoneColor || baseStyle.color || '#ef4444',
@@ -834,6 +957,7 @@ export default function App() {
       draggable: newMarker.draggable,
       labelVisible: newMarker.labelVisible,
       endPointStyle: newMarker.endPointStyle || 'none',
+      lineWidth: newMarker.lineWidth !== undefined ? newMarker.lineWidth : 3,
       customIconUrl: newMarker.customIconUrl,
       hasZone: newMarker.hasZone || false,
       zoneColor: newMarker.zoneColor || newMarker.color || '#ef4444',
@@ -936,7 +1060,12 @@ export default function App() {
       settings: {
         theme,
         language,
+        watermarkType,
         watermarkText,
+        watermarkImageUrl,
+        watermarkSize,
+        watermarkOpacity,
+        watermarkRotation,
         legendOverlayText,
         showLegendOverlay,
         showRadarOverlay,
@@ -1011,9 +1140,33 @@ export default function App() {
             setLanguage(settings.language);
             localStorage.setItem('visicom_ui_lang', settings.language);
           }
+          if (settings.watermarkType !== undefined) {
+            setWatermarkType(settings.watermarkType);
+            localStorage.setItem('visicom_watermark_type', settings.watermarkType);
+          }
           if (settings.watermarkText !== undefined) {
             setWatermarkText(settings.watermarkText);
             localStorage.setItem('visicom_watermark_text', settings.watermarkText);
+          }
+          if (settings.watermarkImageUrl !== undefined) {
+            setWatermarkImageUrl(settings.watermarkImageUrl);
+            if (settings.watermarkImageUrl) {
+              safeSetItem('visicom_watermark_image_url', settings.watermarkImageUrl);
+            } else {
+              localStorage.removeItem('visicom_watermark_image_url');
+            }
+          }
+          if (settings.watermarkSize !== undefined) {
+            setWatermarkSize(settings.watermarkSize);
+            localStorage.setItem('visicom_watermark_size', String(settings.watermarkSize));
+          }
+          if (settings.watermarkOpacity !== undefined) {
+            setWatermarkOpacity(settings.watermarkOpacity);
+            localStorage.setItem('visicom_watermark_opacity', String(settings.watermarkOpacity));
+          }
+          if (settings.watermarkRotation !== undefined) {
+            setWatermarkRotation(settings.watermarkRotation);
+            localStorage.setItem('visicom_watermark_rotation', String(settings.watermarkRotation));
           }
           if (settings.legendOverlayText !== undefined) {
             setLegendOverlayText(settings.legendOverlayText);
@@ -1141,7 +1294,12 @@ export default function App() {
             onToggleAutoHighlightZone={handleToggleAutoHighlightZone}
             theme={theme}
             onUpdateMarker={handleUpdateMarker}
+            watermarkType={watermarkType}
             watermarkText={watermarkText}
+            watermarkImageUrl={watermarkImageUrl}
+            watermarkSize={watermarkSize}
+            watermarkOpacity={watermarkOpacity}
+            watermarkRotation={watermarkRotation}
             showLegendOverlay={showLegendOverlay}
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
@@ -1175,7 +1333,106 @@ export default function App() {
             lineEndCustomIcon={lineEndCustomIcon}
             lineEndIconRotation={lineEndIconRotation}
             lineDashStyle={lineDashStyle}
+            activeAlerts={activeAlerts}
+            showAlerts={showAlerts}
+            showAlertPolygons={showAlertPolygons}
+            showAlertMarkers={showAlertMarkers}
+            alertsOpacity={alertsOpacity}
+            alertsStrokeWidth={alertsStrokeWidth}
+            onAlertClick={handleSelectAlert}
           />
+
+          {/* Floating Air Alerts Widget Panel */}
+          {showAirAlertsPanel && (
+            <AirAlertsPanel
+              alerts={activeAlerts}
+              isLoading={isLoadingAlerts}
+              lastUpdated={lastAlertsUpdated}
+              showAlerts={showAlerts}
+              onToggleShowAlerts={() => {
+                setShowAlerts((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alerts', String(next));
+                  return next;
+                });
+              }}
+              showAlertPolygons={showAlertPolygons}
+              onToggleShowAlertPolygons={() => {
+                setShowAlertPolygons((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alert_polygons', String(next));
+                  return next;
+                });
+              }}
+              showAlertMarkers={showAlertMarkers}
+              onToggleShowAlertMarkers={() => {
+                setShowAlertMarkers((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alert_markers', String(next));
+                  return next;
+                });
+              }}
+              alertsOpacity={alertsOpacity}
+              onChangeAlertsOpacity={(opacity) => {
+                setAlertsOpacity(opacity);
+                localStorage.setItem('uamapper_alerts_opacity', String(opacity));
+              }}
+              alertsStrokeWidth={alertsStrokeWidth}
+              onChangeAlertsStrokeWidth={(width) => {
+                setAlertsStrokeWidth(width);
+                localStorage.setItem('uamapper_alerts_stroke_width', String(width));
+              }}
+              soundEnabled={alertSoundEnabled}
+              onToggleSound={() => {
+                setAlertSoundEnabled((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_alert_sound', String(next));
+                  return next;
+                });
+              }}
+              onRefresh={refreshAlerts}
+              language={language}
+              onSelectAlert={handleSelectAlert}
+            />
+          )}
+
+          {/* Floating Top-Right Quick Air Alerts Badge / Button on Map (Desktop & Tablet) */}
+          <div className="hidden sm:flex absolute top-4 right-4 z-30 items-center gap-2">
+            <button
+              onClick={() => {
+                setShowAirAlertsPanel((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alerts_panel', String(next));
+                  return next;
+                });
+              }}
+              className={`px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-xl flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                showAirAlertsPanel
+                  ? 'bg-red-600 text-white border-red-400 shadow-red-500/30'
+                  : activeAlerts.length > 0
+                  ? 'bg-slate-900/90 hover:bg-slate-900 border-red-500/50 text-red-300'
+                  : 'bg-slate-900/80 hover:bg-slate-900 border-white/10 text-slate-300'
+              }`}
+              title={language === 'uk' ? 'Панель повітряних тривог' : 'Air Raid Alerts Panel'}
+            >
+              <span className="relative flex h-2 w-2">
+                {activeAlerts.length > 0 && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                )}
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${activeAlerts.length > 0 ? 'bg-red-500' : 'bg-emerald-400'}`}></span>
+              </span>
+              <span>{language === 'uk' ? 'Тривоги' : 'Alerts'}</span>
+              <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-black ${
+                showAirAlertsPanel
+                  ? 'bg-white/20 text-white'
+                  : activeAlerts.length > 0
+                  ? 'bg-red-500 text-white'
+                  : 'bg-emerald-500/20 text-emerald-300'
+              }`}>
+                {activeAlerts.length}
+              </span>
+            </button>
+          </div>
 
 
           {/* Floating Action Bar (When no marker is selected, Mobile Only) */}
@@ -1219,6 +1476,32 @@ export default function App() {
                 className="w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-200 active:scale-95"
               >
                 {theme === 'dark' ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-indigo-300" />}
+              </button>
+
+              {/* Air Alerts Quick Toggle (Mobile) */}
+              <button
+                onClick={() => {
+                  setShowAirAlertsPanel((prev) => {
+                    const next = !prev;
+                    localStorage.setItem('uamapper_show_alerts_panel', String(next));
+                    return next;
+                  });
+                }}
+                title={language === 'uk' ? 'Повітряні тривоги' : 'Air Alerts'}
+                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 relative active:scale-95 ${
+                  showAirAlertsPanel
+                    ? 'bg-red-600 text-white ring-2 ring-red-400'
+                    : activeAlerts.length > 0
+                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
+                    : 'bg-white/10 hover:bg-white/20 text-slate-200'
+                }`}
+              >
+                <Radio className="w-5 h-5" />
+                {activeAlerts.length > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border border-slate-900 shadow-md">
+                    {activeAlerts.length}
+                  </span>
+                )}
               </button>
 
               {/* Undo Button */}
@@ -1397,8 +1680,18 @@ export default function App() {
               }}
               activeStyle={activeStyle}
               onUpdateActiveStyle={setActiveStyle}
+              watermarkType={watermarkType}
+              onUpdateWatermarkType={setWatermarkType}
               watermarkText={watermarkText}
               onUpdateWatermarkText={setWatermarkText}
+              watermarkImageUrl={watermarkImageUrl}
+              onUpdateWatermarkImageUrl={setWatermarkImageUrl}
+              watermarkSize={watermarkSize}
+              onUpdateWatermarkSize={setWatermarkSize}
+              watermarkOpacity={watermarkOpacity}
+              onUpdateWatermarkOpacity={setWatermarkOpacity}
+              watermarkRotation={watermarkRotation}
+              onUpdateWatermarkRotation={setWatermarkRotation}
               showLegendOverlay={showLegendOverlay}
               onUpdateShowLegendOverlay={setShowLegendOverlay}
               legendOverlayText={legendOverlayText}
@@ -1461,6 +1754,51 @@ export default function App() {
               onChangeLineEndIconRotation={setLineEndIconRotation}
               lineDashStyle={lineDashStyle}
               onChangeLineDashStyle={setLineDashStyle}
+              activeAlerts={activeAlerts}
+              showAlerts={showAlerts}
+              onToggleShowAlerts={() => {
+                setShowAlerts((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alerts', String(next));
+                  return next;
+                });
+              }}
+              showAirAlertsPanel={showAirAlertsPanel}
+              onToggleShowAirAlertsPanel={() => {
+                setShowAirAlertsPanel((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alerts_panel', String(next));
+                  return next;
+                });
+              }}
+              showAlertPolygons={showAlertPolygons}
+              onToggleShowAlertPolygons={() => {
+                setShowAlertPolygons((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alert_polygons', String(next));
+                  return next;
+                });
+              }}
+              showAlertMarkers={showAlertMarkers}
+              onToggleShowAlertMarkers={() => {
+                setShowAlertMarkers((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_alert_markers', String(next));
+                  return next;
+                });
+              }}
+              alertsOpacity={alertsOpacity}
+              onChangeAlertsOpacity={(opacity) => {
+                setAlertsOpacity(opacity);
+                localStorage.setItem('uamapper_alerts_opacity', String(opacity));
+              }}
+              alertsStrokeWidth={alertsStrokeWidth}
+              onChangeAlertsStrokeWidth={(width) => {
+                setAlertsStrokeWidth(width);
+                localStorage.setItem('uamapper_alerts_stroke_width', String(width));
+              }}
+              onRefreshAlerts={refreshAlerts}
+              isLoadingAlerts={isLoadingAlerts}
             />
           </div>
           {/* Mobile Back-to-Map Sticky bottom bar */}

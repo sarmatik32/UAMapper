@@ -1,131 +1,13 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import L from 'leaflet';
+import L from '../leaflet-fix';
 import { toPng, toBlob } from 'html-to-image';
-
-// Global safeguard for Leaflet against undefined DOM elements in getPosition, setPosition, Draggable, and MarkerDrag
-if (typeof window !== 'undefined' && L) {
-  // 1. Safeguard L.DomUtil.getPosition
-  if (L.DomUtil && typeof L.DomUtil.getPosition === 'function') {
-    const originalGetPosition = L.DomUtil.getPosition;
-    L.DomUtil.getPosition = function (el: HTMLElement) {
-      if (!el) {
-        return new L.Point(0, 0);
-      }
-      try {
-        const pos = originalGetPosition.call(this, el);
-        return pos || (el as any)?._leaflet_pos || new L.Point(0, 0);
-      } catch {
-        return (el as any)?._leaflet_pos || new L.Point(0, 0);
-      }
-    };
-  }
-
-  // 2. Safeguard L.DomUtil.setPosition
-  if (L.DomUtil && typeof L.DomUtil.setPosition === 'function') {
-    const originalSetPosition = L.DomUtil.setPosition;
-    L.DomUtil.setPosition = function (el: HTMLElement, point: L.Point) {
-      if (!el) return;
-      try {
-        originalSetPosition.call(this, el, point);
-      } catch {
-        if (el) (el as any)._leaflet_pos = point;
-      }
-    };
-  }
-
-  // 3. Safeguard L.Marker.prototype.setIcon to properly rebind dragging
-  if (L.Marker && L.Marker.prototype) {
-    const origSetIcon = L.Marker.prototype.setIcon;
-    L.Marker.prototype.setIcon = function (icon: L.Icon | L.DivIcon) {
-      const isDraggingEnabled = this.dragging && this.dragging.enabled();
-      if (isDraggingEnabled) {
-        this.dragging.disable();
-      }
-      const res = origSetIcon.call(this, icon);
-      if (isDraggingEnabled && this._map) {
-        this.dragging.enable();
-      }
-      return res;
-    };
-  }
-
-  // 4. Safeguard L.Handler.MarkerDrag
-  if ((L.Handler as any)?.MarkerDrag?.prototype) {
-    const dragProto = (L.Handler as any).MarkerDrag.prototype;
-    const origOnDrag = dragProto._onDrag;
-    if (origOnDrag) {
-      dragProto._onDrag = function (e: any) {
-        if (!this._marker || !this._marker._icon || !this._marker._map) return;
-        try {
-          origOnDrag.call(this, e);
-        } catch (err) {
-          // Suppress benign intermediate drag coordinate calculation failure
-        }
-      };
-    }
-
-    const origAdjustPan = dragProto._adjustPan;
-    if (origAdjustPan) {
-      dragProto._adjustPan = function (e: any) {
-        if (!this._marker || !this._marker._icon || !this._marker._map) return;
-        try {
-          origAdjustPan.call(this, e);
-        } catch (err) {
-          // Suppress benign adjust pan error
-        }
-      };
-    }
-  }
-
-  // 5. Safeguard L.Draggable
-  if (L.Draggable?.prototype) {
-    const draggableProto = L.Draggable.prototype as any;
-    const origOnDown = draggableProto._onDown;
-    if (origOnDown) {
-      draggableProto._onDown = function (e: any) {
-        if (!this._element) return;
-        try {
-          origOnDown.call(this, e);
-        } catch (err) {
-          // Suppress
-        }
-      };
-    }
-
-    const origOnMove = draggableProto._onMove;
-    if (origOnMove) {
-      draggableProto._onMove = function (e: any) {
-        if (!this._element) return;
-        try {
-          origOnMove.call(this, e);
-        } catch (err) {
-          // Suppress
-        }
-      };
-    }
-  }
-
-  // 6. Safeguard L.PosAnimation
-  if (L.PosAnimation?.prototype) {
-    const origPosAnimRun = L.PosAnimation.prototype.run;
-    if (origPosAnimRun) {
-      L.PosAnimation.prototype.run = function (el: HTMLElement, newPos: L.Point, duration?: number, easeLinearity?: number) {
-        if (!el) return;
-        try {
-          origPosAnimRun.call(this, el, newPos, duration, easeLinearity);
-        } catch (err) {
-          // Suppress
-        }
-      };
-    }
-  }
-}
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
+import { AirAlertsLayer } from './AirAlertsLayer';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -229,7 +111,12 @@ interface MapContainerProps {
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   theme?: 'dark' | 'light';
   onUpdateMarker?: (marker: CustomMarker) => void;
+  watermarkType?: WatermarkType;
   watermarkText?: string;
+  watermarkImageUrl?: string;
+  watermarkSize?: number;
+  watermarkOpacity?: number;
+  watermarkRotation?: number;
   showLegendOverlay?: boolean;
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
@@ -264,6 +151,15 @@ interface MapContainerProps {
   lineEndCustomIcon?: string;
   lineEndIconRotation?: number;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+
+  // Air Alerts Props
+  activeAlerts?: AirAlert[];
+  showAlerts?: boolean;
+  showAlertPolygons?: boolean;
+  showAlertMarkers?: boolean;
+  alertsOpacity?: number;
+  alertsStrokeWidth?: number;
+  onAlertClick?: (alert: AirAlert, lat?: number, lng?: number) => void;
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -281,7 +177,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onToggleAutoHighlightZone,
   theme = 'dark',
   onUpdateMarker,
+  watermarkType = 'text',
   watermarkText = 'UA Mapper',
+  watermarkImageUrl = '',
+  watermarkSize,
+  watermarkOpacity,
+  watermarkRotation,
   showLegendOverlay = true,
   legendOverlayText = '',
   showRadarOverlay = true,
@@ -315,6 +216,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   lineEndCustomIcon = '',
   lineEndIconRotation = 0,
   lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
+
+  // Air Alerts
+  activeAlerts = [],
+  showAlerts = false,
+  showAlertPolygons = true,
+  showAlertMarkers = true,
+  alertsOpacity = 0.30,
+  alertsStrokeWidth = 2.5,
+  onAlertClick,
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -2286,7 +2196,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
         const lineStyle = {
           color: polylineColor,
-          weight: 3,
+          weight: markerData.lineWidth !== undefined ? markerData.lineWidth : 3,
           dashArray: '10, 5, 2, 5', // Dash-dotted style ("штрих пунктир")
           opacity: isSelected ? 0.95 : 0.6,
         };
@@ -3511,7 +3421,37 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   // Setup dynamic watermark tiling background
   const watermarkTextFill = theme === 'light' ? '#000000' : '#ffffff';
   const displayWatermarkText = watermarkText || 'UA Mapper';
-  const watermarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="220" height="150"><text x="20" y="90" fill="${watermarkTextFill}" font-size="14" font-family="system-ui, sans-serif" font-weight="900" transform="rotate(-30 20 90)" opacity="0.10">${displayWatermarkText}</text></svg>`;
+
+  let watermarkSvg = '';
+  let bgTileWidth = 220;
+  let bgTileHeight = 150;
+
+  if (watermarkType === 'image' && watermarkImageUrl) {
+    const imgSize = watermarkSize || 48;
+    bgTileWidth = Math.round(Math.max(60, imgSize * 2.2));
+    bgTileHeight = Math.round(Math.max(50, imgSize * 1.8));
+    const cx = bgTileWidth / 2;
+    const cy = bgTileHeight / 2;
+    const ix = (bgTileWidth - imgSize) / 2;
+    const iy = (bgTileHeight - imgSize) / 2;
+    const rot = watermarkRotation !== undefined ? watermarkRotation : -25;
+    const op = watermarkOpacity !== undefined ? watermarkOpacity : 0.20;
+
+    watermarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${bgTileWidth}" height="${bgTileHeight}"><g transform="rotate(${rot} ${cx} ${cy})" opacity="${op}"><image href="${watermarkImageUrl}" xlink:href="${watermarkImageUrl}" width="${imgSize}" height="${imgSize}" x="${ix}" y="${iy}" preserveAspectRatio="xMidYMid meet" /></g></svg>`;
+  } else if (watermarkType === 'image' && !watermarkImageUrl) {
+    watermarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="220" height="150"></svg>`;
+  } else {
+    const txtSize = watermarkSize || 14;
+    bgTileWidth = Math.round(Math.max(140, (displayWatermarkText.length * txtSize * 0.9) + 40));
+    bgTileHeight = Math.round(Math.max(90, txtSize * 8));
+    const rot = watermarkRotation !== undefined ? watermarkRotation : -30;
+    const op = watermarkOpacity !== undefined ? watermarkOpacity : 0.10;
+    const tx = Math.round(bgTileWidth * 0.1);
+    const ty = Math.round(bgTileHeight * 0.6);
+
+    watermarkSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${bgTileWidth}" height="${bgTileHeight}"><text x="${tx}" y="${ty}" fill="${watermarkTextFill}" font-size="${txtSize}" font-family="system-ui, sans-serif" font-weight="900" transform="rotate(${rot} ${tx} ${ty})" opacity="${op}">${displayWatermarkText}</text></svg>`;
+  }
+
   const watermarkUrl = `url("data:image/svg+xml;utf8,${encodeURIComponent(watermarkSvg)}")`;
 
   return (
@@ -3837,7 +3777,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           style={{ 
             backgroundImage: watermarkUrl,
             backgroundRepeat: 'repeat',
-            backgroundSize: '220px 150px'
+            backgroundSize: `${bgTileWidth}px ${bgTileHeight}px`
           }} 
         />
 
@@ -4163,6 +4103,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
         `}</style>
       </div>
+
+      {/* Real-time Air Alerts Layer */}
+      <AirAlertsLayer
+        map={mapInstanceRef.current}
+        alerts={activeAlerts}
+        showAlerts={showAlerts}
+        showAlertPolygons={showAlertPolygons}
+        showAlertMarkers={showAlertMarkers}
+        alertsOpacity={alertsOpacity}
+        alertsStrokeWidth={alertsStrokeWidth}
+        language={language}
+        onAlertClick={onAlertClick}
+      />
 
       {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}
       {screenshotStatus && (

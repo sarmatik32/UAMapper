@@ -1,6 +1,6 @@
 {
   "name": "UAMapper by @krrig_alerts",
-  "description": "Додаток для створення, редагування, переміщення та налаштування власних маркерів на карті Visicom з можливістю регулювання кольору, розміру, напрямку та форми.",
+  "description": "Інтерактивна карта України з відображенням повітряних тривог у реальному часі від alerts.in.ua, налаштуванням маркерів, контурів областей та районів, шарами та водяними знаками.",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
