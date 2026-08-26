@@ -222,12 +222,21 @@ if (typeof window !== 'undefined' && L) {
     }
   }
 
-  // 8. Global listener to prevent unhandled leaflet pos errors from halting execution
+  // 8. Global listener to prevent unhandled leaflet pos errors and Vite HMR websocket disconnection warnings from halting execution
   window.addEventListener('error', (event) => {
-    if (event && event.message && event.message.includes('_leaflet_pos')) {
+    const msg = event?.message || '';
+    if (msg.includes('_leaflet_pos') || msg.includes('WebSocket') || msg.includes('[vite]')) {
       event.preventDefault();
       event.stopPropagation();
-      console.warn('Suppressed transient Leaflet position error:', event.message);
+    }
+  }, true);
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event?.reason;
+    const reasonStr = typeof reason === 'string' ? reason : (reason?.message || '');
+    if (reasonStr.includes('WebSocket') || reasonStr.includes('vite') || reasonStr.includes('closed without opened')) {
+      event.preventDefault();
+      event.stopPropagation();
     }
   }, true);
 }

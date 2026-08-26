@@ -155,20 +155,66 @@ export function formatTimeOnly(dateStr: string): string {
   }
 }
 
-export async function fetchActiveAlerts(customToken?: string): Promise<AirAlertsResponse> {
+export const DEFAULT_ALERTS_TOKEN = '3a0222c65a8814cbf1c92f1ce831c62e24d51f63ab2203';
+
+export async function fetchActiveAlerts(customToken?: string, customApiUrl?: string): Promise<AirAlertsResponse> {
+  const token = customToken || localStorage.getItem('uamapper_alerts_token') || DEFAULT_ALERTS_TOKEN;
+  const endpoint = customApiUrl || localStorage.getItem('uamapper_alerts_custom_url') || '/api/alerts';
+
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };
-  if (customToken) {
-    headers['X-Alerts-Token'] = customToken;
+  if (token) {
+    headers['X-Alerts-Token'] = token;
+    headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch('/api/alerts', { headers });
-  if (!response.ok) {
+  // 1. Try configured endpoint (default: /api/alerts)
+  try {
+    const url = endpoint.includes('?')
+      ? `${endpoint}&t=${Date.now()}`
+      : `${endpoint}?t=${Date.now()}`;
+
+    const response = await fetch(url, {
+      headers,
+      cache: 'no-store',
+    });
+
+    if (response.ok) {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return await response.json();
+      }
+      // If server returned index.html (SPA 404 rewrite)
+      const text = await response.text();
+      if (text.trim().startsWith('{')) {
+        return JSON.parse(text);
+      }
+      throw new Error('Endpoint returned HTML instead of JSON (API route not found on static hosting)');
+    }
+
+    if (response.status === 404 && endpoint === '/api/alerts') {
+      throw new Error('API_ROUTE_404');
+    }
+
     const errJson = await response.json().catch(() => ({}));
     throw new Error(errJson.error || `HTTP error ${response.status}`);
+  } catch (primaryErr: any) {
+    // 2. If /api/alerts failed on static hosting (e.g. GitHub Pages / unconfigured proxy), try direct alerts.in.ua query or user notice
+    if (primaryErr.message === 'API_ROUTE_404' || primaryErr.message?.includes('HTML instead of JSON') || primaryErr.name === 'TypeError') {
+      try {
+        const directUrl = `https://api.alerts.in.ua/v1/alerts/active.json?token=${encodeURIComponent(token)}`;
+        const directResp = await fetch(directUrl, { headers: { Accept: 'application/json' } });
+        if (directResp.ok) {
+          return await directResp.json();
+        }
+      } catch {
+        // Direct browser fetch blocked by CORS (expected for browser client on custom domain without serverless proxy)
+      }
+    }
+
+    throw primaryErr;
   }
-  return await response.json();
 }
 
 /**
