@@ -6,6 +6,8 @@ export const RAION_ALIASES: Record<string, string[]> = {
   'камʼянський': ["кам'янський", 'кам’янський', 'камянський'],
   "кам'янський": ["кам'янський", 'кам’янський', 'камянський'],
   'дніпровський': ['дніпропетровський', 'дніпровський'],
+  'криворізький': ['криворізький', 'кривийріг', 'кривий ріг'],
+  'кривийріг': ['криворізький', 'кривийріг', 'кривий ріг'],
   'корсуньшевченківський': ['корсунь-шевченківський'],
   'могилівподільський': ['могилів-подільський'],
   'червоноградський': ['шептицький', 'червоноградський'],
@@ -17,7 +19,7 @@ export function normalizeLocationName(str: string): string {
   return str
     .toLowerCase()
     .replace(/[\s\-_'’`ʼ\.]/g, '')
-    .replace(/область|район|територіальнагромада|міськагромада|сільськагромада|селищнагромада|громада|автономнареспубліка|м\.|місто/gi, '')
+    .replace(/область|район|територіальнагромада|міськагромада|сільськагромада|селищнагромада|громада|міськатериторіальнагромада|автономнареспубліка|м\.|місто/gi, '')
     .trim();
 }
 
@@ -41,8 +43,8 @@ export function matchAlertToFeature(alert: AirAlert, featureProps: any): boolean
     return false;
   }
 
-  // If matching a raion
-  if (alert.location_type === 'raion') {
+  // If matching a raion or city/hromada
+  if (alert.location_type === 'raion' || alert.location_type === 'city' || alert.location_type === 'hromada') {
     if (featType === 'raion') {
       // Check direct equality or containment
       if (normAlertTitle === normFeatName || normFeatName.includes(normAlertTitle) || normAlertTitle.includes(normFeatName)) {
@@ -55,7 +57,7 @@ export function matchAlertToFeature(alert: AirAlert, featureProps: any): boolean
         return true;
       }
 
-      // Check aliases (e.g. Samarivskyi / Novomoskovskyi)
+      // Check aliases (e.g. Kryvyi Rih / Kryvorizkyi, Samarivskyi / Novomoskovskyi)
       const aliases = RAION_ALIASES[normAlertTitle];
       if (aliases && aliases.some(a => normalizeLocationName(a) === normFeatName)) {
         return true;

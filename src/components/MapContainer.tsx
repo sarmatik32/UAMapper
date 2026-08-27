@@ -1437,18 +1437,31 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       // Create custom Leaflet panes to control z-index layer ordering:
-      // Red zones (320) < Settlement points & labels (350) < Drawn lines (450) < User markers/tactical icons (600)
+      // Air alerts background (230) < Air alert ambient markers (240) < Red danger zones (320) < Boundaries & raions (340) < Settlements (380) < Drawn lines (480) < User markers/tactical icons (600)
+      if (!map.getPane('airAlertsPolygonsPane')) {
+        const p = map.createPane('airAlertsPolygonsPane');
+        p.style.zIndex = '230';
+        p.style.pointerEvents = 'none';
+      }
+      if (!map.getPane('airAlertsMarkersPane')) {
+        const p = map.createPane('airAlertsMarkersPane');
+        p.style.zIndex = '240';
+      }
       if (!map.getPane('redZonePane')) {
         const p = map.createPane('redZonePane');
         p.style.zIndex = '320';
       }
+      if (!map.getPane('boundariesPane')) {
+        const p = map.createPane('boundariesPane');
+        p.style.zIndex = '340';
+      }
       if (!map.getPane('settlementPane')) {
         const p = map.createPane('settlementPane');
-        p.style.zIndex = '350';
+        p.style.zIndex = '380';
       }
       if (!map.getPane('drawnLinesPane')) {
         const p = map.createPane('drawnLinesPane');
-        p.style.zIndex = '450';
+        p.style.zIndex = '480';
       }
       if (!map.getPane('userMarkersPane')) {
         const p = map.createPane('userMarkersPane');
@@ -1597,11 +1610,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
 
           kryvyiRihRaionLayerRef.current = L.geoJSON(geojson, {
+            pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
               color: '#10b981',      // Clean green stroke
-              weight: 1.5,           // Clean visible district line
-              opacity: 0.9,          // High visibility above hromada lines
+              weight: 2.2,           // Clean visible district line
+              opacity: 0.95,         // High visibility above alert highlights
               fill: false,           // No fill
               fillOpacity: 0,        // Completely transparent inside
               interactive: false,    // Clicks pass through to map
@@ -1652,15 +1666,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
 
           kryvyiRihCityLayerRef.current = L.geoJSON(geojson, {
+            pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
               color: '#38bdf8',      // Sky blue thin outline for Kryvyi Rih City
-              weight: 1.8,           // Slightly thicker crisp line
+              weight: 2.0,           // Slightly thicker crisp line
               dashArray: '4, 4',     // Dotted/dashed border
               opacity: 0.95,
               fill: true,
               fillColor: '#38bdf8',
-              fillOpacity: 0.05,     // Subtle light fill for city bounds
+              fillOpacity: 0.06,     // Subtle light fill for city bounds
               interactive: false,    // Clicks pass through to map
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
@@ -1741,6 +1756,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
           if (geojson && isMounted && hromadasLayerGroupRef.current) {
             const layer = L.geoJSON(geojson, {
+              pane: 'boundariesPane',
               style: {
                 className: 'clean-hromada-outline',
                 color: '#374151',        // Dark gray demarcation line (Slate 700)
@@ -1804,6 +1820,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         opacity: 0.95,
         lineCap: 'round',
         lineJoin: 'round',
+        pane: 'drawnLinesPane',
       }).addTo(map);
 
       // Render segment distance badges
@@ -1826,6 +1843,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const badgeMarker = L.marker([midLat, midLng], {
           icon: badgeIcon,
           interactive: false,
+          pane: 'userMarkersPane',
           zIndexOffset: 1200,
         }).addTo(map);
 
@@ -2199,6 +2217,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           weight: markerData.lineWidth !== undefined ? markerData.lineWidth : 3,
           dashArray: '10, 5, 2, 5', // Dash-dotted style ("штрих пунктир")
           opacity: isSelected ? 0.95 : 0.6,
+          pane: 'drawnLinesPane',
         };
 
         if (linesRef.current[id]) {

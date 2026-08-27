@@ -70,10 +70,12 @@ export const AirAlertsLayer: React.FC<AirAlertsLayerProps> = ({
     if (!map) return;
 
     if (!alertPolygonsLayerGroupRef.current) {
-      // Create dedicated pane if doesn't exist
+      // Create dedicated background pane if doesn't exist
+      // zIndex 230: Strictly in the background above base tiles (200), behind all icons (600), lines (480), settlements (380), and district boundaries (340)
       if (!map.getPane('airAlertsPolygonsPane')) {
         const pane = map.createPane('airAlertsPolygonsPane');
-        pane.style.zIndex = '350'; // Above tile layers, below markers
+        pane.style.zIndex = '230';
+        pane.style.pointerEvents = 'none';
       }
       alertPolygonsLayerGroupRef.current = L.layerGroup([], {
         pane: 'airAlertsPolygonsPane',
@@ -81,9 +83,10 @@ export const AirAlertsLayer: React.FC<AirAlertsLayerProps> = ({
     }
 
     if (!alertMarkersLayerGroupRef.current) {
+      // zIndex 240: Background ambient radars below tactical markers (600) and lines (480)
       if (!map.getPane('airAlertsMarkersPane')) {
         const pane = map.createPane('airAlertsMarkersPane');
-        pane.style.zIndex = '620'; // Above standard icons
+        pane.style.zIndex = '240';
       }
       alertMarkersLayerGroupRef.current = L.layerGroup([], {
         pane: 'airAlertsMarkersPane',
@@ -131,6 +134,7 @@ export const AirAlertsLayer: React.FC<AirAlertsLayerProps> = ({
 
           const polyLayer = L.geoJSON(feature, {
             pane: 'airAlertsPolygonsPane',
+            interactive: false,
             style: {
               fillColor: visuals.fillColor,
               fillOpacity: alertsOpacity,
@@ -200,6 +204,7 @@ export const AirAlertsLayer: React.FC<AirAlertsLayerProps> = ({
 
           const polyLayer = L.geoJSON(feature, {
             pane: 'airAlertsPolygonsPane',
+            interactive: false,
             style: {
               fillColor: visuals.fillColor,
               fillOpacity: Math.min(0.85, alertsOpacity + 0.15),
@@ -296,7 +301,7 @@ export const AirAlertsLayer: React.FC<AirAlertsLayerProps> = ({
             const marker = L.marker([lat, lng], {
               icon,
               pane: 'airAlertsMarkersPane',
-              zIndexOffset: 2500,
+              zIndexOffset: 0,
             });
 
             const popupHtml = `
