@@ -11,6 +11,7 @@ export interface IconPreset {
   hasZone?: boolean;
   zoneColor?: string;
   zoneSize?: number;
+  customIconUrl?: string;
 }
 
 export interface CustomMarker {

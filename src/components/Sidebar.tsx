@@ -467,11 +467,159 @@ export const Sidebar: React.FC<SidebarProps> = ({
     lblZoneSize: isUa ? 'Розмір зони' : 'Zone Size',
   };
 
+  // Helper to get fallback preset for any icon
+  const getDefaultPresetForIcon = (iconTypeId: string, customItem?: { id: string; name: string; dataUrl: string }): IconPreset => {
+    if (customItem) {
+      return {
+        title: customItem.name,
+        color: '#ffffff',
+        borderColor: '#ffffff',
+        size: 36,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+        customIconUrl: customItem.dataUrl,
+      };
+    }
+
+    const defaultTitleStr = isUa 
+      ? (ICON_TYPES.find(t => t.id === iconTypeId)?.nameUa || 'Маркер') 
+      : (ICON_TYPES.find(t => t.id === iconTypeId)?.nameEn || 'Marker');
+
+    if (iconTypeId === 'explosion') {
+      return {
+        title: defaultTitleStr,
+        color: '#eab308',
+        borderColor: '#ffffff',
+        size: 36,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#eab308',
+        zoneSize: 80,
+      };
+    }
+
+    if (iconTypeId === 'missile-cruise') {
+      return {
+        title: defaultTitleStr,
+        color: '#ef4444',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 180,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+      };
+    }
+
+    if (iconTypeId === 'warning') {
+      return {
+        title: defaultTitleStr,
+        color: '#eab308',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#eab308',
+        zoneSize: 60,
+      };
+    }
+
+    return {
+      title: defaultTitleStr,
+      color: '#ef4444',
+      borderColor: '#ffffff',
+      size: 32,
+      rotation: 0,
+      draggable: true,
+      labelVisible: true,
+      endPointStyle: 'none',
+      lineWidth: 3,
+      hasZone: false,
+      zoneColor: '#ef4444',
+      zoneSize: 60,
+    };
+  };
+
+  const handleSelectCustomIcon = (item: { id: string; name: string; dataUrl: string }) => {
+    // 1. Automatically expand the styles/settings section when an icon is selected!
+    setExpandedSections((prev) => ({ ...prev, styles: true }));
+
+    const presetKey = item.id;
+    const fallbackPreset = getDefaultPresetForIcon(item.id, item);
+    const preset = iconPresets[presetKey] || fallbackPreset;
+    const titleVal = preset.title || customIconTitles[presetKey] || item.name;
+
+    const updates: Partial<CustomMarker> = {
+      iconType: item.id,
+      customIconUrl: item.dataUrl,
+      title: titleVal,
+      color: preset.color !== undefined ? preset.color : '#ffffff',
+      borderColor: preset.borderColor !== undefined ? preset.borderColor : '#ffffff',
+      size: preset.size !== undefined ? preset.size : 36,
+      rotation: preset.rotation !== undefined ? preset.rotation : 0,
+      draggable: preset.draggable !== undefined ? preset.draggable : true,
+      labelVisible: preset.labelVisible !== undefined ? preset.labelVisible : true,
+      endPointStyle: preset.endPointStyle !== undefined ? preset.endPointStyle : 'none',
+      lineWidth: preset.lineWidth !== undefined ? preset.lineWidth : 3,
+      hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
+      zoneColor: preset.zoneColor || preset.color || '#ef4444',
+      zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : 60,
+    };
+
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        ...updates,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...updates,
+      }));
+    }
+
+    if (onUpdateIconPreset) {
+      onUpdateIconPreset(presetKey, {
+        title: titleVal,
+        color: updates.color,
+        borderColor: updates.borderColor,
+        size: updates.size,
+        rotation: updates.rotation,
+        draggable: updates.draggable,
+        labelVisible: updates.labelVisible,
+        endPointStyle: updates.endPointStyle,
+        lineWidth: updates.lineWidth,
+        hasZone: updates.hasZone,
+        zoneColor: updates.zoneColor,
+        zoneSize: updates.zoneSize,
+        customIconUrl: item.dataUrl,
+      });
+    }
+  };
+
   // Helper to trigger custom PNG upload
   const handlePngUploadClick = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/png';
+    input.accept = 'image/png,image/svg+xml,image/jpeg';
     input.onchange = (event: any) => {
       const file = event.target.files?.[0];
       if (file) {
@@ -482,36 +630,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
           
           const savedUrl = await saveToLibrary(name, base64);
+          const newItem = {
+            id: 'custom_' + Date.now(),
+            name,
+            dataUrl: savedUrl,
+          };
           
-          handlePropsChange({
-            customIconUrl: savedUrl,
-            iconType: 'custom',
-          });
+          handleSelectCustomIcon(newItem);
         };
         reader.readAsDataURL(file);
       }
     };
     input.click();
-  };
-
-  // Handle manual edits of properties (applies to selected marker or template activeStyle and saves per-icon preset!)
-  const handlePropChange = (key: keyof CustomMarker, value: any) => {
-    const currentIcon = activeIconType;
-    if (selectedMarker) {
-      onUpdateMarker({
-        ...selectedMarker,
-        [key]: value,
-      });
-    } else {
-      onUpdateActiveStyle((prev) => ({
-        ...prev,
-        [key]: value,
-      }));
-    }
-
-    if (onUpdateIconPreset && currentIcon) {
-      onUpdateIconPreset(currentIcon, { [key]: value });
-    }
   };
 
   const getDefaultIconName = (iconType: string) => {
@@ -523,27 +653,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   };
 
   const handleSelectIconType = (iconTypeId: string) => {
-    const preset = iconPresets[iconTypeId];
+    // 1. Automatically expand the styles/settings section when an icon is selected!
+    setExpandedSections((prev) => ({ ...prev, styles: true }));
+
+    const fallbackPreset = getDefaultPresetForIcon(iconTypeId);
+    const preset = iconPresets[iconTypeId] || fallbackPreset;
     const defaultName = isUa 
       ? (ICON_TYPES.find(t => t.id === iconTypeId)?.nameUa || 'Маркер') 
       : (ICON_TYPES.find(t => t.id === iconTypeId)?.nameEn || 'Marker');
-    const titleVal = preset?.title || customIconTitles[iconTypeId] || defaultName;
+    const titleVal = preset.title || customIconTitles[iconTypeId] || defaultName;
 
     const updates: Partial<CustomMarker> = {
       iconType: iconTypeId,
       customIconUrl: undefined,
       title: titleVal,
-      color: preset?.color !== undefined ? preset.color : (activeStyle.color || '#ef4444'),
-      borderColor: preset?.borderColor !== undefined ? preset.borderColor : (activeStyle.borderColor || '#ffffff'),
-      size: preset?.size !== undefined ? preset.size : (activeStyle.size || 32),
-      rotation: preset?.rotation !== undefined ? preset.rotation : (activeStyle.rotation || 0),
-      draggable: preset?.draggable !== undefined ? preset.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true),
-      labelVisible: preset?.labelVisible !== undefined ? preset.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true),
-      endPointStyle: preset?.endPointStyle !== undefined ? preset.endPointStyle : (activeStyle.endPointStyle || 'none'),
-      lineWidth: preset?.lineWidth !== undefined ? preset.lineWidth : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3),
-      hasZone: preset?.hasZone !== undefined ? preset.hasZone : false,
-      zoneColor: preset?.zoneColor || preset?.color || (activeStyle.color || '#ef4444'),
-      zoneSize: preset?.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
+      color: preset.color !== undefined ? preset.color : (activeStyle.color || '#ef4444'),
+      borderColor: preset.borderColor !== undefined ? preset.borderColor : (activeStyle.borderColor || '#ffffff'),
+      size: preset.size !== undefined ? preset.size : (activeStyle.size || 32),
+      rotation: preset.rotation !== undefined ? preset.rotation : (activeStyle.rotation || 0),
+      draggable: preset.draggable !== undefined ? preset.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true),
+      labelVisible: preset.labelVisible !== undefined ? preset.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true),
+      endPointStyle: preset.endPointStyle !== undefined ? preset.endPointStyle : (activeStyle.endPointStyle || 'none'),
+      lineWidth: preset.lineWidth !== undefined ? preset.lineWidth : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3),
+      hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
+      zoneColor: preset.zoneColor || preset.color || (activeStyle.color || '#ef4444'),
+      zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
     };
 
     if (selectedMarker) {
@@ -557,10 +691,56 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ...updates,
       }));
     }
+
+    if (onUpdateIconPreset) {
+      onUpdateIconPreset(iconTypeId, {
+        title: titleVal,
+        color: updates.color,
+        borderColor: updates.borderColor,
+        size: updates.size,
+        rotation: updates.rotation,
+        draggable: updates.draggable,
+        labelVisible: updates.labelVisible,
+        endPointStyle: updates.endPointStyle,
+        lineWidth: updates.lineWidth,
+        hasZone: updates.hasZone,
+        zoneColor: updates.zoneColor,
+        zoneSize: updates.zoneSize,
+      });
+    }
+  };
+
+  // Handle manual edits of properties (applies to selected marker or template activeStyle and saves per-icon preset!)
+  const handlePropChange = (key: keyof CustomMarker, value: any) => {
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        [key]: value,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        [key]: value,
+      }));
+    }
+
+    const currentKey = activeCustomItem 
+      ? activeCustomItem.id 
+      : (selectedMarker 
+          ? (selectedMarker.customIconUrl 
+              ? (customLibrary.find(c => c.dataUrl === selectedMarker.customIconUrl)?.id || selectedMarker.iconType) 
+              : selectedMarker.iconType) 
+          : (activeStyle.customIconUrl 
+              ? (customLibrary.find(c => c.dataUrl === activeStyle.customIconUrl)?.id || activeStyle.iconType) 
+              : (activeStyle.iconType || 'pin')));
+
+    if (onUpdateIconPreset && currentKey) {
+      onUpdateIconPreset(currentKey, { [key]: value });
+    }
   };
 
   const handlePropsChange = (updates: Partial<CustomMarker>) => {
-    const targetIcon = updates.iconType || activeIconType;
+    const targetIcon = updates.iconType || currentPresetKey || activeIconType;
     if (selectedMarker) {
       const newUpdates = { ...updates };
       if (updates.iconType && updates.iconType !== selectedMarker.iconType) {
@@ -609,6 +789,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Export properties representing either the selected marker or the pre-configured template activeStyle
   const activeIconType = selectedMarker ? selectedMarker.iconType : (activeStyle.iconType || 'pin');
   const activeCustomIconUrl = selectedMarker ? selectedMarker.customIconUrl : activeStyle.customIconUrl;
+  const activeCustomItem = customLibrary.find(
+    (item) => (activeCustomIconUrl && item.dataUrl === activeCustomIconUrl) || item.id === activeIconType
+  );
+  const currentPresetKey = activeCustomItem ? activeCustomItem.id : activeIconType;
   const activeColor = selectedMarker ? selectedMarker.color : (activeStyle.color || '#ef4444');
   const activeBorderColor = selectedMarker ? selectedMarker.borderColor || '#ffffff' : (activeStyle.borderColor || '#ffffff');
   const activeEndPointStyle = selectedMarker ? selectedMarker.endPointStyle || 'none' : (activeStyle.endPointStyle || 'none');
@@ -1379,49 +1563,82 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   })}
                 </div>
 
-                {/* Per-icon Memory Status Bar & Quick Actions */}
-                <div className="flex items-center justify-between p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-600 dark:text-blue-400 mb-3">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="font-semibold truncate">
-                      {isUa 
-                        ? `Пам'ять: ${customIconTitles[activeIconType] || getDefaultIconName(activeIconType)}` 
-                        : `Preset: ${customIconTitles[activeIconType] || getDefaultIconName(activeIconType)}`}
-                    </span>
+                {/* Per-icon Memory Status Bar & Dedicated Customizer Header */}
+                <div className={`p-2.5 rounded-2xl border transition-all mb-3.5 ${
+                  theme === 'light'
+                    ? 'bg-blue-50/70 border-blue-200/80 shadow-sm'
+                    : 'bg-blue-950/20 border-blue-500/20'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* Active Icon Preview Circle */}
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border p-1 ${
+                        theme === 'light' ? 'bg-white border-blue-200 shadow-sm' : 'bg-[#1a202c] border-blue-500/30'
+                      }`}>
+                        {activeCustomItem ? (
+                          <img src={activeCustomItem.dataUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : activeCustomIconUrl ? (
+                          <img src={activeCustomIconUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div 
+                            className="w-full h-full flex items-center justify-center"
+                            dangerouslySetInnerHTML={{ __html: getIconSvgContent(activeIconType, activeColor, activeBorderColor) }}
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
+                          {activeCustomItem 
+                            ? activeCustomItem.name 
+                            : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                        </div>
+                        <div className="text-[9px] text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                          <span>{isUa ? 'Окремі налаштування для цієї іконки' : 'Dedicated icon settings active'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onResetIconPreset && (
+                        <button
+                          type="button"
+                          onClick={() => onResetIconPreset(currentPresetKey)}
+                          title={isUa ? 'Скинути налаштування цієї іконки до стандартних' : 'Reset this icon to defaults'}
+                          className="px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold transition-all cursor-pointer border border-blue-500/20"
+                        >
+                          {isUa ? 'Скинути' : 'Reset'}
+                        </button>
+                      )}
+                      {onApplyPresetToAllIcons && (
+                        <button
+                          type="button"
+                          onClick={() => onApplyPresetToAllIcons({
+                            color: activeColor,
+                            borderColor: activeBorderColor,
+                            size: activeSize,
+                            rotation: activeRotation,
+                            draggable: activeDraggable,
+                            labelVisible: activeLabelVisible,
+                            endPointStyle: activeEndPointStyle,
+                            lineWidth: activeLineWidth,
+                            hasZone: activeHasZone,
+                            zoneColor: activeZoneColor,
+                            zoneSize: activeZoneSize,
+                          })}
+                          title={isUa ? 'Застосувати поточні налаштування до всіх іконок' : 'Apply current settings to all icons'}
+                          className="px-2 py-1 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 text-[10px] font-semibold transition-all cursor-pointer border border-slate-500/20"
+                        >
+                          {isUa ? 'Для всіх' : 'To all'}
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {onResetIconPreset && iconPresets[activeIconType] && (
-                      <button
-                        type="button"
-                        onClick={() => onResetIconPreset(activeIconType)}
-                        title={isUa ? 'Скинути налаштування цієї іконки до стандартних' : 'Reset this icon to defaults'}
-                        className="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/30 text-[9px] font-bold transition-all cursor-pointer"
-                      >
-                        {isUa ? 'Скинути' : 'Reset'}
-                      </button>
-                    )}
-                    {onApplyPresetToAllIcons && (
-                      <button
-                        type="button"
-                        onClick={() => onApplyPresetToAllIcons({
-                          color: activeColor,
-                          borderColor: activeBorderColor,
-                          size: activeSize,
-                          rotation: activeRotation,
-                          draggable: activeDraggable,
-                          labelVisible: activeLabelVisible,
-                          endPointStyle: activeEndPointStyle,
-                          lineWidth: activeLineWidth,
-                          hasZone: activeHasZone,
-                          zoneColor: activeZoneColor,
-                          zoneSize: activeZoneSize,
-                        })}
-                        title={isUa ? 'Застосувати поточні налаштування (колір, розмір, зону) до всіх іконок' : 'Apply current settings to all icons'}
-                        className="px-1.5 py-0.5 rounded bg-slate-500/20 hover:bg-slate-500/30 text-slate-700 dark:text-slate-300 text-[9px] font-semibold transition-all cursor-pointer"
-                      >
-                        {isUa ? 'Для всіх' : 'To all'}
-                      </button>
-                    )}
+
+                  <div className="text-[9px] text-slate-500 dark:text-slate-400 px-0.5">
+                    {isUa 
+                      ? 'Всі зміни нижче (розмір, колір, кут, зона) зберігаються окремо для цієї іконки.' 
+                      : 'All changes below (size, color, angle, zone) are saved individually for this icon.'}
                   </div>
                 </div>
 
@@ -1449,19 +1666,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                     <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
                       {customLibrary.map((item) => {
-                        const isActive = activeCustomIconUrl === item.dataUrl;
+                        const isActive = activeCustomIconUrl === item.dataUrl || activeIconType === item.id;
+                        const hasCustomPreset = !!iconPresets[item.id];
                         return (
                           <div
                             key={item.id}
-                            onClick={() => {
-                              handlePropsChange({
-                                customIconUrl: item.dataUrl,
-                                iconType: 'custom',
-                              });
-                            }}
-                            className={`group p-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer ${
+                            onClick={() => handleSelectCustomIcon(item)}
+                            className={`group p-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer relative ${
                               isActive
-                                ? 'border-blue-500 bg-blue-600/10 text-blue-600 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.15)]'
+                                ? 'border-blue-500 bg-blue-600/15 text-blue-600 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.25)] scale-[1.02]'
                                 : (theme === 'light' 
                                   ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700' 
                                   : 'border-white/5 bg-[#181d28]/40 hover:border-white/10 text-slate-300')
@@ -1471,8 +1684,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <img src={item.dataUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                             </div>
                             <span className="text-[10px] truncate flex-1 font-semibold" title={item.name}>
-                              {item.name}
+                              {iconPresets[item.id]?.title || item.name}
                             </span>
+                            {hasCustomPreset && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white/50 shrink-0" title={isUa ? 'Збережені налаштування' : 'Saved settings'} />
+                            )}
                             <button
                               onClick={(e) => deleteFromLibrary(item.id, e)}
                               className="text-slate-500 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"

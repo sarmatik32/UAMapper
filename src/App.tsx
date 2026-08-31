@@ -296,6 +296,22 @@ export default function App() {
           ...preset,
         };
       });
+      try {
+        const rawCustom = localStorage.getItem('visicom_custom_library');
+        if (rawCustom) {
+          const parsed = JSON.parse(rawCustom);
+          if (Array.isArray(parsed)) {
+            parsed.forEach((item: any) => {
+              if (item && item.id) {
+                next[item.id] = {
+                  ...(prev[item.id] || {}),
+                  ...preset,
+                };
+              }
+            });
+          }
+        }
+      } catch (e) {}
       localStorage.setItem('visicom_icon_presets', JSON.stringify(next));
       return next;
     });

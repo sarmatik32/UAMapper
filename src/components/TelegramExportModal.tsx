@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { CustomMarker, Language, AirAlert, DrawnLine, TelegramChannelConfig } from '../types';
 import { safeSetItem } from '../utils/storage';
+import { optimizeImageForTelegram } from '../utils/imageOptimizer';
 
 interface TelegramExportModalProps {
   isOpen: boolean;
@@ -299,26 +300,45 @@ export const TelegramExportModal: React.FC<TelegramExportModalProps> = ({
     setBotStatusMessage(null);
 
     try {
+      // 1. Ensure image is optimized to fit within Telegram's 10 MB sendPhoto limit
+      const { blob: optimizedBlob, filename, wasCompressed } = await optimizeImageForTelegram(imageBlob, 9.5 * 1024 * 1024);
+
       const formData = new FormData();
       formData.append('chat_id', targetChatId);
-      formData.append('photo', imageBlob, `map_${Date.now()}.png`);
+      formData.append('photo', optimizedBlob, filename);
       if (caption.trim()) {
         formData.append('caption', caption.trim());
       }
 
-      const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+      let response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
         method: 'POST',
         body: formData,
       });
 
-      const data = await response.json();
+      let data = await response.json();
+
+      // If sendPhoto failed specifically due to file size, retry via sendDocument (which allows up to 50 MB)
+      if (!data.ok && (data.description?.toLowerCase().includes('too big for a photo') || data.description?.toLowerCase().includes('file_too_big') || data.description?.toLowerCase().includes('photo_invalid_dimensions'))) {
+        const docFormData = new FormData();
+        docFormData.append('chat_id', targetChatId);
+        docFormData.append('document', imageBlob, `map_${Date.now()}.png`);
+        if (caption.trim()) {
+          docFormData.append('caption', caption.trim());
+        }
+
+        response = await fetch(`https://api.telegram.org/bot${token}/sendDocument`, {
+          method: 'POST',
+          body: docFormData,
+        });
+        data = await response.json();
+      }
 
       if (data.ok) {
         setBotStatusMessage({
           type: 'success',
           text: isUa 
-            ? `Опубліковано в ${targetChatId}! 🚀` 
-            : `Successfully published to ${targetChatId}! 🚀`,
+            ? `Опубліковано в ${targetChatId}! 🚀${wasCompressed ? ' (Оптимізовано для Telegram)' : ''}` 
+            : `Successfully published to ${targetChatId}! 🚀${wasCompressed ? ' (Optimized for Telegram)' : ''}`,
         });
       } else {
         const errorDesc = data.description || 'Unknown Telegram API error';
@@ -335,6 +355,10 @@ export const TelegramExportModal: React.FC<TelegramExportModalProps> = ({
           friendlyAdvice = isUa 
             ? 'Бот не має прав публікації. Додайте бота в адміністратори каналу з правом публікувати повідомлення.' 
             : 'Bot is not an administrator in this channel. Grant publish permissions.';
+        } else if (errorDesc.includes('too big for a photo')) {
+          friendlyAdvice = isUa
+            ? 'Файл завеликий для фото у Telegram. Спробуйте ще раз або зменшіть масштаб карти.'
+            : 'File is too large for Telegram photo. Try reducing zoom level.';
         }
         setBotStatusMessage({
           type: 'error',
