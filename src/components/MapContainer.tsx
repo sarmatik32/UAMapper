@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
-import { toPng, toBlob } from 'html-to-image';
+import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
+import { getMapFontFamilyCss } from '../utils/mapFonts';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -121,6 +122,7 @@ interface MapContainerProps {
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
   blurMapOnExport?: boolean;
+  mapFont?: MapFontFamily;
   showSettlementLabels?: boolean;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
   disabledSettlementCategories?: SettlementCategory[];
@@ -187,6 +189,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   legendOverlayText = '',
   showRadarOverlay = true,
   blurMapOnExport = false,
+  mapFont = 'inter',
   showSettlementLabels = true,
   settlementLabelMode = 'all',
   disabledSettlementCategories = [],
@@ -1290,42 +1293,42 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (item.type === 'district') {
         dotHtml = `<span class="w-3.5 h-3.5 rounded-full bg-amber-400 ring-2 ring-amber-500/80 shadow-[0_0_12px_rgba(245,158,11,0.9)] animate-pulse shrink-0"></span>`;
         labelHtml = `
-          <div class="bg-slate-950/95 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded-md text-[12px] font-black tracking-wider uppercase whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
+          <div class="bg-slate-950/95 text-amber-300 border border-amber-500/80 px-2 py-0.5 rounded-md text-[12px] font-black tracking-wider uppercase whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)] font-sans antialiased" style="font-family: inherit;">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 1) {
         dotHtml = `<span class="w-3 h-3 rounded-full bg-cyan-400 ring-2 ring-blue-500/80 shadow-[0_0_10px_rgba(34,211,238,0.9)] shrink-0"></span>`;
         labelHtml = `
-          <div class="bg-slate-950/95 text-cyan-300 border border-cyan-400/80 px-2 py-0.5 rounded-md text-[11.5px] font-extrabold tracking-wide whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)]">
+          <div class="bg-slate-950/95 text-cyan-300 border border-cyan-400/80 px-2 py-0.5 rounded-md text-[11px] font-extrabold tracking-wide whitespace-nowrap shadow-[0_2px_8px_rgba(0,0,0,0.85)] font-sans antialiased" style="font-family: inherit;">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 2) {
         dotHtml = `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400 ring-1.5 ring-emerald-500/70 shadow-[0_0_6px_rgba(52,211,153,0.8)] shrink-0"></span>`;
         labelHtml = `
-          <div class="bg-slate-950/90 text-emerald-300 border border-emerald-400/70 px-1.5 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
+          <div class="bg-slate-950/90 text-emerald-300 border border-emerald-400/70 px-1.5 py-0.5 rounded-md text-[11px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)] font-sans antialiased" style="font-family: inherit;">
             ${item.name}
           </div>
         `;
       } else if (item.priority === 3) {
         dotHtml = `<span class="w-2 h-2 rounded-full bg-sky-300 ring-1 ring-sky-400/60 shadow-[0_0_5px_rgba(186,230,253,0.7)] shrink-0"></span>`;
         labelHtml = `
-          <div class="bg-slate-950/90 text-sky-200 border border-sky-400/60 px-1.5 py-0.5 rounded-md text-[10.5px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
+          <div class="bg-slate-950/90 text-sky-200 border border-sky-400/60 px-1.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-[0_2px_6px_rgba(0,0,0,0.8)] font-sans antialiased" style="font-family: inherit;">
             ${item.name}
           </div>
         `;
       } else {
         dotHtml = `<span class="w-1.5 h-1.5 rounded-full bg-slate-200 ring-1 ring-slate-400/50 shadow-[0_0_4px_rgba(255,255,255,0.5)] shrink-0"></span>`;
         labelHtml = `
-          <div class="bg-slate-950/85 text-slate-100 border border-slate-700/80 px-1.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-[0_2px_5px_rgba(0,0,0,0.8)]">
+          <div class="bg-slate-950/85 text-slate-100 border border-slate-700/80 px-1.5 py-0.5 rounded-md text-[10px] font-bold whitespace-nowrap shadow-[0_2px_5px_rgba(0,0,0,0.8)] font-sans antialiased" style="font-family: inherit;">
             ${item.name}
           </div>
         `;
       }
 
       const htmlContent = `
-        <div class="relative flex items-center cursor-pointer select-none group pointer-events-auto">
+        <div class="relative flex items-center cursor-pointer select-none group pointer-events-auto" style="font-family: inherit;">
           <div class="absolute top-0 left-0 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center">
             ${dotHtml}
             <div class="absolute left-full ml-1.5 top-1/2 -translate-y-1/2">
@@ -1362,7 +1365,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         marker.addTo(settlementLayerRef.current);
       }
     });
-  }, [showSettlementLabels, settlementLabelMode, disabledSettlementCategories, customSettlements, isMapReady]);
+  }, [showSettlementLabels, settlementLabelMode, disabledSettlementCategories, customSettlements, isMapReady, mapFont]);
 
   useEffect(() => {
     renderSettlementLabels();
@@ -1428,9 +1431,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         center: defaultCenter,
         zoom: defaultZoom,
         zoomControl: false, // We'll add our own styled zoom control or position it beautifully
-        zoomSnap: 0.25,
-        zoomDelta: 0.25,
-        wheelPxPerZoomLevel: 120,
+        zoomSnap: 1, // Integer zoom levels guarantee 1:1 crisp raster tiles without CSS scale blur
+        zoomDelta: 1,
+        wheelPxPerZoomLevel: 60,
       });
 
       // Add a styled zoom control at top-right
@@ -1893,13 +1896,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       tileOverlayInstanceRef.current = null;
     }
 
-    // Format tile URL
+    // Format tile URL and retina parameters
     let url = activeTileLayer.url;
     if (activeTileLayer.requiresKey) {
       url = url.replace('{key}', visicomKey || '');
     }
+    if (url.includes('{r}')) {
+      url = url.replace('{r}', L.Browser.retina ? '@2x' : '');
+    }
 
-    // Create Leaflet TileLayer with high-resolution / retina support
+    // Create Leaflet TileLayer with crisp 1:1 pixel rendering
     const tileLayer = L.tileLayer(url, {
       tms: activeTileLayer.tms,
       maxZoom: activeTileLayer.maxZoom,
@@ -1907,7 +1913,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
       crossOrigin: 'anonymous',
-      detectRetina: true,
+      detectRetina: false, // Prevent artificial 200% scale stretching that blurs non-retina raster tiles
+      tileSize: 256,
+      keepBuffer: 6,
+      updateWhenIdle: false,
+      updateWhenZooming: false,
     });
 
     tileLayer.addTo(map);
@@ -1915,12 +1925,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Optional reference overlay layer (e.g. Esri Dark Gray Reference for oblasts/hromadas/settlements)
     if (activeTileLayer.overlayUrl) {
-      const overlayLayer = L.tileLayer(activeTileLayer.overlayUrl, {
+      let overlayUrl = activeTileLayer.overlayUrl;
+      if (overlayUrl.includes('{r}')) {
+        overlayUrl = overlayUrl.replace('{r}', L.Browser.retina ? '@2x' : '');
+      }
+      const overlayLayer = L.tileLayer(overlayUrl, {
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
         crossOrigin: 'anonymous',
-        detectRetina: true,
+        detectRetina: false,
+        tileSize: 256,
+        keepBuffer: 6,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -3286,7 +3302,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         pixelRatio: capturePixelRatio,
         quality: 1,
-        skipFonts: false,
+        skipFonts: true,
         filter: filterNode as any,
       };
 
@@ -3473,14 +3489,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const watermarkUrl = `url("data:image/svg+xml;utf8,${encodeURIComponent(watermarkSvg)}")`;
 
+  const fontCssValue = getMapFontFamilyCss(mapFont);
+
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" style={{ '--map-font-family': fontCssValue } as React.CSSProperties}>
       <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`}>
         {/* Actual Map Container */}
         <div 
           id="visicom-leaflet-map"
           ref={mapContainerRef} 
           className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark ? 'dark-map' : ''}`}
+          style={{ fontFamily: fontCssValue }}
         />
 
         {/* Floating Search Panel */}
@@ -3964,7 +3983,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             overflow: visible !important;
           }
           .leaflet-container {
-            font-family: inherit;
+            font-family: ${fontCssValue} !important;
+          }
+          .settlement-label-marker,
+          .custom-leaflet-div-icon,
+          .leaflet-marker-icon,
+          .leaflet-popup,
+          .leaflet-tooltip,
+          .map-measurement-badge {
+            font-family: ${fontCssValue} !important;
           }
           /* Theme map filter */
           .dark-map .leaflet-tile-pane {

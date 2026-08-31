@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -366,6 +366,16 @@ export default function App() {
     const saved = localStorage.getItem('uamapper_show_hromada_boundaries');
     return saved !== null ? saved === 'true' : true;
   });
+
+  const [mapFont, setMapFont] = useState<MapFontFamily>(() => {
+    const saved = localStorage.getItem('uamapper_map_font');
+    return (saved as MapFontFamily) || 'inter';
+  });
+
+  const handleUpdateMapFont = (font: MapFontFamily) => {
+    setMapFont(font);
+    localStorage.setItem('uamapper_map_font', font);
+  };
 
   const [showSettlementLabels, setShowSettlementLabels] = useState<boolean>(() => {
     const saved = localStorage.getItem('visicom_show_settlement_labels');
@@ -1070,6 +1080,7 @@ export default function App() {
         showLegendOverlay,
         showRadarOverlay,
         blurMapOnExport,
+        mapFont,
         showCityBoundary,
         showDistrictBoundary,
         showHromadaBoundaries,
@@ -1183,6 +1194,10 @@ export default function App() {
           if (settings.blurMapOnExport !== undefined) {
             setBlurMapOnExport(settings.blurMapOnExport);
             localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
+          }
+          if (settings.mapFont) {
+            setMapFont(settings.mapFont);
+            localStorage.setItem('uamapper_map_font', settings.mapFont);
           }
           if (settings.showCityBoundary !== undefined) {
             setShowCityBoundary(settings.showCityBoundary);
@@ -1304,6 +1319,7 @@ export default function App() {
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
+            mapFont={mapFont}
             showCityBoundary={showCityBoundary}
             showDistrictBoundary={showDistrictBoundary}
             showHromadaBoundaries={showHromadaBoundaries}
@@ -1703,6 +1719,8 @@ export default function App() {
                 setBlurMapOnExport(val);
                 localStorage.setItem('visicom_blur_map_on_export', val ? 'true' : 'false');
               }}
+              mapFont={mapFont}
+              onUpdateMapFont={handleUpdateMapFont}
               showCityBoundary={showCityBoundary}
               onUpdateShowCityBoundary={setShowCityBoundary}
               showDistrictBoundary={showDistrictBoundary}

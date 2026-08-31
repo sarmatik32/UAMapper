@@ -86,3 +86,14 @@ export interface DrawnLine {
   
   label?: string;
 }
+
+export type MapFontFamily = 'inter' | 'plus-jakarta' | 'montserrat' | 'ubuntu' | 'jetbrains-mono' | 'system';
+
+export interface MapFontConfig {
+  id: MapFontFamily;
+  name: string;
+  fontFamily: string;
+  previewText: string;
+  descriptionUa: string;
+  descriptionEn: string;
+}

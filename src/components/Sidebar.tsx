@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
+import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { 
   Map, 
   Settings, 
@@ -37,7 +38,8 @@ import {
   Image as ImageIcon,
   Radio,
   Bell,
-  RefreshCw
+  RefreshCw,
+  Type
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -85,6 +87,8 @@ interface SidebarProps {
   onUpdateShowRadarOverlay?: (show: boolean) => void;
   blurMapOnExport?: boolean;
   onUpdateBlurMapOnExport?: (blur: boolean) => void;
+  mapFont?: MapFontFamily;
+  onUpdateMapFont?: (font: MapFontFamily) => void;
   showCityBoundary?: boolean;
   onUpdateShowCityBoundary?: (show: boolean) => void;
   showDistrictBoundary?: boolean;
@@ -203,6 +207,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateShowRadarOverlay = (_show) => {},
   blurMapOnExport = false,
   onUpdateBlurMapOnExport = (_blur) => {},
+  mapFont = 'inter',
+  onUpdateMapFont = (_font) => {},
   showCityBoundary = true,
   onUpdateShowCityBoundary,
   showDistrictBoundary = true,
@@ -2374,6 +2380,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                   </label>
                 </div>
+              </div>
+
+              {/* Map Font Selection & Sharpness Control */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Type className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{isUa ? 'Шрифт карти та міток' : 'Map & Label Font'}</span>
+                  </label>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    {isUa ? 'Чіткість при масштабуванні' : 'Anti-Blur Active'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {MAP_FONT_CONFIGS.map((f) => {
+                    const isSelected = mapFont === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => onUpdateMapFont(f.id)}
+                        className={`p-2 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[58px] ${
+                          isSelected
+                            ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-blue-500/30'
+                            : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-bold truncate">{f.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
+                        </div>
+                        <div
+                          className="text-[10.5px] font-bold truncate text-slate-800 dark:text-slate-100 tracking-wide mt-1"
+                          style={{ fontFamily: f.fontFamily }}
+                        >
+                          {f.previewText}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[9px] text-slate-400 leading-normal">
+                  {isUa
+                    ? 'Шрифти відрендерені з апаратним згладжуванням (GPU subpixel hinting) для усунення будь-якого розмиття при зміні масштабу.'
+                    : 'Fonts are rendered with hardware-accelerated anti-aliasing and subpixel hinting to eliminate blur across zoom levels.'}
+                </p>
               </div>
 
               {/* Show Settlement & District Labels Toggle */}
