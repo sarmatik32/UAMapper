@@ -110,20 +110,20 @@ async function startServer() {
         last_synced_at: new Date().toISOString(),
       });
     } catch (error: any) {
-      console.error("[Alerts API Error]:", error.message);
+      console.warn("[Alerts API Warning]:", error?.message || error);
       // If we have stale cached data, return it as fallback
       if (cachedAlerts) {
         return res.json({
           ...cachedAlerts.data,
           cached: true,
           stale: true,
-          warning: "Using stale cached data due to API error",
-          error: error.message,
+          warning: "Using stale cached data due to upstream delay",
         });
       }
-      return res.status(502).json({
-        error: error.message || "Failed to fetch active alerts",
+      return res.status(200).json({
         alerts: [],
+        disclaimer: "No alerts available at this moment",
+        warning: error?.message || "Failed to fetch active alerts",
       });
     }
   });

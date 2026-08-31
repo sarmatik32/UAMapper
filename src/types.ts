@@ -1,3 +1,18 @@
+export interface IconPreset {
+  title?: string;
+  color?: string;
+  borderColor?: string;
+  size?: number;
+  rotation?: number;
+  draggable?: boolean;
+  labelVisible?: boolean;
+  endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
+  lineWidth?: number;
+  hasZone?: boolean;
+  zoneColor?: string;
+  zoneSize?: number;
+}
+
 export interface CustomMarker {
   id: string;
   lat: number;
@@ -96,4 +111,12 @@ export interface MapFontConfig {
   previewText: string;
   descriptionUa: string;
   descriptionEn: string;
+}
+
+export interface TelegramChannelConfig {
+  id: string;
+  name: string;
+  usernameOrId: string; // e.g. '@krrig_alerts' or '-100...'
+  description?: string;
+  isDefault?: boolean;
 }

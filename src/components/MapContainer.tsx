@@ -13,6 +13,7 @@ import { getMapFontFamilyCss } from '../utils/mapFonts';
 export interface MapContainerRef {
   exportPNG: () => void;
   copyPNG: () => void;
+  getMapBlob: (mode?: 'export' | 'clipboard') => Promise<Blob>;
   centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
   highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
 }
@@ -3443,6 +3444,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useImperativeHandle(ref, () => ({
     exportPNG: handleExportPNG,
     copyPNG: handleCopyPNG,
+    getMapBlob: async (mode: 'export' | 'clipboard' = 'export'): Promise<Blob> => {
+      const mapElement = prepareExportState();
+      if (!mapElement) throw new Error('Map element not found');
+      setIsExporting(true);
+      try {
+        return await captureMapBlob(mode);
+      } finally {
+        cleanupExportState(mapElement);
+        setIsExporting(false);
+      }
+    },
     centerOnLocation: (lat: number, lng: number, zoom?: number) => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.setView([lat, lng], zoom || 13, { animate: true });

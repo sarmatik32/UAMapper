@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
@@ -64,6 +64,7 @@ interface SidebarProps {
   theme?: 'dark' | 'light';
   onToggleTheme?: () => void;
   onExportPNG?: () => void;
+  onExportTelegram?: () => void;
   onCopyPNG?: () => void;
   activeStyle?: Partial<CustomMarker>;
   onUpdateActiveStyle?: React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>;
@@ -114,6 +115,10 @@ interface SidebarProps {
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
   onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
+  iconPresets?: Record<string, IconPreset>;
+  onUpdateIconPreset?: (iconType: string, presetUpdates: Partial<IconPreset>) => void;
+  onResetIconPreset?: (iconType: string) => void;
+  onApplyPresetToAllIcons?: (preset: Partial<IconPreset>) => void;
 
   drawnLines?: DrawnLine[];
   selectedLineId?: string | null;
@@ -184,6 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   theme = 'dark',
   onToggleTheme = () => {},
   onExportPNG = () => {},
+  onExportTelegram = () => {},
   onCopyPNG = () => {},
   activeStyle = {} as Partial<CustomMarker>,
   onUpdateActiveStyle = (() => {}) as React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>,
@@ -234,6 +240,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
   onUpdateCustomIconTitle = (_type, _val) => {},
+  iconPresets = {},
+  onUpdateIconPreset,
+  onResetIconPreset,
+  onApplyPresetToAllIcons,
   drawnLines = [],
   selectedLineId = null,
   activeAlerts = [],
@@ -442,6 +452,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     btnResetMap: isUa ? 'Скинути карту' : 'Reset Map',
 
     btnSavePng: isUa ? 'Експорт PNG' : 'Export PNG',
+    btnExportTelegram: isUa ? 'Telegram' : 'Telegram',
     btnShare: isUa ? 'БУФЕР' : 'BUFFER',
     btnUndo: isUa ? 'Скасувати' : 'Undo',
     btnClearAll: isUa ? 'Очистити все' : 'Clear All',
@@ -483,8 +494,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     input.click();
   };
 
-  // Handle manual edits of properties (applies to selected marker or template activeStyle!)
+  // Handle manual edits of properties (applies to selected marker or template activeStyle and saves per-icon preset!)
   const handlePropChange = (key: keyof CustomMarker, value: any) => {
+    const currentIcon = activeIconType;
     if (selectedMarker) {
       onUpdateMarker({
         ...selectedMarker,
@@ -495,6 +507,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ...prev,
         [key]: value,
       }));
+    }
+
+    if (onUpdateIconPreset && currentIcon) {
+      onUpdateIconPreset(currentIcon, { [key]: value });
     }
   };
 
@@ -506,11 +522,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return language === 'uk' ? 'Маркер' : 'Marker';
   };
 
+  const handleSelectIconType = (iconTypeId: string) => {
+    const preset = iconPresets[iconTypeId];
+    const defaultName = isUa 
+      ? (ICON_TYPES.find(t => t.id === iconTypeId)?.nameUa || 'Маркер') 
+      : (ICON_TYPES.find(t => t.id === iconTypeId)?.nameEn || 'Marker');
+    const titleVal = preset?.title || customIconTitles[iconTypeId] || defaultName;
+
+    const updates: Partial<CustomMarker> = {
+      iconType: iconTypeId,
+      customIconUrl: undefined,
+      title: titleVal,
+      color: preset?.color !== undefined ? preset.color : (activeStyle.color || '#ef4444'),
+      borderColor: preset?.borderColor !== undefined ? preset.borderColor : (activeStyle.borderColor || '#ffffff'),
+      size: preset?.size !== undefined ? preset.size : (activeStyle.size || 32),
+      rotation: preset?.rotation !== undefined ? preset.rotation : (activeStyle.rotation || 0),
+      draggable: preset?.draggable !== undefined ? preset.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true),
+      labelVisible: preset?.labelVisible !== undefined ? preset.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true),
+      endPointStyle: preset?.endPointStyle !== undefined ? preset.endPointStyle : (activeStyle.endPointStyle || 'none'),
+      lineWidth: preset?.lineWidth !== undefined ? preset.lineWidth : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3),
+      hasZone: preset?.hasZone !== undefined ? preset.hasZone : false,
+      zoneColor: preset?.zoneColor || preset?.color || (activeStyle.color || '#ef4444'),
+      zoneSize: preset?.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
+    };
+
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        ...updates,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...updates,
+      }));
+    }
+  };
+
   const handlePropsChange = (updates: Partial<CustomMarker>) => {
+    const targetIcon = updates.iconType || activeIconType;
     if (selectedMarker) {
       const newUpdates = { ...updates };
       if (updates.iconType && updates.iconType !== selectedMarker.iconType) {
-        newUpdates.title = customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
       }
       onUpdateMarker({
         ...selectedMarker,
@@ -519,12 +573,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } else {
       const newUpdates = { ...updates };
       if (updates.iconType && updates.iconType !== activeStyle.iconType) {
-        newUpdates.title = customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
       }
       onUpdateActiveStyle((prev) => ({
         ...prev,
         ...newUpdates,
       }));
+    }
+
+    if (onUpdateIconPreset && targetIcon) {
+      const { id, lat, lng, ...presetProps } = updates as any;
+      onUpdateIconPreset(targetIcon, presetProps);
     }
   };
 
@@ -1291,20 +1350,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
                   {t.lblPointIcon}
                 </label>
-                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto p-0.5 border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-500/5 mb-3.5">
+                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto p-0.5 border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-500/5 mb-2.5">
                   {ICON_TYPES.map((type) => {
                     const isActive = activeIconType === type.id && !activeCustomIconUrl;
+                    const hasCustomPreset = !!iconPresets[type.id];
                     return (
                       <button
                         key={type.id}
-                        onClick={() => {
-                          handlePropsChange({
-                            iconType: type.id,
-                            customIconUrl: undefined,
-                          });
-                        }}
-                        title={isUa ? type.nameUa : type.nameEn}
-                        className={`h-9 border rounded-xl transition-all flex items-center justify-center cursor-pointer ${
+                        onClick={() => handleSelectIconType(type.id)}
+                        title={`${isUa ? type.nameUa : type.nameEn}${hasCustomPreset ? (isUa ? ' (власні налаштування збережено)' : ' (custom settings saved)') : ''}`}
+                        className={`h-9 border rounded-xl transition-all relative flex items-center justify-center cursor-pointer ${
                           isActive
                             ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.35)] scale-105 z-10'
                             : (theme === 'light' 
@@ -1316,9 +1371,58 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           className="w-5 h-5 flex items-center justify-center"
                           dangerouslySetInnerHTML={{ __html: getIconSvgContent(type.id, 'currentColor', theme === 'light' ? '#0f172a' : '#ffffff') }}
                         />
+                        {hasCustomPreset && (
+                          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white/50" />
+                        )}
                       </button>
                     );
                   })}
+                </div>
+
+                {/* Per-icon Memory Status Bar & Quick Actions */}
+                <div className="flex items-center justify-between p-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-[10px] text-blue-600 dark:text-blue-400 mb-3">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Sparkles className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    <span className="font-semibold truncate">
+                      {isUa 
+                        ? `Пам'ять: ${customIconTitles[activeIconType] || getDefaultIconName(activeIconType)}` 
+                        : `Preset: ${customIconTitles[activeIconType] || getDefaultIconName(activeIconType)}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {onResetIconPreset && iconPresets[activeIconType] && (
+                      <button
+                        type="button"
+                        onClick={() => onResetIconPreset(activeIconType)}
+                        title={isUa ? 'Скинути налаштування цієї іконки до стандартних' : 'Reset this icon to defaults'}
+                        className="px-1.5 py-0.5 rounded bg-blue-500/20 hover:bg-blue-500/30 text-[9px] font-bold transition-all cursor-pointer"
+                      >
+                        {isUa ? 'Скинути' : 'Reset'}
+                      </button>
+                    )}
+                    {onApplyPresetToAllIcons && (
+                      <button
+                        type="button"
+                        onClick={() => onApplyPresetToAllIcons({
+                          color: activeColor,
+                          borderColor: activeBorderColor,
+                          size: activeSize,
+                          rotation: activeRotation,
+                          draggable: activeDraggable,
+                          labelVisible: activeLabelVisible,
+                          endPointStyle: activeEndPointStyle,
+                          lineWidth: activeLineWidth,
+                          hasZone: activeHasZone,
+                          zoneColor: activeZoneColor,
+                          zoneSize: activeZoneSize,
+                        })}
+                        title={isUa ? 'Застосувати поточні налаштування (колір, розмір, зону) до всіх іконок' : 'Apply current settings to all icons'}
+                        className="px-1.5 py-0.5 rounded bg-slate-500/20 hover:bg-slate-500/30 text-slate-700 dark:text-slate-300 text-[9px] font-semibold transition-all cursor-pointer"
+                      >
+                        {isUa ? 'Для всіх' : 'To all'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Custom Upload PNG button */}
@@ -2674,52 +2778,76 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       </div>
 
-      {/* Action panel at the bottom (Interface actions matching the screenshot) */}
-      <div className={`p-4 border-t space-y-3 ${
+      {/* Action panel at the bottom (Split Export: Save PNG & Telegram) */}
+      <div className={`p-3.5 border-t space-y-2.5 ${
         theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/80 border-[#262c38] backdrop-blur-md'
       }`}>
-        <div className="grid grid-cols-2 gap-2">
-          {/* Save as PNG */}
-          <button
-            onClick={onExportPNG}
-            className={`w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
-              theme === 'light'
-                ? 'bg-[#0057B7] hover:bg-[#004494] text-white border-[#0057B7]/20 shadow-[#0057B7]/10'
-                : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/20 shadow-blue-600/10'
-            }`}
-          >
-            <Download className="w-4 h-4 flex-shrink-0 text-white" />
-            <span className="leading-tight text-center">{t.btnSavePng}</span>
-          </button>
+        <div className="space-y-2">
+          {/* Row 1: Split Export Buttons (PNG & Telegram) */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Save as PNG */}
+            <button
+              type="button"
+              onClick={onExportPNG}
+              className={`w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
+                theme === 'light'
+                  ? 'bg-[#0057B7] hover:bg-[#004494] text-white border-[#0057B7]/20 shadow-[#0057B7]/10'
+                  : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/20 shadow-blue-600/10'
+              }`}
+              title={isUa ? 'Завантажити карту як PNG файл високої роздільності' : 'Download HD PNG'}
+            >
+              <Download className="w-4 h-4 flex-shrink-0 text-white" />
+              <span className="leading-tight text-center">{t.btnSavePng}</span>
+            </button>
 
-          {/* Share / Buffer Copy */}
-          <button
-            onClick={onCopyPNG}
-            className="w-full h-[52px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#FFD700]/30 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-lg shadow-[#FFD700]/20"
-          >
-            <Copy className="w-4 h-4 flex-shrink-0 text-slate-950" />
-            <span className="leading-tight text-center">{t.btnShare}</span>
-          </button>
+            {/* Export to Telegram (Telegram Brand Colors & Logo) */}
+            <button
+              type="button"
+              onClick={onExportTelegram}
+              className="w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-lg shadow-[#24A1DE]/25"
+              title={isUa ? 'Поділитися картою або опублікувати в Telegram-канал на вибір' : 'Share or publish map to Telegram channel'}
+            >
+              <Send className="w-4 h-4 flex-shrink-0 text-white fill-current -translate-x-0.5 translate-y-0.5" />
+              <span className="leading-tight text-center">{t.btnExportTelegram}</span>
+            </button>
+          </div>
 
-          {/* Undo */}
-          <button
-            onClick={onUndo}
-            className={`w-full h-[52px] px-2 font-bold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
-              theme === 'light'
-                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                : 'bg-[#181d28] border-white/5 hover:bg-white/5 text-slate-300 hover:text-white'
-            }`}
-          >
-            <RotateCcw className="w-4 h-4 flex-shrink-0" />
-            <span className="leading-tight text-center">{t.btnUndo}</span>
-          </button>
+          {/* Row 2: Share Buffer & Undo */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Share / Buffer Copy */}
+            <button
+              type="button"
+              onClick={onCopyPNG}
+              className="w-full h-[44px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#FFD700]/30 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-md shadow-[#FFD700]/15"
+              title={isUa ? 'Скопіювати зображення в буфер обміну' : 'Copy to clipboard'}
+            >
+              <Copy className="w-4 h-4 flex-shrink-0 text-slate-950" />
+              <span className="leading-tight text-center">{t.btnShare}</span>
+            </button>
 
-          {/* Clear All */}
+            {/* Undo */}
+            <button
+              type="button"
+              onClick={onUndo}
+              className={`w-full h-[44px] px-2 font-bold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
+                theme === 'light'
+                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                  : 'bg-[#181d28] border-white/5 hover:bg-white/5 text-slate-300 hover:text-white'
+              }`}
+              title={isUa ? 'Скасувати останню дію' : 'Undo last action'}
+            >
+              <RotateCcw className="w-4 h-4 flex-shrink-0" />
+              <span className="leading-tight text-center">{t.btnUndo}</span>
+            </button>
+          </div>
+
+          {/* Row 3: Clear All */}
           <button
+            type="button"
             onClick={onClearMarkers}
-            className="w-full h-[52px] px-2 bg-red-600 hover:bg-red-500 active:scale-[0.97] hover:scale-[1.01] text-white font-extrabold text-xs rounded-xl shadow-lg shadow-red-600/10 transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-red-500/10"
+            className="w-full h-[36px] px-2 bg-red-600/90 hover:bg-red-600 active:scale-[0.97] hover:scale-[1.01] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-red-500/20"
           >
-            <Trash2 className="w-4 h-4 flex-shrink-0" />
+            <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
             <span className="leading-tight text-center">{t.btnClearAll}</span>
           </button>
         </div>

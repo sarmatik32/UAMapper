@@ -185,38 +185,72 @@ export async function fetchActiveAlerts(customToken?: string, customApiUrl?: str
     if (response.ok) {
       const contentType = response.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
-        return await response.json();
+        const data = await response.json();
+        if (data && Array.isArray(data.alerts)) {
+          try {
+            localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(data));
+          } catch {
+            // storage quota
+          }
+          return data;
+        }
       }
       // If server returned index.html (SPA 404 rewrite)
       const text = await response.text();
       if (text.trim().startsWith('{')) {
-        return JSON.parse(text);
-      }
-      throw new Error('Endpoint returned HTML instead of JSON (API route not found on static hosting)');
-    }
-
-    if (response.status === 404 && endpoint === '/api/alerts') {
-      throw new Error('API_ROUTE_404');
-    }
-
-    const errJson = await response.json().catch(() => ({}));
-    throw new Error(errJson.error || `HTTP error ${response.status}`);
-  } catch (primaryErr: any) {
-    // 2. If /api/alerts failed on static hosting (e.g. GitHub Pages / unconfigured proxy), try direct alerts.in.ua query or user notice
-    if (primaryErr.message === 'API_ROUTE_404' || primaryErr.message?.includes('HTML instead of JSON') || primaryErr.name === 'TypeError') {
-      try {
-        const directUrl = `https://api.alerts.in.ua/v1/alerts/active.json?token=${encodeURIComponent(token)}`;
-        const directResp = await fetch(directUrl, { headers: { Accept: 'application/json' } });
-        if (directResp.ok) {
-          return await directResp.json();
+        const data = JSON.parse(text);
+        if (data && Array.isArray(data.alerts)) {
+          return data;
         }
-      } catch {
-        // Direct browser fetch blocked by CORS (expected for browser client on custom domain without serverless proxy)
       }
     }
-
-    throw primaryErr;
+  } catch (err) {
+    // Silently continue to fallback strategy
   }
+
+  // 2. If /api/alerts failed or returned non-JSON, try direct alerts.in.ua query if token is present
+  if (token) {
+    try {
+      const directUrl = `https://api.alerts.in.ua/v1/alerts/active.json?token=${encodeURIComponent(token)}`;
+      const directResp = await fetch(directUrl, { headers: { Accept: 'application/json' } });
+      if (directResp.ok) {
+        const data = await directResp.json();
+        if (data && Array.isArray(data.alerts)) {
+          try {
+            localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(data));
+          } catch {
+            // storage quota
+          }
+          return data;
+        }
+      }
+    } catch {
+      // Direct browser fetch blocked by CORS or network
+    }
+  }
+
+  // 3. Fallback to localStorage cache if previously saved
+  try {
+    const cached = localStorage.getItem('uamapper_last_cached_alerts');
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (parsed && Array.isArray(parsed.alerts)) {
+        return {
+          ...parsed,
+          cached: true,
+        };
+      }
+    }
+  } catch {
+    // Ignore JSON parse error
+  }
+
+  // 4. Return safe empty alerts structure
+  return {
+    alerts: [],
+    last_updated_at: new Date().toISOString(),
+    disclaimer: 'Alerts service currently offline or updating',
+  };
 }
 
 /**

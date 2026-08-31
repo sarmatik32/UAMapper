@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
+import { TelegramExportModal } from './components/TelegramExportModal';
 import { AirAlertsPanel } from './components/AirAlertsPanel';
 import { fetchActiveAlerts } from './utils/alertsService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
@@ -207,6 +208,98 @@ export default function App() {
       return next;
     });
   };
+
+  // Per-icon custom saved settings profile (color, size, rotation, label, zone, line endpoint, etc.)
+  const [iconPresets, setIconPresets] = useState<Record<string, IconPreset>>(() => {
+    const saved = localStorage.getItem('visicom_icon_presets');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') {
+          return parsed;
+        }
+      } catch (e) {}
+    }
+    return {
+      'uav-recon': {
+        color: '#ef4444',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+      },
+      'missile-cruise': {
+        color: '#ef4444',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 180,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+      },
+      'explosion': {
+        color: '#eab308',
+        borderColor: '#ffffff',
+        size: 36,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#eab308',
+        zoneSize: 80,
+      },
+    };
+  });
+
+  const handleUpdateIconPreset = useCallback((iconType: string, presetUpdates: Partial<IconPreset>) => {
+    if (!iconType) return;
+    setIconPresets((prev) => {
+      const existing = prev[iconType] || {};
+      const updated = {
+        ...existing,
+        ...presetUpdates,
+      };
+      const next = { ...prev, [iconType]: updated };
+      localStorage.setItem('visicom_icon_presets', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleResetIconPreset = useCallback((iconType: string) => {
+    if (!iconType) return;
+    setIconPresets((prev) => {
+      const next = { ...prev };
+      delete next[iconType];
+      localStorage.setItem('visicom_icon_presets', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const handleApplyPresetToAllIcons = useCallback((preset: Partial<IconPreset>) => {
+    setIconPresets((prev) => {
+      const next: Record<string, IconPreset> = { ...prev };
+      ICON_TYPES.forEach((t) => {
+        next[t.id] = {
+          ...(prev[t.id] || {}),
+          ...preset,
+        };
+      });
+      localStorage.setItem('visicom_icon_presets', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const [markers, setMarkers] = useState<CustomMarker[]>(() => {
     try {
@@ -478,6 +571,37 @@ export default function App() {
     localStorage.setItem('visicom_show_settlement_labels', 'true');
   };
 
+  // Telegram Export state & handler
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState(false);
+  const [telegramImageBlob, setTelegramImageBlob] = useState<Blob | null>(null);
+  const [isCapturingTelegram, setIsCapturingTelegram] = useState(false);
+
+  const captureTelegramImage = async () => {
+    setIsCapturingTelegram(true);
+    try {
+      if (mapRef.current?.getMapBlob) {
+        const blob = await mapRef.current.getMapBlob('export');
+        setTelegramImageBlob(blob);
+      }
+    } catch (e) {
+      console.error('Failed to capture map for Telegram', e);
+    } finally {
+      setIsCapturingTelegram(false);
+    }
+  };
+
+  const handleExportTelegram = () => {
+    setIsTelegramModalOpen(true);
+    if (mobileView !== 'map') {
+      setMobileView('map');
+      setTimeout(() => {
+        captureTelegramImage();
+      }, 450);
+    } else {
+      captureTelegramImage();
+    }
+  };
+
   const handleDeleteCustomSettlement = (id: string) => {
     setCustomSettlements((prev) => {
       let updated: Settlement[];
@@ -630,7 +754,7 @@ export default function App() {
       setActiveAlerts(data.alerts || []);
       setLastAlertsUpdated(data.last_updated_at);
     } catch (err) {
-      console.error('Failed to fetch active alerts:', err);
+      console.warn('Alerts update notice:', err);
     } finally {
       setIsLoadingAlerts(false);
     }
@@ -1091,7 +1215,16 @@ export default function App() {
         autoHighlightZone,
         visicomKey,
         customIconTitles,
+        iconPresets,
         activeStyle,
+        telegramBotToken: localStorage.getItem('visicom_tg_bot_token') || '',
+        telegramChannels: (() => {
+          try {
+            return JSON.parse(localStorage.getItem('visicom_telegram_channels') || '[]');
+          } catch {
+            return [];
+          }
+        })(),
       },
       data: {
         markers,
@@ -1238,9 +1371,19 @@ export default function App() {
             setCustomIconTitles(settings.customIconTitles);
             localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
           }
+          if (settings.iconPresets) {
+            setIconPresets(settings.iconPresets);
+            localStorage.setItem('visicom_icon_presets', JSON.stringify(settings.iconPresets));
+          }
           if (settings.activeStyle) {
             setActiveStyle(settings.activeStyle);
             localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
+          }
+          if (settings.telegramBotToken !== undefined) {
+            localStorage.setItem('visicom_tg_bot_token', settings.telegramBotToken);
+          }
+          if (Array.isArray(settings.telegramChannels)) {
+            localStorage.setItem('visicom_telegram_channels', JSON.stringify(settings.telegramChannels));
           }
         }
 
@@ -1684,6 +1827,7 @@ export default function App() {
                   mapRef.current?.exportPNG();
                 }
               }}
+              onExportTelegram={handleExportTelegram}
               onCopyPNG={() => {
                 if (mobileView !== 'map') {
                   setMobileView('map');
@@ -1696,6 +1840,10 @@ export default function App() {
               }}
               activeStyle={activeStyle}
               onUpdateActiveStyle={setActiveStyle}
+              iconPresets={iconPresets}
+              onUpdateIconPreset={handleUpdateIconPreset}
+              onResetIconPreset={handleResetIconPreset}
+              onApplyPresetToAllIcons={handleApplyPresetToAllIcons}
               watermarkType={watermarkType}
               onUpdateWatermarkType={setWatermarkType}
               watermarkText={watermarkText}
@@ -1848,6 +1996,20 @@ export default function App() {
         }}
         onDelete={handleDeleteCustomSettlement}
         language={language}
+      />
+
+      {/* Telegram Export & Share Modal */}
+      <TelegramExportModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+        imageBlob={telegramImageBlob}
+        isCapturing={isCapturingTelegram}
+        language={language}
+        theme={theme}
+        markers={markers}
+        drawnLines={drawnLines}
+        activeAlerts={activeAlerts}
+        onRefreshCapture={captureTelegramImage}
       />
     </div>
   );
