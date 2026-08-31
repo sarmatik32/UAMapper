@@ -2097,7 +2097,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       markerInstance.off('dragstart drag dragend');
 
       const hasEndPoint = endPointStyle && endPointStyle !== 'none';
-      const hasEndHandle = isSelected || (endPointStyle && endPointStyle !== 'none') || !!markerData.hasZone;
+      const hasEndHandle = isSelected || endPointStyle === 'explosion' || !!markerData.hasZone;
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
@@ -2283,32 +2283,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             iconSize: [size, size],
             iconAnchor: [size / 2, size / 2],
           });
-        } else if (endPointStyle === 'line') {
-          // Arrowhead pointing in the direction of the line
-          const arrowRotation = rotation % 360;
-          const arrowHtml = `
-            <div class="flex items-center justify-center" style="
-              width: 32px;
-              height: 32px;
-              cursor: ${isSelected ? 'move' : 'default'};
-              filter: drop-shadow(0 2px 5px rgba(0,0,0,0.6));
-            ">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style="transform: rotate(${arrowRotation}deg); overflow: visible;">
-                <path d="M12 2L3 21L12 16.5L21 21L12 2Z" fill="${polylineColor}" stroke="#ffffff" stroke-width="2.5" stroke-linejoin="round"/>
-                ${isSelected ? `
-                  <circle cx="12" cy="14" r="3" fill="#ffffff" />
-                ` : ''}
-              </svg>
-            </div>
-          `;
-          endMarkerIcon = L.divIcon({
-            className: 'custom-end-arrow',
-            html: arrowHtml,
-            iconSize: [32, 32],
-            iconAnchor: [16, 16],
-          });
         } else {
-          // endPointStyle === 'none', show white handle dot when selected/active for adjusting direction & zones
+          // 'line', 'none', or active zone handle - show clean control dot when selected/active for adjusting direction & zones (excluded from export/screenshots)
           endMarkerIcon = L.divIcon({
             className: 'custom-end-handle screenshot-exclude',
             html: `
