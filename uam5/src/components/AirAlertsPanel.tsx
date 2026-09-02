@@ -97,10 +97,10 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
   return (
     <div
       id="air-alerts-floating-panel"
-      className="absolute top-16 right-4 sm:right-16 z-[1000] w-80 md:w-96 max-w-[calc(100vw-32px)] bg-slate-950/80 backdrop-blur-2xl backdrop-saturate-150 text-white rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.5)] border border-white/15 overflow-hidden transition-all duration-300 flex flex-col max-h-[80vh] ring-1 ring-white/10"
+      className="absolute top-20 right-4 z-[1000] w-80 md:w-96 max-w-[calc(100vw-32px)] bg-slate-900/95 backdrop-blur-md text-white rounded-xl shadow-2xl border border-red-500/30 overflow-hidden transition-all duration-300 flex flex-col max-h-[80vh]"
     >
       {/* Header */}
-      <div className="p-3 bg-gradient-to-r from-red-950/70 via-slate-900/60 to-slate-900/70 backdrop-blur-xl border-b border-red-500/20 flex items-center justify-between">
+      <div className="p-3 bg-gradient-to-r from-red-950/80 via-slate-900/90 to-slate-900/80 border-b border-red-500/20 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="relative">
             <span className="flex h-3 w-3 relative">

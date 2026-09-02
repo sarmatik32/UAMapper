@@ -39,12 +39,10 @@ import {
   Radio,
   Bell,
   RefreshCw,
-  Type,
-  PanelRightClose
+  Type
 } from 'lucide-react';
 
 interface SidebarProps {
-  onClose?: () => void;
   markers: CustomMarker[];
   selectedMarkerId: string | null;
   onSelectMarker: (id: string | null) => void;
@@ -170,7 +168,6 @@ interface SidebarProps {
 
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  onClose,
   markers,
   selectedMarkerId,
   onSelectMarker,
@@ -812,28 +809,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
 
   return (
-    <div className={`modern-sidebar w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 backdrop-blur-3xl backdrop-saturate-200 transition-colors duration-300 ${
+    <div className={`modern-sidebar w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 ${
       theme === 'light'
-        ? 'bg-white/45 border-l border-white/60 text-slate-800 shadow-2xl'
-        : 'bg-[#0a0d14]/45 border-l border-white/10 text-slate-200 shadow-2xl'
+        ? 'bg-white border-l border-slate-200 text-slate-700 shadow-xl'
+        : 'bg-[#161a22] border-l border-[#262c38] text-slate-300 shadow-2xl'
     }`}>
       
       {/* Header section with App Branding */}
-      <div className={`p-2 sm:p-3 border-b flex justify-between items-center gap-1 sm:gap-2 backdrop-blur-2xl ${
-        theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
+      <div className={`p-2 sm:p-4 border-b flex justify-between items-center gap-1.5 sm:gap-3 ${
+        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/50 border-[#262c38]'
       }`}>
-        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
+        <div className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-md transition-all select-none flex-shrink min-w-0 ${
           theme === 'light' 
             ? 'bg-slate-950/90 border-slate-900 text-white' 
             : 'bg-white/90 border-white text-slate-950'
         }`}>
           <span 
-            className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
+            className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[13px] leading-none flex items-center whitespace-nowrap"
             style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
           >
             UA Mapper
           </span>
-          <svg className="w-3.5 h-3.5 sm:w-3.5 sm:h-3.5 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="telegram-watermark-sidebar" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#2AABEE" />
@@ -846,7 +843,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className={`inline-block w-[1px] h-2.5 self-center ${
             theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
           }`} />
-          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7px] sm:text-[7.5px] whitespace-nowrap ${
+          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7px] sm:text-[8px] whitespace-nowrap ${
             theme === 'light' ? 'text-white' : 'text-slate-950'
           }`}>
             BY @KRRIG_ALERTS
@@ -854,42 +851,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Top-Right utility buttons */}
-        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
           {/* Theme Toggle Button */}
           <button
             onClick={onToggleTheme}
             title={isUa ? 'Перемкнути світлу/темну тему' : 'Toggle light/dark theme'}
-            className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
             }`}
           >
-            {theme === 'light' ? <Moon className="w-3.5 h-3.5 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
+            {theme === 'light' ? <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />}
           </button>
 
           <button
             onClick={onToggleLanguage}
             title={isUa ? 'Switch to English' : 'Перемкнути на українську'}
-            className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
+              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
             }`}
           >
-            <Globe className="w-3.5 h-3.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
+            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
           </button>
-
-          {/* Hide Sidebar Button */}
-          {onClose && (
-            <button
-              onClick={onClose}
-              title={isUa ? 'Сховати бічну панель' : 'Hide sidebar panel'}
-              className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
-                theme === 'light' 
-                  ? 'bg-white/70 border-slate-200/80 text-slate-700 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm' 
-                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-red-400'
-              }`}
-            >
-              <PanelRightClose className="w-3.5 h-3.5" />
-            </button>
-          )}
         </div>
       </div>
 
@@ -897,18 +879,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
 
         {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
-        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl flex items-center justify-around transition-all ${
+        <div className={`p-2 rounded-2xl border shadow-sm flex items-center justify-around transition-all ${
           theme === 'light' 
-            ? 'border-slate-200/80 bg-white/60' 
-            : 'border-white/10 bg-white/[0.04]'
+            ? 'border-slate-200 bg-white' 
+            : 'border-[#262c38] bg-[#0e1117]/60'
         }`}>
           <button
             onClick={() => onUpdateShowSettlementLabels?.(!showSettlementLabels)}
             title={isUa ? `Назви населених пунктів: ${showSettlementLabels ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Settlement labels: ${showSettlementLabels ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               showSettlementLabels
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <Building2 className="w-4 h-4" />
@@ -917,10 +899,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
             title={isUa ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               autoHighlightZone
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <Layers className="w-4 h-4" />
@@ -929,10 +911,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onSetInteractionMode(interactionMode === 'redzone' ? 'draw' : 'redzone')}
             title={isUa ? 'Червоні зони' : 'Red Zone Mode'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               interactionMode === 'redzone'
                 ? 'bg-red-500 text-white font-bold shadow-md shadow-red-500/30 ring-2 ring-red-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-red-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-red-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
@@ -941,10 +923,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onSetInteractionMode(interactionMode === 'settlement' ? 'draw' : 'settlement')}
             title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               interactionMode === 'settlement'
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <MapPin className="w-4 h-4" />
@@ -953,10 +935,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onSetInteractionMode(interactionMode === 'line' ? 'draw' : 'line')}
             title={isUa ? 'Малювання ліній зі зглажуванням' : 'Draw Smoothed Lines'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               interactionMode === 'line'
                 ? 'bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-emerald-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-emerald-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <Spline className="w-4 h-4" />
@@ -965,10 +947,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onSetInteractionMode(interactionMode === 'measure' ? 'draw' : 'measure')}
             title={isUa ? 'Виміряти відстань' : 'Measure Distance'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
               interactionMode === 'measure'
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
-                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
             }`}
           >
             <Ruler className="w-4 h-4" />

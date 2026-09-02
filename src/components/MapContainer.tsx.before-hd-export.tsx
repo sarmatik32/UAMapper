@@ -3495,10 +3495,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-72 sm:w-88 flex flex-col gap-2">
             
             {/* Search Input Bar */}
-            <form onSubmit={handleFormSubmitSearch} className={`relative flex items-center border rounded-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.28)] backdrop-blur-2xl backdrop-saturate-150 transition-all ${
+            <form onSubmit={handleFormSubmitSearch} className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
               theme === 'light' 
-                ? 'bg-white/70 border-white/80 text-slate-800 ring-1 ring-black/5' 
-                : 'bg-slate-900/65 border-white/15 text-slate-100 ring-1 ring-white/10'
+                ? 'bg-white/95 border-slate-200 text-slate-800' 
+                : 'bg-slate-950/90 border-white/10 text-slate-200'
             }`}>
               <Search className="absolute left-3.5 w-4 h-4 text-slate-400" />
               <input
@@ -3530,11 +3530,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             <div className="space-y-2 py-1 max-h-36 overflow-y-auto pr-1">
               {/* Urban Districts of Kryvyi Rih (Circular Buttons with Initial Letter) */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider px-0.5">
-                  <span className="text-slate-900 dark:text-slate-100 uppercase drop-shadow-xs">
-                    {language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-0.5">
+                  <span>{language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}</span>
+                  <span className="text-[9px] font-normal text-slate-400 dark:text-slate-500">
                     {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
                   </span>
                 </div>
@@ -3552,12 +3550,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                         onClick={() => !isLoading && handleToggleDistrict(dist)}
                         disabled={isLoading}
                         title={dist.fullName || dist.label}
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-black text-xs sm:text-sm backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center justify-center relative shadow-md active:scale-95 ${
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer flex items-center justify-center relative shadow-sm ${
                           isHighlighted
-                            ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/40 ring-2 ring-red-400 font-black scale-105'
+                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-md ring-2 ring-red-400/80 scale-105'
                             : theme === 'light'
-                              ? 'bg-white hover:bg-slate-100 text-slate-950 border border-slate-300/90 font-black shadow-sm'
-                              : 'bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 font-black shadow-sm'
+                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80 hover:border-slate-400'
+                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-white/10 hover:border-white/20'
                         }`}
                       >
                         {isLoading ? (
@@ -3580,12 +3578,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                     onToggleHromadaBoundaries?.(!showHromadaBoundaries);
                   }}
                   title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
-                  className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                  className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
                     showHromadaBoundaries
-                      ? 'bg-slate-800 hover:bg-slate-900 border-slate-500 text-white shadow-md ring-1 ring-slate-400 font-black'
+                      ? 'bg-slate-700 hover:bg-slate-800 border-slate-600 text-white shadow-sm ring-1 ring-slate-500/50 font-extrabold'
                       : theme === 'light'
-                        ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
-                        : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
+                        : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-400'
                   }`}
                 >
                   <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
@@ -3606,14 +3604,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                         onClick={() => !isLoading && handleToggleDistrict(dist)}
                         disabled={isLoading}
                         title={dist.fullName || dist.label}
-                        className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
                           isHighlighted
-                            ? 'bg-red-600 hover:bg-red-700 border-red-400 text-white shadow-lg ring-2 ring-red-400/60 font-black'
+                            ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm ring-1 ring-red-400/50'
                             : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
-                              ? 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-white font-black shadow-md'
+                              ? 'bg-blue-500/15 hover:bg-blue-500/25 border-blue-500/30 text-blue-600 dark:text-blue-300 font-extrabold'
                               : theme === 'light'
-                                ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
-                                : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
                         }`}
                       >
                         {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
@@ -3641,10 +3639,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
             {/* Suggestions Dropdown */}
             {showDropdown && (searchQuery.trim().length >= 2 || isSearching || searchResults.length > 0) && (
-              <div className={`border rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl backdrop-saturate-150 max-h-64 overflow-y-auto z-30 transition-all ${
+              <div className={`border rounded-2xl shadow-2xl max-h-64 overflow-y-auto z-30 transition-all ${
                 theme === 'light' 
-                  ? 'bg-white/80 border-white/80 text-slate-800 ring-1 ring-black/5' 
-                  : 'bg-slate-950/80 border-white/15 text-slate-200 ring-1 ring-white/10'
+                  ? 'bg-white/95 border-slate-200 text-slate-800' 
+                  : 'bg-slate-950/95 border-white/10 text-slate-200'
               }`}>
                 {/* Quick direct zone action */}
                 {searchQuery.trim().length >= 2 && (
@@ -3711,7 +3709,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                               className="px-2 py-1 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                               title={language === 'uk' ? 'Виділити зону на карті' : 'Highlight zone on map'}
                             >
-                              <Plus className="w-3.5 h-3.5" />
+                              <Plus className="w-3 h-3" />
                               <span>{language === 'uk' ? 'Виділити' : 'Highlight'}</span>
                             </button>
 
@@ -3743,7 +3741,59 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               </div>
             )}
 
-            {/* List of active highlighted areas removed as per user request */}
+            {/* List of active highlighted areas */}
+            {searchedAreas.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-1">
+                {searchedAreas.map((area) => {
+                  const isSavedInCustom = customQuickZones.some(
+                    (q) => q.label.toLowerCase() === area.name.trim().toLowerCase() || q.fullName.toLowerCase() === area.name.trim().toLowerCase()
+                  );
+                  return (
+                    <div
+                      key={area.id}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border bg-red-500/10 border-red-500/30 text-red-400 shadow-sm"
+                    >
+                      <span>{area.name}</span>
+                      
+                      {/* Button to add active zone to favorites */}
+                      <button
+                        type="button"
+                        onClick={() => addZoneToQuickButtons(area.name, area.geojson, area.lat, area.lon)}
+                        disabled={isSavedInCustom}
+                        title={isSavedInCustom ? (language === 'uk' ? 'Уже в обраному' : 'Already in favorites') : (language === 'uk' ? 'Додати в обране' : 'Add to favorites')}
+                        className={`p-0.5 rounded transition-colors ${
+                          isSavedInCustom ? 'text-amber-400 cursor-default' : 'text-slate-400 hover:text-amber-400 cursor-pointer'
+                        }`}
+                      >
+                        <Star className={`w-2.5 h-2.5 ${isSavedInCustom ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      </button>
+
+                      <button
+                        onClick={() => handleRemoveArea(area.id)}
+                        className="hover:text-red-200 transition-colors cursor-pointer"
+                        title={language === 'uk' ? 'Прибрати виділення' : 'Remove highlight'}
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+                
+                {/* Clear All pill */}
+                {searchedAreas.length > 1 && (
+                  <button
+                    onClick={handleClearAllAreas}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
+                        : 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-300'
+                    }`}
+                  >
+                    {language === 'uk' ? 'Очистити все' : 'Clear all'}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 

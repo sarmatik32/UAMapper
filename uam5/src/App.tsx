@@ -8,7 +8,7 @@ import { AirAlertsPanel } from './components/AirAlertsPanel';
 import { fetchActiveAlerts } from './utils/alertsService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
+import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
@@ -856,33 +856,6 @@ export default function App() {
     }
   }, [interactionMode, selectedLineId]);
   const [mobileView, setMobileView] = useState<'map' | 'sidebar'>('map');
-  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
-    const saved = localStorage.getItem('uamapper_sidebar_open');
-    return saved !== null ? saved === 'true' : true;
-  });
-
-  const handleToggleSidebar = () => {
-    setIsSidebarOpen((prev) => {
-      const next = !prev;
-      localStorage.setItem('uamapper_sidebar_open', String(next));
-      return next;
-    });
-  };
-
-  const [isQuickCopied, setIsQuickCopied] = useState<boolean>(false);
-
-  const handleQuickCopyBuffer = () => {
-    if (mobileView !== 'map') {
-      setMobileView('map');
-      setTimeout(() => {
-        mapRef.current?.copyPNG();
-      }, 450);
-    } else {
-      mapRef.current?.copyPNG();
-    }
-    setIsQuickCopied(true);
-    setTimeout(() => setIsQuickCopied(false), 2000);
-  };
 
   const [autoHighlightZone, setAutoHighlightZone] = useState<boolean>(() => {
     return localStorage.getItem('visicom_auto_highlight_zone') === 'true';
@@ -1607,8 +1580,8 @@ export default function App() {
             />
           )}
 
-          {/* Floating Top-Right Quick Air Alerts Badge / Button on Map (Desktop & Tablet) - Shifted left to right-16 to avoid Leaflet zoom controls */}
-          <div className="hidden sm:flex absolute top-3.5 right-16 z-30 items-center gap-2">
+          {/* Floating Top-Right Quick Air Alerts Badge / Button on Map (Desktop & Tablet) */}
+          <div className="hidden sm:flex absolute top-4 right-4 z-30 items-center gap-2">
             <button
               onClick={() => {
                 setShowAirAlertsPanel((prev) => {
@@ -1617,14 +1590,12 @@ export default function App() {
                   return next;
                 });
               }}
-              className={`px-3.5 py-1.5 rounded-full border shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] backdrop-blur-2xl backdrop-saturate-150 flex items-center gap-2 text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+              className={`px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-xl flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
                 showAirAlertsPanel
-                  ? 'bg-red-600/90 text-white border-red-400/80 shadow-red-500/30'
+                  ? 'bg-red-600 text-white border-red-400 shadow-red-500/30'
                   : activeAlerts.length > 0
-                  ? 'bg-slate-900/75 hover:bg-slate-900/90 border-red-500/50 text-red-300 ring-1 ring-red-500/30'
-                  : theme === 'light'
-                  ? 'bg-white/70 hover:bg-white/90 border-white/80 text-slate-700 ring-1 ring-black/5'
-                  : 'bg-slate-900/70 hover:bg-slate-900/90 border-white/15 text-slate-200 ring-1 ring-white/10'
+                  ? 'bg-slate-900/90 hover:bg-slate-900 border-red-500/50 text-red-300'
+                  : 'bg-slate-900/80 hover:bg-slate-900 border-white/10 text-slate-300'
               }`}
               title={language === 'uk' ? 'Панель повітряних тривог' : 'Air Raid Alerts Panel'}
             >
@@ -1640,7 +1611,7 @@ export default function App() {
                   ? 'bg-white/20 text-white'
                   : activeAlerts.length > 0
                   ? 'bg-red-500 text-white'
-                  : 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-emerald-500/20 text-emerald-300'
               }`}>
                 {activeAlerts.length}
               </span>
@@ -1845,79 +1816,12 @@ export default function App() {
             </div>
           )}
 
-          {/* Summon / Toggle Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: vertical center of window) */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-2 sm:right-3.5 z-[999] flex flex-col items-end gap-2 pointer-events-auto">
-            <button
-              id="summon-sidebar-toggle-btn"
-              onClick={() => {
-                if (window.innerWidth < 768) {
-                  setMobileView(mobileView === 'sidebar' ? 'map' : 'sidebar');
-                } else {
-                  handleToggleSidebar();
-                }
-              }}
-              title={(!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768))
-                ? (language === 'uk' ? 'Відкрити панель налаштувань' : 'Open settings panel')
-                : (language === 'uk' ? 'Сховати панель' : 'Hide panel')}
-              className={`px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.35)] flex items-center gap-1.5 sm:gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
-                (!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768))
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-400/80 ring-2 ring-blue-500/40 shadow-blue-500/35 hover:scale-105'
-                  : theme === 'light'
-                    ? 'bg-white/85 hover:bg-white text-slate-800 border-white/90 shadow-md'
-                    : 'bg-slate-900/85 hover:bg-slate-800 text-slate-100 border-white/15 shadow-md'
-              }`}
-            >
-              {(!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768)) ? (
-                <>
-                  <PanelRightOpen className="w-4 h-4 text-white shrink-0" />
-                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Панель' : 'Sidebar'}</span>
-                </>
-              ) : (
-                <>
-                  <PanelRightClose className="w-4 h-4 text-slate-400 hover:text-slate-200 shrink-0" />
-                  <span className="hidden sm:inline font-bold">{language === 'uk' ? 'Сховати' : 'Hide'}</span>
-                </>
-              )}
-            </button>
-
-            {/* Quick Buffer / Copy Map to Clipboard Button */}
-            <button
-              id="quick-buffer-copy-btn"
-              onClick={handleQuickCopyBuffer}
-              title={language === 'uk' ? 'Скопіювати карту в буфер обміну (БУФЕР)' : 'Copy map to clipboard (BUFFER)'}
-              className={`px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.35)] flex items-center gap-1.5 sm:gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
-                isQuickCopied
-                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-400/50 shadow-emerald-500/40 scale-105'
-                  : 'bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 border-[#FFD700]/50 shadow-[#FFD700]/25 hover:scale-105'
-              }`}
-            >
-              {isQuickCopied ? (
-                <>
-                  <Check className="w-4 h-4 text-white shrink-0 animate-bounce" />
-                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Скопійовано!' : 'Copied!'}</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 text-slate-950 shrink-0" />
-                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Буфер' : 'Buffer'}</span>
-                </>
-              )}
-            </button>
-          </div>
-
         </div>
 
         {/* Sidebar Controls (Rendered SECOND to be on the right, wrapped for full responsiveness) */}
-        <div className={`transition-all duration-300 ${
-          mobileView === 'sidebar' 
-            ? 'w-full h-full flex flex-col z-40 fixed inset-0 md:relative' 
-            : isSidebarOpen 
-              ? 'hidden md:flex md:w-80 md:h-full flex-col' 
-              : 'hidden'
-        }`}>
+        <div className={`transition-all duration-300 ${mobileView === 'sidebar' ? 'w-full h-full flex flex-col' : 'hidden md:flex md:w-80 md:h-full flex-col'}`}>
           <div className="flex-1 min-h-0 overflow-hidden">
             <Sidebar
-              onClose={handleToggleSidebar}
               markers={markers}
               selectedMarkerId={selectedMarkerId}
               onSelectMarker={handleSelectMarker}

@@ -92,26 +92,26 @@ html, body {
   z-index: 2 !important;
 }
 
-/* Override default Leaflet controls to match iOS Frosted Glass style */
+/* Override default Leaflet controls to match Frosted Glass style */
 .leaflet-bar {
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  background: rgba(15, 23, 42, 0.65) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border-radius: 14px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background: rgba(15, 23, 42, 0.6) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border-radius: 12px !important;
   overflow: hidden !important;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35) !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
 }
 
 .leaflet-bar a {
   background: transparent !important;
-  color: #e2e8f0 !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #cbd5e1 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
   transition: all 0.2s !important;
 }
 
 .leaflet-bar a:hover {
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
 }
 
@@ -124,29 +124,29 @@ html, body {
 /* Override default Leaflet popups */
 .leaflet-popup-content-wrapper {
   background: rgba(15, 23, 42, 0.8) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
   color: #f1f5f9 !important;
-  border-radius: 18px !important;
-  box-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.45) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
   padding: 6px;
 }
 
 .leaflet-popup-tip {
   background: rgba(15, 23, 42, 0.8) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.15) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: none !important;
 }
 
 .leaflet-container .leaflet-control-attribution {
   background: rgba(15, 23, 42, 0.75) !important;
-  backdrop-filter: blur(12px) !important;
+  backdrop-filter: blur(8px) !important;
   color: #94a3b8 !important;
   border-top-left-radius: 8px;
-  border-left: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.05) !important;
   font-size: 9px !important;
   padding: 2px 8px !important;
 }
@@ -183,7 +183,7 @@ html, body {
 }
 
 
-/* Modern iOS Frosted Glass control-panel skin */
+/* Modern control-panel skin */
 .modern-sidebar {
   --panel-radius: 18px;
   --control-radius: 12px;
@@ -193,28 +193,23 @@ html, body {
 }
 .modern-sidebar .flex-1.overflow-y-auto > div {
   border-radius: var(--panel-radius) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(2, 6, 23, 0.08);
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 .modern-sidebar .flex-1.overflow-y-auto > div:hover {
-  border-color: rgba(59, 130, 246, 0.35) !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  border-color: rgba(59, 130, 246, 0.22) !important;
 }
 .modern-sidebar input:not([type="checkbox"]):not([type="range"]),
 .modern-sidebar select,
 .modern-sidebar textarea {
   border-radius: var(--control-radius) !important;
   min-height: 34px;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
   transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
 }
 .modern-sidebar input:not([type="checkbox"]):not([type="range"]):focus,
 .modern-sidebar select:focus,
 .modern-sidebar textarea:focus {
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
 }
 .modern-sidebar button {
   -webkit-tap-highlight-color: transparent;
@@ -222,15 +217,4 @@ html, body {
 .modern-sidebar .grid button,
 .modern-sidebar .space-y-1\.5 > button {
   border-radius: var(--control-radius);
-}
-
-/* Permanent highlighted area map tooltip/label styling */
-.leaflet-tooltip.highlighted-area-map-label {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-}
-.leaflet-tooltip.highlighted-area-map-label::before {
-  display: none !important;
 }

@@ -1,0 +1,6 @@
+{
+  "name": "UAMapper by @krrig_alerts",
+  "description": "Інтерактивна карта України з відображенням повітряних тривог у реальному часі від alerts.in.ua, налаштуванням маркерів, контурів областей та районів, шарами та водяними знаками.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
