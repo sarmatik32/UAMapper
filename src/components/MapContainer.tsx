@@ -16,6 +16,7 @@ export interface MapContainerRef {
   getMapBlob: (mode?: 'export' | 'clipboard') => Promise<Blob>;
   centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
   highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
+  clearSearchedAreas: () => void;
 }
 
 interface SearchedArea {
@@ -163,6 +164,7 @@ interface MapContainerProps {
   alertsOpacity?: number;
   alertsStrokeWidth?: number;
   onAlertClick?: (alert: AirAlert, lat?: number, lng?: number) => void;
+  clearAllTrigger?: number;
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -229,6 +231,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   alertsOpacity = 0.30,
   alertsStrokeWidth = 2.5,
   onAlertClick,
+  clearAllTrigger,
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -1139,9 +1142,44 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setSearchedAreas((prev) => prev.filter((area) => area.id !== id));
   };
 
-  const handleClearAllAreas = () => {
+  const handleClearAllAreas = useCallback(() => {
+    // 1. Immediately remove all Leaflet geojson polygon layers
+    Object.keys(geojsonLayersRef.current).forEach((id) => {
+      try {
+        geojsonLayersRef.current[id]?.layer?.remove();
+      } catch (err) {
+        console.error('Error removing geojson layer:', err);
+      }
+      delete geojsonLayersRef.current[id];
+    });
+
+    // 2. Clear state for searched & highlighted areas
     setSearchedAreas([]);
-  };
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+    setMeasurePoints([]);
+    setDraftLinePoints([]);
+
+    // 3. Remove from persistence
+    try {
+      localStorage.removeItem('visicom_searched_areas');
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 4. Close any open leaflet popups
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.closePopup();
+    }
+  }, []);
+
+  // Listen to clearAllTrigger from App.tsx ("Очистити все")
+  useEffect(() => {
+    if (clearAllTrigger && clearAllTrigger > 0) {
+      handleClearAllAreas();
+    }
+  }, [clearAllTrigger, handleClearAllAreas]);
 
   const formatDisplayName = (fullName: string) => {
     const parts = fullName.split(',');
@@ -3438,6 +3476,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     },
     highlightZoneAt: (lat: number, lng: number, markerId?: string) => {
       handleAutoHighlightZoneAt(lat, lng, markerId);
+    },
+    clearSearchedAreas: () => {
+      handleClearAllAreas();
     }
   }));
 
@@ -3534,9 +3575,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                   <span className="text-slate-900 dark:text-slate-100 uppercase drop-shadow-xs">
                     {language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}
                   </span>
-                  <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-                    {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
-                  </span>
+                  {searchedAreas.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={handleClearAllAreas}
+                      className="px-2 py-0.5 rounded-md bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer"
+                      title={language === 'uk' ? 'Прибрати всі виділені зони та населені пункти' : 'Clear all highlighted zones & settlements'}
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      <span>{language === 'uk' ? `Очистити виділені (${searchedAreas.length})` : `Clear (${searchedAreas.length})`}</span>
+                    </button>
+                  ) : (
+                    <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">
+                      {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {QUICK_DISTRICTS.filter((d) => d.category === 'urban_district').map((dist) => {

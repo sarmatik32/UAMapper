@@ -234,3 +234,25 @@ html, body {
 .leaflet-tooltip.highlighted-area-map-label::before {
   display: none !important;
 }
+
+/* Air Alert Radar Markers and Tooltips */
+.air-alert-siren-marker {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-tooltip.air-alert-tooltip {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 8px !important;
+  padding: 4px 8px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+  color: #f8fafc !important;
+  font-size: 11px !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.leaflet-tooltip.air-alert-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.94) !important;
+}

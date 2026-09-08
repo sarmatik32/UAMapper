@@ -62,10 +62,18 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
   onSelectAlert,
 }) => {
   const [isMinimized, setIsMinimized] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'oblast' | 'raion' | 'city'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'red' | 'yellow' | 'oblast' | 'raion' | 'city'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSettings, setShowSettings] = useState(false);
 
+  const redCount = useMemo(
+    () => alerts.filter((a) => getAlertVisuals(a).level === 'red').length,
+    [alerts]
+  );
+  const yellowCount = useMemo(
+    () => alerts.filter((a) => getAlertVisuals(a).level === 'yellow').length,
+    [alerts]
+  );
   const oblastCount = useMemo(() => alerts.filter((a) => a.location_type === 'oblast').length, [alerts]);
   const raionCount = useMemo(() => alerts.filter((a) => a.location_type === 'raion').length, [alerts]);
   const cityCount = useMemo(
@@ -75,7 +83,11 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
 
   const filteredAlerts = useMemo(() => {
     return alerts.filter((alert) => {
-      // Tab filter
+      // Threat level filter
+      if (activeTab === 'red' && getAlertVisuals(alert).level !== 'red') return false;
+      if (activeTab === 'yellow' && getAlertVisuals(alert).level !== 'yellow') return false;
+
+      // Location type filter
       if (activeTab === 'oblast' && alert.location_type !== 'oblast') return false;
       if (activeTab === 'raion' && alert.location_type !== 'raion') return false;
       if (activeTab === 'city' && alert.location_type !== 'city' && alert.location_type !== 'hromada')
@@ -87,7 +99,10 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
         const titleMatch = alert.location_title.toLowerCase().includes(q);
         const oblMatch = alert.location_oblast ? alert.location_oblast.toLowerCase().includes(q) : false;
         const notesMatch = alert.notes ? alert.notes.toLowerCase().includes(q) : false;
-        return titleMatch || oblMatch || notesMatch;
+        const threatMatch = (alert.threats || []).some(
+          (t) => (t.source_message && t.source_message.toLowerCase().includes(q)) || (t.threat_type && t.threat_type.toLowerCase().includes(q))
+        );
+        return titleMatch || oblMatch || notesMatch || threatMatch;
       }
 
       return true;
@@ -112,9 +127,25 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
             <ShieldAlert className="w-4 h-4 text-red-400" />
             <span>{language === 'uk' ? 'Повітряні Тривоги' : 'Air Raid Alerts'}</span>
           </div>
-          <span className="px-1.5 py-0.5 text-xs font-mono font-bold bg-red-600/60 text-white rounded-full border border-red-400/40">
-            {alerts.length}
-          </span>
+          <div className="flex items-center gap-1 text-[11px] font-mono">
+            {redCount > 0 && (
+              <span className="px-1.5 py-0.5 font-bold bg-red-600/70 text-white rounded-full border border-red-400/40 flex items-center gap-0.5" title={language === 'uk' ? 'Червоний рівень (Ракетна небезпека)' : 'Red alert level (Missile/Air raid)'}>
+                <span className="text-[10px]">🔴</span>
+                <span>{redCount}</span>
+              </span>
+            )}
+            {yellowCount > 0 && (
+              <span className="px-1.5 py-0.5 font-bold bg-amber-600/70 text-amber-100 rounded-full border border-amber-400/40 flex items-center gap-0.5" title={language === 'uk' ? 'Жовтий рівень (Шахеди / Дрони)' : 'Yellow alert level (Drones/Shahed)'}>
+                <span className="text-[10px]">🟡</span>
+                <span>{yellowCount}</span>
+              </span>
+            )}
+            {redCount === 0 && yellowCount === 0 && (
+              <span className="px-1.5 py-0.5 font-mono font-bold bg-slate-700/60 text-slate-300 rounded-full border border-slate-600/40">
+                {alerts.length}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -262,47 +293,76 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex gap-1 bg-slate-950/60 p-1 rounded-lg text-[11px] font-medium">
-              <button
-                onClick={() => setActiveTab('all')}
-                className={`flex-1 py-1 px-1.5 rounded text-center transition-all ${
-                  activeTab === 'all'
-                    ? 'bg-red-600 text-white font-bold shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {language === 'uk' ? 'Всі' : 'All'} ({alerts.length})
-              </button>
-              <button
-                onClick={() => setActiveTab('oblast')}
-                className={`flex-1 py-1 px-1.5 rounded text-center transition-all ${
-                  activeTab === 'oblast'
-                    ? 'bg-red-600 text-white font-bold shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {language === 'uk' ? 'Обл' : 'Obl'} ({oblastCount})
-              </button>
-              <button
-                onClick={() => setActiveTab('raion')}
-                className={`flex-1 py-1 px-1.5 rounded text-center transition-all ${
-                  activeTab === 'raion'
-                    ? 'bg-red-600 text-white font-bold shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {language === 'uk' ? 'Райони' : 'Dist'} ({raionCount})
-              </button>
-              <button
-                onClick={() => setActiveTab('city')}
-                className={`flex-1 py-1 px-1.5 rounded text-center transition-all ${
-                  activeTab === 'city'
-                    ? 'bg-red-600 text-white font-bold shadow'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {language === 'uk' ? 'Міста' : 'City'} ({cityCount})
-              </button>
+            <div className="flex flex-col gap-1 bg-slate-950/60 p-1 rounded-lg text-[11px] font-medium">
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setActiveTab('all')}
+                  className={`flex-1 py-1 px-1.5 rounded text-center transition-all ${
+                    activeTab === 'all'
+                      ? 'bg-slate-700 text-white font-bold shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {language === 'uk' ? 'Всі' : 'All'} ({alerts.length})
+                </button>
+                <button
+                  onClick={() => setActiveTab('red')}
+                  className={`flex-1 py-1 px-1.5 rounded text-center transition-all flex items-center justify-center gap-1 ${
+                    activeTab === 'red'
+                      ? 'bg-red-600 text-white font-bold shadow'
+                      : 'text-red-400 hover:text-red-300'
+                  }`}
+                >
+                  <span>🔴</span>
+                  <span>{language === 'uk' ? 'Червоні' : 'Red'}</span>
+                  <span>({redCount})</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('yellow')}
+                  className={`flex-1 py-1 px-1.5 rounded text-center transition-all flex items-center justify-center gap-1 ${
+                    activeTab === 'yellow'
+                      ? 'bg-amber-600 text-white font-bold shadow'
+                      : 'text-amber-400 hover:text-amber-300'
+                  }`}
+                >
+                  <span>🟡</span>
+                  <span>{language === 'uk' ? 'Жовті' : 'Yellow'}</span>
+                  <span>({yellowCount})</span>
+                </button>
+              </div>
+
+              <div className="flex gap-1 border-t border-slate-800/80 pt-1 text-[10px]">
+                <button
+                  onClick={() => setActiveTab('oblast')}
+                  className={`flex-1 py-0.5 px-1 rounded text-center transition-all ${
+                    activeTab === 'oblast'
+                      ? 'bg-slate-700 text-white font-bold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {language === 'uk' ? 'Області' : 'Obl'} ({oblastCount})
+                </button>
+                <button
+                  onClick={() => setActiveTab('raion')}
+                  className={`flex-1 py-0.5 px-1 rounded text-center transition-all ${
+                    activeTab === 'raion'
+                      ? 'bg-slate-700 text-white font-bold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {language === 'uk' ? 'Райони' : 'Dist'} ({raionCount})
+                </button>
+                <button
+                  onClick={() => setActiveTab('city')}
+                  className={`flex-1 py-0.5 px-1 rounded text-center transition-all ${
+                    activeTab === 'city'
+                      ? 'bg-slate-700 text-white font-bold'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {language === 'uk' ? 'Міста' : 'City'} ({cityCount})
+                </button>
+              </div>
             </div>
           </div>
 
@@ -326,9 +386,10 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
               </div>
             ) : (
               filteredAlerts.map((alert) => {
-                const visuals = getAlertVisuals(alert.alert_type, language);
+                const visuals = getAlertVisuals(alert, language);
                 const duration = formatAlertDuration(alert.started_at, language);
                 const time = formatTimeOnly(alert.started_at);
+                const isYellow = visuals.level === 'yellow';
 
                 return (
                   <div
@@ -339,8 +400,22 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
                     <div className="space-y-0.5 min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm shrink-0">{visuals.icon}</span>
-                        <span className="font-bold text-slate-100 group-hover:text-red-400 truncate">
+                        <span
+                          className={`font-bold truncate ${
+                            isYellow ? 'text-amber-200 group-hover:text-amber-400' : 'text-slate-100 group-hover:text-red-400'
+                          }`}
+                        >
                           {alert.location_title}
+                        </span>
+                        <span
+                          className="ml-auto px-1.5 py-0.2 rounded text-[9px] font-bold shrink-0 uppercase tracking-wider"
+                          style={{
+                            backgroundColor: `${visuals.fillColor}25`,
+                            color: visuals.color,
+                            border: `1px solid ${visuals.color}40`,
+                          }}
+                        >
+                          {visuals.levelTitle}
                         </span>
                       </div>
 
@@ -351,26 +426,33 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
                         </div>
                       )}
 
-                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                      <div className="flex items-center flex-wrap gap-1.5 text-[10px] text-slate-400 pt-0.5">
                         <span className="flex items-center gap-0.5 font-mono">
                           <Clock className="w-2.5 h-2.5 text-slate-500" />
                           {time}
                         </span>
                         <span className="font-mono font-medium text-amber-400">({duration})</span>
                         <span
-                          className="px-1 py-0.2 rounded text-[9px] uppercase font-bold"
+                          className="px-1.5 py-0.2 rounded text-[9px] font-medium truncate max-w-[180px]"
                           style={{
-                            backgroundColor: `${visuals.fillColor}33`,
+                            backgroundColor: `${visuals.fillColor}20`,
                             color: visuals.color,
                           }}
                         >
                           {visuals.title}
                         </span>
                       </div>
+
+                      {visuals.sourceMessage && visuals.sourceMessage !== alert.location_title && (
+                        <div className="text-[10px] text-slate-400 italic pt-0.5 truncate flex items-center gap-1">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: visuals.color }}></span>
+                          <span className="truncate">{visuals.sourceMessage}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="shrink-0 pt-1">
-                      <span className="p-1 rounded bg-slate-800 text-slate-400 group-hover:bg-red-600 group-hover:text-white transition-colors">
+                      <span className="p-1 rounded bg-slate-800 text-slate-400 group-hover:bg-slate-700 group-hover:text-white transition-colors">
                         <MapPin className="w-3 h-3" />
                       </span>
                     </div>

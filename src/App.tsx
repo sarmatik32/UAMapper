@@ -190,6 +190,7 @@ export function getDefaultIconName(iconType: string, language: Language): string
 
 export default function App() {
   const mapRef = useRef<MapContainerRef | null>(null);
+  const [clearAllTrigger, setClearAllTrigger] = useState<number>(0);
 
   const [customIconTitles, setCustomIconTitles] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('visicom_custom_icon_titles');
@@ -1217,13 +1218,16 @@ export default function App() {
     }
   };
 
-  // Handler: Clear all
+  // Handler: Clear all ("Очистити все" - прибирає маркери, лінії та виділені н.п./зони через пошук)
   const handleClearMarkers = () => {
     setMarkers([]);
     setSelectedMarkerId(null);
     setDrawnLines([]);
     setSelectedLineId(null);
     localStorage.removeItem('visicom_drawn_lines');
+    localStorage.removeItem('visicom_searched_areas');
+    setClearAllTrigger((prev) => prev + 1);
+    mapRef.current?.clearSearchedAreas?.();
   };
 
   // Handler: Toggle App Language
@@ -1551,6 +1555,7 @@ export default function App() {
             alertsOpacity={alertsOpacity}
             alertsStrokeWidth={alertsStrokeWidth}
             onAlertClick={handleSelectAlert}
+            clearAllTrigger={clearAllTrigger}
           />
 
           {/* Floating Air Alerts Widget Panel */}

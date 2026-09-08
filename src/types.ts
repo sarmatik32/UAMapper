@@ -61,7 +61,22 @@ export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settleme
 
 export type LineEndpointType = 'none' | 'arrow' | 'dot' | 'fade' | 'explosion' | 'custom_icon';
 
-export type AlertType = 'air_raid' | 'artillery_shelling' | 'urban_fights' | 'chemical' | 'nuclear_threat' | string;
+export type AlertType =
+  | 'air_raid'
+  | 'artillery_shelling'
+  | 'urban_fights'
+  | 'chemical'
+  | 'nuclear'
+  | 'nuclear_threat'
+  | 'drones'
+  | string;
+
+export interface ThreatItem {
+  threat_type?: string;
+  level?: 'yellow' | 'red' | string;
+  started_at?: string;
+  source_message?: string;
+}
 
 export interface AirAlert {
   id: number | string;
@@ -71,10 +86,15 @@ export interface AirAlert {
   finished_at?: string | null;
   updated_at?: string;
   alert_type: AlertType;
+  alert_level?: 'red' | 'yellow' | string;
+  threats?: ThreatItem[];
   location_oblast?: string;
   location_raion?: string;
   location_uid?: string | number;
   notes?: string | null;
+  country?: string | null;
+  location_title_en?: string;
+  location_oblast_uid?: number;
   calculated_duration?: string;
 }
 
