@@ -1,7 +1,12 @@
 import L from '../leaflet-fix';
 
-export function createExplosionIcon(color: string, sizeMultiplier = 1) {
-  const size = Math.max(32, Math.min(64, 28 + sizeMultiplier * 2));
+export function createExplosionIcon(color: string, sizeMultiplier = 1, explicitSize?: number) {
+  const size = explicitSize !== undefined && explicitSize > 0
+    ? Math.max(16, Math.min(120, explicitSize))
+    : sizeMultiplier > 15
+      ? Math.max(16, Math.min(120, sizeMultiplier))
+      : Math.max(32, Math.min(64, 28 + sizeMultiplier * 2));
+
   const html = `
     <div class="relative flex items-center justify-center" style="width: ${size}px; height: ${size}px;">
       <div class="absolute inset-0 rounded-full bg-amber-500/40 blur-sm animate-ping"></div>
@@ -22,9 +27,15 @@ export function createCustomImageIcon(
   dataUrl: string,
   color: string,
   sizeMultiplier = 1,
-  angleDegrees?: number
+  angleDegrees?: number,
+  explicitSize?: number
 ) {
-  const size = Math.max(24, Math.min(60, 22 + sizeMultiplier * 2));
+  const size = explicitSize !== undefined && explicitSize > 0
+    ? Math.max(16, Math.min(120, explicitSize))
+    : sizeMultiplier > 15
+      ? Math.max(16, Math.min(120, sizeMultiplier))
+      : Math.max(24, Math.min(60, 22 + sizeMultiplier * 2));
+
   const rotateStyle = angleDegrees !== undefined ? `transform: rotate(${angleDegrees - 90}deg);` : '';
   
   let iconContent = '';
@@ -85,8 +96,13 @@ export function createFadeGlowIcon(color: string, sizeMultiplier = 1) {
   });
 }
 
-export function createArrowIcon(color: string, angleDegrees: number, sizeMultiplier = 1) {
-  const size = Math.max(22, Math.min(42, 20 + sizeMultiplier * 2));
+export function createArrowIcon(color: string, angleDegrees: number, sizeMultiplier = 1, explicitSize?: number) {
+  const size = explicitSize !== undefined && explicitSize > 0
+    ? Math.max(16, Math.min(120, explicitSize))
+    : sizeMultiplier > 15
+      ? Math.max(16, Math.min(120, sizeMultiplier))
+      : Math.max(22, Math.min(42, 20 + sizeMultiplier * 2));
+
   const html = `
     <div class="flex items-center justify-center" style="width: ${size}px; height: ${size}px; transform: rotate(${angleDegrees - 90}deg);">
       <svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" class="filter drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
@@ -102,8 +118,13 @@ export function createArrowIcon(color: string, angleDegrees: number, sizeMultipl
   });
 }
 
-export function createDotIcon(color: string, sizeMultiplier = 1) {
-  const size = Math.max(12, Math.min(28, 10 + sizeMultiplier * 2));
+export function createDotIcon(color: string, sizeMultiplier = 1, explicitSize?: number) {
+  const size = explicitSize !== undefined && explicitSize > 0
+    ? Math.max(8, Math.min(80, explicitSize))
+    : sizeMultiplier > 15
+      ? Math.max(8, Math.min(80, sizeMultiplier))
+      : Math.max(12, Math.min(28, 10 + sizeMultiplier * 2));
+
   const html = `
     <div class="rounded-full shadow-sm" style="width: ${size}px; height: ${size}px; background-color: ${color};"></div>
   `;

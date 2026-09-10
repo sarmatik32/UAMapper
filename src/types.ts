@@ -6,6 +6,8 @@ export interface IconPreset {
   rotation?: number;
   draggable?: boolean;
   labelVisible?: boolean;
+  labelFontSize?: number;
+  labelOrientation?: 'horizontal' | 'rotate';
   endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
   lineWidth?: number;
   hasZone?: boolean;
@@ -30,6 +32,8 @@ export interface CustomMarker {
   iconType: string; // 'arrow' | 'car' | 'truck' | 'plane' | 'boat' | 'person' | 'pin' | 'circle' | 'star' | 'tank' | 'soldier' | 'drone' | 'explosion'
   draggable: boolean;
   labelVisible: boolean;
+  labelFontSize?: number; // font size in px, e.g. 8 - 24, default 11
+  labelOrientation?: 'horizontal' | 'rotate'; // 'horizontal' = always upright & readable (default)
   customIconUrl?: string; // base64 PNG data url
   hasZone?: boolean;
   zoneColor?: string;
@@ -117,12 +121,34 @@ export interface DrawnLine {
   startPointStyle: LineEndpointType;
   startCustomIconUrl?: string;
   startIconRotation?: number;
+  startIconSize?: number; // size in px, e.g. 16 - 80, default 32
   
   endPointStyle: LineEndpointType;
   endCustomIconUrl?: string;
   endIconRotation?: number;
+  endIconSize?: number; // size in px, e.g. 16 - 80, default 32
   
   label?: string;
+  labelSize?: number;
+}
+
+export interface MapLegendItem {
+  id: string;
+  iconType: string; // e.g. 'custom_icon' | 'plane' | 'drone' | 'explosion' | 'arrow' | 'pin' | 'star' | etc.
+  customIconUrl?: string;
+  color: string;
+  name: string; // "назва" об'єкта
+  countText: string; // кількість ("3 шт", "12", тощо)
+  title?: string; // alias for name
+  count?: string; // alias for countText
+  visible: boolean;
+}
+
+export interface MapLegendConfig {
+  enabled: boolean;
+  title: string; // "УМОВНІ ПОЗНАЧЕННЯ:"
+  items: MapLegendItem[];
+  position: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
 }
 
 export type MapFontFamily = 'inter' | 'plus-jakarta' | 'montserrat' | 'ubuntu' | 'jetbrains-mono' | 'system';

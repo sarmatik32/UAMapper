@@ -2,13 +2,14 @@ import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, us
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
 import { getMapFontFamilyCss } from '../utils/mapFonts';
+import { MapLegendWidget } from './MapLegendWidget';
 
 export interface MapContainerRef {
   exportPNG: () => void;
@@ -151,10 +152,16 @@ interface MapContainerProps {
   lineStartStyle?: LineEndpointType;
   lineStartCustomIcon?: string;
   lineStartIconRotation?: number;
+  lineStartIconSize?: number;
   lineEndStyle?: LineEndpointType;
   lineEndCustomIcon?: string;
   lineEndIconRotation?: number;
+  lineEndIconSize?: number;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+
+  // Map Legend
+  mapLegendConfig?: MapLegendConfig;
+  onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -218,10 +225,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   lineStartStyle = 'none' as LineEndpointType,
   lineStartCustomIcon = '',
   lineStartIconRotation = 0,
+  lineStartIconSize = 32,
   lineEndStyle = 'none' as LineEndpointType,
   lineEndCustomIcon = '',
   lineEndIconRotation = 0,
+  lineEndIconSize = 32,
   lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
+
+  // Map Legend
+  mapLegendConfig,
+  onUpdateMapLegendConfig,
 
   // Air Alerts
   activeAlerts = [],
@@ -2052,7 +2065,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const { 
         id, lat, lng, title, color, borderColor, endPointStyle, size, rotation, 
         iconType, draggable, labelVisible, customIconUrl, hasZone, zoneColor, zoneSize,
-        endLat, endLng
+        endLat, endLng, labelFontSize, labelOrientation
       } = markerData;
       const isSelected = id === selectedMarkerId;
 
@@ -2070,7 +2083,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endPointStyle || 'none',
         hasZone,
         zoneColor,
-        zoneSize
+        zoneSize,
+        labelFontSize,
+        labelOrientation
       );
 
       // Create a Leaflet custom DivIcon
@@ -2600,18 +2615,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (style === 'none' || style === 'fade') return null;
         const rotOffset = isEnd ? (line.endIconRotation || 0) : (line.startIconRotation || 0);
         const bearing = calculateBearing(p1, p2) + rotOffset;
+        const explicitSize = isEnd ? line.endIconSize : line.startIconSize;
 
         if (style === 'explosion') {
-          return createExplosionIcon(line.color, line.weight);
+          return createExplosionIcon(line.color, line.weight, explicitSize);
         }
         if (style === 'custom_icon') {
-          return createCustomImageIcon(customIconUrl || '', line.color, line.weight, bearing);
+          return createCustomImageIcon(customIconUrl || '', line.color, line.weight, bearing, explicitSize);
         }
         if (style === 'arrow') {
-          return createArrowIcon(line.color, bearing, line.weight);
+          return createArrowIcon(line.color, bearing, line.weight, explicitSize);
         }
         if (style === 'dot') {
-          return createDotIcon(line.color, line.weight);
+          return createDotIcon(line.color, line.weight, explicitSize);
         }
         return null;
       };
@@ -2934,10 +2950,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (lineStartStyle !== 'none' && lineStartStyle !== 'fade') {
         let startIcon: L.DivIcon | null = null;
         const startBearing = calculateBearing(startCoord, secondCoord) + (lineStartIconRotation || 0);
-        if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineColor, lineWeight, startBearing);
-        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, startBearing, lineWeight);
-        if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight);
+        if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight, lineStartIconSize);
+        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineColor, lineWeight, startBearing, lineStartIconSize);
+        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, startBearing, lineWeight, lineStartIconSize);
+        if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight, lineStartIconSize);
 
         if (startIcon) {
           if (!layers.startMarker) {
@@ -2955,10 +2971,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (lineEndStyle !== 'none' && lineEndStyle !== 'fade') {
         let endIcon: L.DivIcon | null = null;
         const endBearing = calculateBearing(prevEndCoord, endCoord) + (lineEndIconRotation || 0);
-        if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineColor, lineWeight, endBearing);
-        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, endBearing, lineWeight);
-        if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight);
+        if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight, lineEndIconSize);
+        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineColor, lineWeight, endBearing, lineEndIconSize);
+        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, endBearing, lineWeight, lineEndIconSize);
+        if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight, lineEndIconSize);
 
         if (endIcon) {
           if (!layers.endMarker) {
@@ -3810,6 +3826,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }} 
         />
 
+        {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
+        {mapLegendConfig && mapLegendConfig.enabled && (
+          <MapLegendWidget
+            config={mapLegendConfig}
+            onUpdateConfig={(cfg) => onUpdateMapLegendConfig?.(cfg)}
+            language={language}
+            theme={theme || 'dark'}
+          />
+        )}
+
         {/* Tactical Legend Box - captured in PNG */}
         {showLegendOverlay && (
           <div className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
@@ -4134,7 +4160,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               display: none !important;
             }
             .exporting-map .tactical-logo-container-outer,
-            .exporting-map .tactical-legend-container {
+            .exporting-map .tactical-legend-container,
+            .exporting-map #map-legend-widget-container {
               display: flex !important;
             }
           }

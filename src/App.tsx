@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -365,10 +365,33 @@ export default function App() {
   const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('none');
   const [lineStartCustomIcon, setLineStartCustomIcon] = useState<string>('');
   const [lineStartIconRotation, setLineStartIconRotation] = useState<number>(0);
+  const [lineStartIconSize, setLineStartIconSize] = useState<number>(32);
   const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('none');
   const [lineEndCustomIcon, setLineEndCustomIcon] = useState<string>('');
   const [lineEndIconRotation, setLineEndIconRotation] = useState<number>(0);
+  const [lineEndIconSize, setLineEndIconSize] = useState<number>(32);
   const [lineDashStyle, setLineDashStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+
+  // Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") state
+  const [mapLegendConfig, setMapLegendConfig] = useState<MapLegendConfig>(() => {
+    try {
+      const saved = localStorage.getItem('tactical_map_legend_cfg');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      enabled: false,
+      title: 'УМОВНІ ПОЗНАЧЕННЯ:',
+      position: 'bottom-left',
+      items: [],
+    };
+  });
+
+  const handleUpdateMapLegendConfig = useCallback((cfg: MapLegendConfig) => {
+    setMapLegendConfig(cfg);
+    try {
+      localStorage.setItem('tactical_map_legend_cfg', JSON.stringify(cfg));
+    } catch {}
+  }, []);
 
   const handleAddDrawnLine = (newLine: DrawnLine) => {
     setDrawnLines((prev) => {
@@ -1544,10 +1567,14 @@ export default function App() {
             lineStartStyle={lineStartStyle}
             lineStartCustomIcon={lineStartCustomIcon}
             lineStartIconRotation={lineStartIconRotation}
+            lineStartIconSize={lineStartIconSize}
             lineEndStyle={lineEndStyle}
             lineEndCustomIcon={lineEndCustomIcon}
             lineEndIconRotation={lineEndIconRotation}
+            lineEndIconSize={lineEndIconSize}
             lineDashStyle={lineDashStyle}
+            mapLegendConfig={mapLegendConfig}
+            onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
             activeAlerts={activeAlerts}
             showAlerts={showAlerts}
             showAlertPolygons={showAlertPolygons}
@@ -2038,14 +2065,20 @@ export default function App() {
               onChangeLineStartCustomIcon={setLineStartCustomIcon}
               lineStartIconRotation={lineStartIconRotation}
               onChangeLineStartIconRotation={setLineStartIconRotation}
+              lineStartIconSize={lineStartIconSize}
+              onChangeLineStartIconSize={setLineStartIconSize}
               lineEndStyle={lineEndStyle}
               onChangeLineEndStyle={setLineEndStyle}
               lineEndCustomIcon={lineEndCustomIcon}
               onChangeLineEndCustomIcon={setLineEndCustomIcon}
               lineEndIconRotation={lineEndIconRotation}
               onChangeLineEndIconRotation={setLineEndIconRotation}
+              lineEndIconSize={lineEndIconSize}
+              onChangeLineEndIconSize={setLineEndIconSize}
               lineDashStyle={lineDashStyle}
               onChangeLineDashStyle={setLineDashStyle}
+              mapLegendConfig={mapLegendConfig}
+              onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
               activeAlerts={activeAlerts}
               showAlerts={showAlerts}
               onToggleShowAlerts={() => {

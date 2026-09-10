@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { 
-  Map, 
+  Map as MapIcon, 
   Settings, 
   Layers, 
   Trash2, 
@@ -40,7 +40,9 @@ import {
   Bell,
   RefreshCw,
   Type,
-  PanelRightClose
+  PanelRightClose,
+  KeyRound,
+  X
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -141,14 +143,22 @@ interface SidebarProps {
   onChangeLineStartCustomIcon?: (url: string) => void;
   lineStartIconRotation?: number;
   onChangeLineStartIconRotation?: (rot: number) => void;
+  lineStartIconSize?: number;
+  onChangeLineStartIconSize?: (size: number) => void;
   lineEndStyle?: LineEndpointType;
   onChangeLineEndStyle?: (style: LineEndpointType) => void;
   lineEndCustomIcon?: string;
   onChangeLineEndCustomIcon?: (url: string) => void;
   lineEndIconRotation?: number;
   onChangeLineEndIconRotation?: (rot: number) => void;
+  lineEndIconSize?: number;
+  onChangeLineEndIconSize?: (size: number) => void;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
   onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
+
+  // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
+  mapLegendConfig?: MapLegendConfig;
+  onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -280,19 +290,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeLineStartCustomIcon = (_url) => {},
   lineStartIconRotation = 0,
   onChangeLineStartIconRotation = (_rot) => {},
+  lineStartIconSize = 32,
+  onChangeLineStartIconSize = (_size) => {},
   lineEndStyle = 'none',
   onChangeLineEndStyle = (_style) => {},
   lineEndCustomIcon = '',
   onChangeLineEndCustomIcon = (_url) => {},
   lineEndIconRotation = 0,
   onChangeLineEndIconRotation = (_rot) => {},
+  lineEndIconSize = 32,
+  onChangeLineEndIconSize = (_size) => {},
   lineDashStyle = 'solid',
   onChangeLineDashStyle = (_style) => {},
+
+  // Map Legend
+  mapLegendConfig,
+  onUpdateMapLegendConfig,
 }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [customTileUrl, setCustomTileUrl] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
+  const [isEditingVisicomKey, setIsEditingVisicomKey] = useState(false);
+  const [newVisicomKeyInput, setNewVisicomKeyInput] = useState('');
+  const [visicomKeySavedSuccess, setVisicomKeySavedSuccess] = useState(false);
 
   // Custom PNG Library State
   const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
@@ -355,9 +376,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currLineStartStyle = selectedLine ? selectedLine.startPointStyle : lineStartStyle;
   const currLineStartCustomIcon = selectedLine ? (selectedLine.startCustomIconUrl || '') : lineStartCustomIcon;
   const currLineStartIconRotation = selectedLine ? (selectedLine.startIconRotation || 0) : (lineStartIconRotation || 0);
+  const currLineStartIconSize = selectedLine ? (selectedLine.startIconSize || 32) : (lineStartIconSize || 32);
   const currLineEndStyle = selectedLine ? selectedLine.endPointStyle : lineEndStyle;
   const currLineEndCustomIcon = selectedLine ? (selectedLine.endCustomIconUrl || '') : lineEndCustomIcon;
   const currLineEndIconRotation = selectedLine ? (selectedLine.endIconRotation || 0) : (lineEndIconRotation || 0);
+  const currLineEndIconSize = selectedLine ? (selectedLine.endIconSize || 32) : (lineEndIconSize || 32);
+  const currLineLabel = selectedLine ? (selectedLine.label || '') : '';
+  const currLineLabelSize = selectedLine ? (selectedLine.labelSize || 12) : 12;
   const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
@@ -655,6 +680,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return language === 'uk' ? 'Маркер' : 'Marker';
   };
 
+  const generateLegendItemsFromMap = (): MapLegendItem[] => {
+    const itemsMap = new Map<string, MapLegendItem>();
+
+    markers.forEach((m) => {
+      const key = `${m.iconType}_${m.color}_${m.customIconUrl || ''}`;
+      if (!itemsMap.has(key)) {
+        const title = m.title || customIconTitles[m.iconType] || getDefaultIconName(m.iconType);
+        itemsMap.set(key, {
+          id: `marker_${key}`,
+          iconType: m.iconType,
+          customIconUrl: m.customIconUrl,
+          color: m.color,
+          name: title,
+          title,
+          countText: '1 шт',
+          count: '1 шт',
+          visible: true,
+        });
+      } else {
+        const existing = itemsMap.get(key)!;
+        const currentCountNum = parseInt(existing.countText || existing.count || '1', 10);
+        const newCount = isNaN(currentCountNum) ? 2 : currentCountNum + 1;
+        existing.count = `${newCount} шт`;
+        existing.countText = `${newCount} шт`;
+      }
+    });
+
+    drawnLines.forEach((l) => {
+      if (l.startPointStyle === 'custom_icon' && l.startCustomIconUrl) {
+        const key = `line_start_${l.startCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Початок маршруту' : 'Route Start';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.startCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+      if (l.endPointStyle === 'custom_icon' && l.endCustomIconUrl) {
+        const key = `line_end_${l.endCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Кінець маршруту' : 'Route End';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.endCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      } else if (l.endPointStyle === 'explosion') {
+        const key = `line_explosion_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Ураження / Вибух' : 'Impact / Explosion';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'crosshair',
+            color: '#ef4444',
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+    });
+
+    return Array.from(itemsMap.values());
+  };
+
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
     setExpandedSections((prev) => ({ ...prev, styles: true }));
@@ -805,6 +912,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
   const activeDraggable = selectedMarker ? selectedMarker.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true);
   const activeLabelVisible = selectedMarker ? selectedMarker.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true);
+  const activeLabelFontSize = selectedMarker ? (selectedMarker.labelFontSize || 11.5) : (activeStyle.labelFontSize || 11.5);
+  const activeLabelOrientation = selectedMarker ? (selectedMarker.labelOrientation || 'auto') : (activeStyle.labelOrientation || 'auto');
   
   // Tactical zone properties
   const activeHasZone = selectedMarker ? !!selectedMarker.hasZone : !!activeStyle.hasZone;
@@ -1347,6 +1456,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     />
                   </div>
                 )}
+
+                {currLineStartStyle !== 'none' && currLineStartStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір початкової іконки' : 'Start Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineStartIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineStartIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startIconSize: val });
+                        else onChangeLineStartIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 6. End Point Style */}
@@ -1453,6 +1583,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         if (selectedLine) onUpdateLine({ ...selectedLine, endIconRotation: val });
                         else onChangeLineEndIconRotation(val);
                       }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {currLineEndStyle !== 'none' && currLineEndStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір кінцевої іконки' : 'End Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineEndIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineEndIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endIconSize: val });
+                        else onChangeLineEndIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {/* Selected line text label */}
+                {selectedLine && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                      {isUa ? 'Підпис лінії на карті' : 'Line Label Text'}
+                    </label>
+                    <input
+                      type="text"
+                      value={currLineLabel}
+                      placeholder={isUa ? 'Введіть підпис лінії...' : 'Enter line label...'}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, label: e.target.value })}
+                      className={`w-full border px-2.5 py-1.5 rounded-lg text-xs focus:outline-none focus:border-emerald-500 ${
+                        theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                      }`}
+                    />
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір шрифту підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineLabelSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="9"
+                      max="24"
+                      value={currLineLabelSize}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, labelSize: Number(e.target.value) })}
                       className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
                     />
                   </div>
@@ -1991,6 +2172,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </label>
                 </div>
 
+                {/* Label Font Size & Orientation Controls */}
+                {activeLabelVisible && (
+                  <div className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span>{isUa ? 'Розмір підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-blue-500 font-bold">{Math.round(activeLabelFontSize)}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max="28"
+                      step="0.5"
+                      value={activeLabelFontSize}
+                      onChange={(e) => handlePropChange('labelFontSize', Number(e.target.value))}
+                      className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+
+                    <div className="pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isUa ? 'Орієнтація підпису' : 'Label Orientation'}
+                      </span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: 'auto', nameUa: 'Читабельно', nameEn: 'Readable' },
+                          { id: 'upright', nameUa: 'Горизонтально', nameEn: 'Horizontal' },
+                          { id: 'follow_icon', nameUa: 'З іконкою', nameEn: 'Follow' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handlePropChange('labelOrientation', opt.id as any)}
+                            className={`py-1 px-1 rounded-lg text-[9px] font-bold transition-all text-center ${
+                              activeLabelOrientation === opt.id
+                                ? 'bg-blue-500 text-white shadow-xs'
+                                : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {isUa ? opt.nameUa : opt.nameEn}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Delete Current Selected Marker button */}
                 {selectedMarker && (
                   <button
@@ -2119,7 +2345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <div className="flex items-center gap-2">
-              <Map className="w-3.5 h-3.5 text-blue-500" />
+              <MapIcon className="w-3.5 h-3.5 text-blue-500" />
               <span>{t.secMap}</span>
             </div>
             {expandedSections.map ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
@@ -2150,6 +2376,132 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
 
+              {/* Visicom API Key / Token Setting */}
+              <div className={`p-3 rounded-2xl border space-y-2.5 ${
+                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${visicomKey ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-amber-500'}`} />
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                      {isUa ? 'API-токен Visicom' : 'Visicom API Token'}
+                    </span>
+                  </div>
+                  {visicomKey ? (
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {isUa ? 'Підключено' : 'Active'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      {isUa ? 'Не вказано' : 'Missing'}
+                    </span>
+                  )}
+                </div>
+
+                {!isEditingVisicomKey ? (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewVisicomKeyInput(visicomKey || '');
+                        setIsEditingVisicomKey(true);
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Ввести новий API' : 'Enter new API key'}</span>
+                    </button>
+
+                    <a
+                      href="https://developer.visicom.ua"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-2 text-[11px] rounded-xl text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors"
+                      title={isUa ? 'Отримати ключ на Visicom' : 'Get key from Visicom'}
+                    >
+                      {isUa ? 'Отримати' : 'Get key'} ↗
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-white/10">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span>{isUa ? 'Новий API ключ:' : 'New API key:'}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={newVisicomKeyInput}
+                      onChange={(e) => setNewVisicomKeyInput(e.target.value.trim())}
+                      placeholder={isUa ? 'Вставте ваш токен сюди...' : 'Paste your token here...'}
+                      autoFocus
+                      className={`w-full font-mono text-xs px-2.5 py-2 rounded-xl border focus:outline-none focus:border-blue-500 transition-colors ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                          : 'bg-slate-900 border-white/15 text-slate-100 placeholder-slate-600'
+                      }`}
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey(newVisicomKeyInput.trim());
+                          setIsEditingVisicomKey(false);
+                          setVisicomKeySavedSuccess(true);
+                          setTimeout(() => setVisicomKeySavedSuccess(false), 2500);
+                        }}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isUa ? 'Зберегти' : 'Save'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey('da8a72ade6f663ff3743cd79f3c2d9f3');
+                          setIsEditingVisicomKey(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                        title={isUa ? 'Встановити стандартний ключ' : 'Set default key'}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {isUa ? 'Скасувати' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {visicomKeySavedSuccess && (
+                  <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'API-ключ успішно збережено!' : 'API key saved successfully!'}</span>
+                  </div>
+                )}
+              </div>
+
               {/* Visicom Watermark Notice */}
               {activeTileLayer.id === 'visicom' && !visicomKey && (
                 <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] leading-relaxed">
@@ -2159,8 +2511,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </p>
                   <span>
                     {isUa 
-                      ? 'Сервер Visicom автоматично додає на тайли текст про обмеження використання. Введіть API-ключ з developer.visicom.ua в налаштуваннях нижче, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
-                      : 'Visicom tiles include a usage watermark unless an API key from developer.visicom.ua is provided. Enter your API key below or select CartoDB/Esri layer for a clean map.'}
+                      ? 'Введіть API-ключ з developer.visicom.ua вище, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
+                      : 'Enter your API key above or select CartoDB/Esri layer for a clean map.'}
                   </span>
                 </div>
               )}
@@ -3004,6 +3356,180 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               )}
+
+              {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
+              <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{isUa ? 'Умовні позначення (Легенда)' : 'Signs Legend'}</span>
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={mapLegendConfig?.enabled || false} 
+                      onChange={(e) => {
+                        if (!onUpdateMapLegendConfig) return;
+                        const isEn = e.target.checked;
+                        const cur = mapLegendConfig || {
+                          enabled: false,
+                          title: 'УМОВНІ ПОЗНАЧЕННЯ:',
+                          position: 'bottom-left',
+                          items: []
+                        };
+                        let items = cur.items;
+                        if (isEn && (!items || items.length === 0)) {
+                          items = generateLegendItemsFromMap();
+                        }
+                        onUpdateMapLegendConfig({
+                          ...cur,
+                          enabled: isEn,
+                          items
+                        });
+                      }}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
+
+                {mapLegendConfig?.enabled && (
+                  <div className="space-y-2.5 pt-1">
+                    {/* Title & Position */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Заголовок' : 'Title'}
+                        </label>
+                        <input
+                          type="text"
+                          value={mapLegendConfig.title || 'УМОВНІ ПОЗНАЧЕННЯ:'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, title: e.target.value })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Позиція' : 'Position'}
+                        </label>
+                        <select
+                          value={mapLegendConfig.position || 'bottom-left'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, position: e.target.value as any })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        >
+                          <option value="bottom-left">{isUa ? 'Знизу ліворуч' : 'Bottom-Left'}</option>
+                          <option value="bottom-right">{isUa ? 'Знизу праворуч' : 'Bottom-Right'}</option>
+                          <option value="top-left">{isUa ? 'Зверху ліворуч' : 'Top-Left'}</option>
+                          <option value="top-right">{isUa ? 'Зверху праворуч' : 'Top-Right'}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Sync button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newItems = generateLegendItemsFromMap();
+                        onUpdateMapLegendConfig?.({
+                          ...mapLegendConfig,
+                          items: newItems
+                        });
+                      }}
+                      className="w-full py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Оновити з карти (автозбір іконок)' : 'Sync from map elements'}</span>
+                    </button>
+
+                    {/* Items List */}
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                      {mapLegendConfig.items.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className={`p-2 rounded-xl border flex flex-col gap-1.5 ${
+                            theme === 'light' ? 'bg-white border-slate-200' : 'bg-black/20 border-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {/* Icon preview */}
+                            <div
+                              className="w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: `${item.color}22`, borderColor: item.color }}
+                            >
+                              {item.customIconUrl ? (
+                                <img src={item.customIconUrl} className="w-5 h-5 object-contain" alt={item.title} />
+                              ) : (
+                                <div
+                                  className="w-4 h-4"
+                                  dangerouslySetInnerHTML={{ __html: getIconSvgContent(item.iconType, item.color) }}
+                                />
+                              )}
+                            </div>
+
+                            {/* Title input */}
+                            <input
+                              type="text"
+                              value={item.name || item.title || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], name: e.target.value, title: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className={`flex-1 border px-2 py-1 rounded-lg text-xs font-semibold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28] border-white/5 text-slate-200'
+                              }`}
+                              placeholder={isUa ? 'Назва іконки' : 'Icon title'}
+                            />
+
+                            {/* Delete item */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = mapLegendConfig.items.filter((_, i) => i !== idx);
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className="text-slate-400 hover:text-red-400 p-1"
+                              title={isUa ? 'Видалити' : 'Delete'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Count input: User writes whatever count they want */}
+                          <div className="flex items-center gap-2 pl-9">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">
+                              {isUa ? 'Кількість:' : 'Count:'}
+                            </span>
+                            <input
+                              type="text"
+                              value={item.countText || item.count || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], countText: e.target.value, count: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              placeholder={isUa ? 'напр. 2 шт або 1 од' : 'e.g. 2 pcs or 1 unit'}
+                              className={`flex-1 border px-2 py-0.5 rounded-lg text-xs font-mono font-bold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-blue-600' : 'bg-[#181d28] border-white/5 text-blue-400'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      {mapLegendConfig.items.length === 0 && (
+                        <p className="text-[10px] text-slate-400 italic text-center py-2">
+                          {isUa ? 'Немає елементів у легенді. Натисніть "Оновити з карти" вище.' : 'No legend items. Click "Sync from map elements" above.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

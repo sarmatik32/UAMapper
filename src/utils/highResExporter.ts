@@ -1,4 +1,4 @@
-import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language } from '../types';
+import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language, MapLegendConfig, MapLegendItem } from '../types';
 import { Settlement, getSettlementCategory, SettlementCategory, SETTLEMENTS } from '../data/settlements';
 import { smoothPolylinePoints } from './smoothing';
 import { getIconSvgContent } from '../components/IconLibrary';
@@ -73,6 +73,7 @@ export interface HighResExportOptions {
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
   language?: Language;
+  mapLegendConfig?: MapLegendConfig;
 
   // Air Alerts
   activeAlerts?: AirAlert[];
@@ -257,6 +258,8 @@ function loadBitmapImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+const loadImage = loadBitmapImage;
+
 /**
  * Converts 6-digit hex color to rgba string.
  */
@@ -333,6 +336,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     legendOverlayText = '',
     showRadarOverlay = true,
     language = 'uk',
+    mapLegendConfig,
     activeAlerts = [],
     showAlerts = false,
     showAlertPolygons = true,
@@ -634,9 +638,9 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     }
   });
 
-  // 6. Drawn Lines (Polylines, Vectors, Arrows, Dashed Paths)
-  drawnLines.forEach((line) => {
-    if (!line.points || line.points.length < 2) return;
+  // 6. Drawn Lines (Polylines, Vectors, Arrows, Dashed Paths, Custom Endpoints)
+  for (const line of drawnLines) {
+    if (!line.points || line.points.length < 2) continue;
 
     const displayPoints = line.smoothed ? smoothPolylinePoints(line.points, 4) : line.points;
     const canvasPoints = displayPoints.map((pt) => proj(pt[0], pt[1]));
@@ -659,30 +663,130 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       else ctx.lineTo(pt.x, pt.y);
     });
     ctx.stroke();
+    ctx.restore();
 
-    // Arrowhead endpoint
-    if (line.endPointStyle === 'arrow' && canvasPoints.length >= 2) {
-      const last = canvasPoints[canvasPoints.length - 1];
-      const prev = canvasPoints[canvasPoints.length - 2];
-      const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
-      const arrowLen = Math.max(14, 18 * visualScale);
+    // Line Start Endpoint
+    if (canvasPoints.length >= 2 && line.startPointStyle && line.startPointStyle !== 'none') {
+      const first = canvasPoints[0];
+      const second = canvasPoints[1];
+      const angle = Math.atan2(first.y - second.y, first.x - second.x);
+      const startSize = Math.max(16, (line.startIconSize || 32)) * visualScale;
 
       ctx.save();
-      ctx.fillStyle = line.color || '#ef4444';
-      ctx.translate(last.x, last.y);
-      ctx.rotate(angle);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(-arrowLen, -arrowLen * 0.45);
-      ctx.lineTo(-arrowLen * 0.75, 0);
-      ctx.lineTo(-arrowLen, arrowLen * 0.45);
-      ctx.closePath();
-      ctx.fill();
+      if (line.startPointStyle === 'arrow') {
+        const arrowLen = Math.max(14, (line.startIconSize || 22) * visualScale);
+        ctx.fillStyle = line.color || '#ef4444';
+        ctx.translate(first.x, first.y);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-arrowLen, -arrowLen * 0.45);
+        ctx.lineTo(-arrowLen * 0.75, 0);
+        ctx.lineTo(-arrowLen, arrowLen * 0.45);
+        ctx.closePath();
+        ctx.fill();
+      } else if (line.startPointStyle === 'dot') {
+        const dotRadius = Math.max(4, (line.startIconSize || 16) * visualScale * 0.4);
+        ctx.fillStyle = line.color || '#ef4444';
+        ctx.beginPath();
+        ctx.arc(first.x, first.y, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, 1.5 * visualScale);
+        ctx.stroke();
+      } else if (line.startPointStyle === 'explosion') {
+        ctx.font = `${Math.round(startSize * 0.85)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💥', first.x, first.y);
+      } else if (line.startPointStyle === 'custom_icon' && line.startCustomIconUrl) {
+        try {
+          const img = await loadImage(line.startCustomIconUrl);
+          ctx.translate(first.x, first.y);
+          const iconRot = line.startIconRotation !== undefined ? (line.startIconRotation * Math.PI) / 180 : angle;
+          ctx.rotate(iconRot);
+          ctx.drawImage(img, -startSize / 2, -startSize / 2, startSize, startSize);
+        } catch (e) {
+          console.warn('Failed to render line start icon', e);
+        }
+      }
       ctx.restore();
     }
 
-    ctx.restore();
-  });
+    // Line End Endpoint
+    if (canvasPoints.length >= 2 && line.endPointStyle && line.endPointStyle !== 'none') {
+      const last = canvasPoints[canvasPoints.length - 1];
+      const prev = canvasPoints[canvasPoints.length - 2];
+      const angle = Math.atan2(last.y - prev.y, last.x - prev.x);
+      const endSize = Math.max(16, (line.endIconSize || 32)) * visualScale;
+
+      ctx.save();
+      if (line.endPointStyle === 'arrow') {
+        const arrowLen = Math.max(14, (line.endIconSize || 22) * visualScale);
+        ctx.fillStyle = line.color || '#ef4444';
+        ctx.translate(last.x, last.y);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-arrowLen, -arrowLen * 0.45);
+        ctx.lineTo(-arrowLen * 0.75, 0);
+        ctx.lineTo(-arrowLen, arrowLen * 0.45);
+        ctx.closePath();
+        ctx.fill();
+      } else if (line.endPointStyle === 'dot') {
+        const dotRadius = Math.max(4, (line.endIconSize || 16) * visualScale * 0.4);
+        ctx.fillStyle = line.color || '#ef4444';
+        ctx.beginPath();
+        ctx.arc(last.x, last.y, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1, 1.5 * visualScale);
+        ctx.stroke();
+      } else if (line.endPointStyle === 'explosion') {
+        ctx.font = `${Math.round(endSize * 0.85)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('💥', last.x, last.y);
+      } else if (line.endPointStyle === 'custom_icon' && line.endCustomIconUrl) {
+        try {
+          const img = await loadImage(line.endCustomIconUrl);
+          ctx.translate(last.x, last.y);
+          const iconRot = line.endIconRotation !== undefined ? (line.endIconRotation * Math.PI) / 180 : angle;
+          ctx.rotate(iconRot);
+          ctx.drawImage(img, -endSize / 2, -endSize / 2, endSize, endSize);
+        } catch (e) {
+          console.warn('Failed to render line end icon', e);
+        }
+      }
+      ctx.restore();
+    }
+
+    // Line Label if specified
+    if (line.label && canvasPoints.length >= 2) {
+      ctx.save();
+      const midIdx = Math.floor(canvasPoints.length / 2);
+      const midPoint = canvasPoints[midIdx];
+      const lSize = Math.round(Math.max(10, (line.labelSize || 11)) * visualScale);
+      ctx.font = `bold ${lSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      const metrics = ctx.measureText(line.label);
+      const pad = Math.round(5 * visualScale);
+      const bw = metrics.width + pad * 2;
+      const bh = lSize + pad * 1.5;
+
+      drawRoundRect(ctx, midPoint.x - bw / 2, midPoint.y - bh / 2, bw, bh, Math.round(4 * visualScale));
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
+      ctx.fill();
+      ctx.strokeStyle = line.color || '#ef4444';
+      ctx.lineWidth = Math.max(1, 1.2 * visualScale);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(line.label, midPoint.x, midPoint.y);
+      ctx.restore();
+    }
+  }
 
   // 7. Marker Direction Lines & Handles
   markers.forEach((m) => {
@@ -921,26 +1025,33 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     // Marker title badge if visible
     if (m.labelVisible && m.title) {
       ctx.save();
-      const labelFontSize = Math.round(11.5 * visualScale);
+      const rawSize = m.labelFontSize && m.labelFontSize > 0 ? m.labelFontSize : 11.5;
+      const labelFontSize = Math.round(rawSize * visualScale);
       ctx.font = `bold ${labelFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
       const labelMetrics = ctx.measureText(m.title);
-      const lPadX = Math.round(7 * visualScale);
-      const lPadY = Math.round(3.5 * visualScale);
+      const lPadX = Math.round(Math.max(4, rawSize * 0.55) * visualScale);
+      const lPadY = Math.round(Math.max(2, rawSize * 0.25) * visualScale);
       const lWidth = labelMetrics.width + lPadX * 2;
       const lHeight = labelFontSize + lPadY * 2;
       const lX = pos.x - lWidth / 2;
-      const lY = pos.y + mSize / 2 + Math.round(4 * visualScale);
+      const lY = pos.y + mSize / 2 + Math.round(5 * visualScale);
 
+      // Shadow & rounded pill for max legibility
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+      ctx.shadowBlur = 4 * visualScale;
+      ctx.shadowOffsetY = 2 * visualScale;
       drawRoundRect(ctx, lX, lY, lWidth, lHeight, Math.round(4 * visualScale));
-      ctx.fillStyle = 'rgba(2, 6, 23, 0.92)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
       ctx.fill();
-      ctx.strokeStyle = m.color || '#ef4444';
+      ctx.strokeStyle = m.borderColor || m.color || '#38bdf8';
       ctx.lineWidth = Math.max(1, 1.4 * visualScale);
       ctx.stroke();
 
+      ctx.shadowBlur = 0;
       ctx.fillStyle = '#ffffff';
       ctx.textBaseline = 'middle';
-      ctx.fillText(m.title, lX + lPadX, lY + lHeight / 2);
+      ctx.textAlign = 'center';
+      ctx.fillText(m.title, pos.x, lY + lHeight / 2);
       ctx.restore();
     }
   }
@@ -1131,6 +1242,236 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     }
 
     ctx.restore();
+  }
+
+  // 13. Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
+  if (mapLegendConfig && mapLegendConfig.enabled && mapLegendConfig.items && mapLegendConfig.items.length > 0) {
+    const visibleItems = mapLegendConfig.items.filter((it) => it.visible !== false);
+    if (visibleItems.length > 0) {
+      try {
+        ctx.save();
+        const legendTitle = (mapLegendConfig.title && mapLegendConfig.title.trim()) || (language === 'en' ? 'CONVENTIONAL SIGNS:' : 'УМОВНІ ПОЗНАЧЕННЯ:');
+        
+        const titleFontSize = Math.max(12, Math.round(13.5 * visualScale));
+        const textFontSize = Math.max(10, Math.round(11.5 * visualScale));
+        const iconBoxSize = Math.max(18, Math.round(22 * visualScale));
+        const rowPadY = Math.max(4, Math.round(5 * visualScale));
+        const rowHeight = Math.max(iconBoxSize, textFontSize) + rowPadY * 2;
+        const padX = Math.round(18 * visualScale);
+        const padY = Math.round(14 * visualScale);
+        const headerH = titleFontSize + Math.round(16 * visualScale);
+
+        // Measure max widths for items
+        ctx.font = `bold ${textFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        let maxItemWidth = 0;
+        for (const item of visibleItems) {
+          const nameW = ctx.measureText(item.name || '').width;
+          const countW = ctx.measureText(item.countText || '1 шт').width;
+          const totalW = iconBoxSize + (12 * visualScale) + nameW + (20 * visualScale) + countW;
+          if (totalW > maxItemWidth) maxItemWidth = totalW;
+        }
+
+        ctx.font = `900 ${titleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        const titleW = ctx.measureText(legendTitle).width;
+        const minBoxW = Math.max(titleW + padX * 2, maxItemWidth + padX * 2, Math.round(270 * visualScale));
+        const boxW = Math.min(targetWidth * 0.45, minBoxW);
+        const boxH = padY * 2 + headerH + visibleItems.length * rowHeight;
+
+        // Position on canvas
+        let boxX = Math.round(24 * visualScale);
+        let boxY = targetHeight - boxH - (showLegendOverlay ? Math.round(85 * visualScale) : Math.round(24 * visualScale));
+        if (mapLegendConfig.position === 'top-left') {
+          boxX = Math.round(24 * visualScale);
+          boxY = Math.round(85 * visualScale);
+        } else if (mapLegendConfig.position === 'top-right') {
+          boxX = targetWidth - boxW - Math.round(24 * visualScale);
+          boxY = Math.round(85 * visualScale);
+        } else if (mapLegendConfig.position === 'bottom-right') {
+          boxX = targetWidth - boxW - Math.round(24 * visualScale);
+          boxY = targetHeight - boxH - (showLegendOverlay ? Math.round(85 * visualScale) : Math.round(24 * visualScale));
+        }
+
+        // Draw Apple Frosted Glass Container
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.28)';
+        ctx.shadowBlur = Math.round(18 * visualScale);
+        ctx.shadowOffsetY = Math.round(6 * visualScale);
+
+        const glassRadius = Math.round(20 * visualScale);
+        drawRoundRect(ctx, boxX, boxY, boxW, boxH, glassRadius);
+
+        const isLight = theme === 'light';
+
+        // Glass background gradient
+        const glassGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
+        if (isLight) {
+          glassGrad.addColorStop(0, 'rgba(255, 255, 255, 0.96)');
+          glassGrad.addColorStop(1, 'rgba(248, 250, 252, 0.96)');
+        } else {
+          glassGrad.addColorStop(0, 'rgba(15, 23, 42, 0.88)');
+          glassGrad.addColorStop(1, 'rgba(10, 15, 29, 0.92)');
+        }
+        ctx.fillStyle = glassGrad;
+        ctx.fill();
+
+        // Apple Specular Glass Border (Refraction highlight gradient)
+        const strokeGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
+        if (isLight) {
+          strokeGrad.addColorStop(0, 'rgba(203, 213, 225, 0.95)');
+          strokeGrad.addColorStop(0.5, 'rgba(203, 213, 225, 0.70)');
+          strokeGrad.addColorStop(1, 'rgba(203, 213, 225, 0.50)');
+        } else {
+          strokeGrad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+          strokeGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.18)');
+          strokeGrad.addColorStop(1, 'rgba(255, 255, 255, 0.10)');
+        }
+        ctx.strokeStyle = strokeGrad;
+        ctx.lineWidth = Math.max(1, 1.2 * visualScale);
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetY = 0;
+
+        // Top Rim Specular Reflection line
+        const rimGrad = ctx.createLinearGradient(boxX + padX, boxY + 1, boxX + boxW - padX, boxY + 1);
+        rimGrad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+        rimGrad.addColorStop(0.5, isLight ? 'rgba(255, 255, 255, 0.90)' : 'rgba(255, 255, 255, 0.50)');
+        rimGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        ctx.strokeStyle = rimGrad;
+        ctx.lineWidth = Math.max(1, 1.2 * visualScale);
+        ctx.beginPath();
+        ctx.moveTo(boxX + padX * 1.5, boxY + 1);
+        ctx.lineTo(boxX + boxW - padX * 1.5, boxY + 1);
+        ctx.stroke();
+
+        // Draw title
+        ctx.fillStyle = isLight ? '#0f172a' : '#fcd34d';
+        ctx.font = `900 ${titleFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText(legendTitle, boxX + padX, boxY + padY);
+
+        // Apple style subtle glass divider
+        const dividerY = boxY + padY + titleFontSize + Math.round(8 * visualScale);
+        ctx.strokeStyle = isLight ? 'rgba(203, 213, 225, 0.80)' : 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 1 * visualScale;
+        ctx.beginPath();
+        ctx.moveTo(boxX + padX, dividerY);
+        ctx.lineTo(boxX + boxW - padX, dividerY);
+        ctx.stroke();
+
+        // Render items
+        let curItemY = dividerY + Math.round(8 * visualScale);
+        for (const item of visibleItems) {
+          const itemMidY = curItemY + rowHeight / 2;
+          const iconCenterX = boxX + padX + iconBoxSize / 2;
+
+          // Apple row background capsule
+          const rowInnerPad = Math.round(4 * visualScale);
+          const rowBoxY = curItemY + rowInnerPad;
+          const rowBoxH = rowHeight - rowInnerPad * 2;
+          const rowBoxW = boxW - padX * 2;
+          const rowRadius = Math.round(12 * visualScale);
+          drawRoundRect(ctx, boxX + padX, rowBoxY, rowBoxW, rowBoxH, rowRadius);
+          ctx.fillStyle = isLight ? 'rgba(241, 245, 249, 0.92)' : 'rgba(255, 255, 255, 0.08)';
+          ctx.fill();
+          ctx.strokeStyle = isLight ? 'rgba(226, 232, 240, 0.90)' : 'rgba(255, 255, 255, 0.15)';
+          ctx.lineWidth = 1 * visualScale;
+          ctx.stroke();
+
+          // Apple Glass Icon Box
+          const iconBgRadius = Math.round(8 * visualScale);
+          const iconBoxX = boxX + padX + Math.round(4 * visualScale);
+          const iconBoxY = itemMidY - iconBoxSize / 2;
+          drawRoundRect(ctx, iconBoxX, iconBoxY, iconBoxSize, iconBoxSize, iconBgRadius);
+          ctx.fillStyle = isLight ? 'rgba(255, 255, 255, 0.95)' : 'rgba(15, 23, 42, 0.90)';
+          ctx.fill();
+          ctx.strokeStyle = isLight ? 'rgba(203, 213, 225, 0.90)' : 'rgba(255, 255, 255, 0.20)';
+          ctx.lineWidth = 1 * visualScale;
+          ctx.stroke();
+
+          const renderIconCenterX = iconBoxX + iconBoxSize / 2;
+
+          // Render item icon
+          ctx.save();
+          if (item.customIconUrl) {
+            try {
+              const img = await loadImage(item.customIconUrl);
+              ctx.drawImage(img, renderIconCenterX - iconBoxSize * 0.38, itemMidY - iconBoxSize * 0.38, iconBoxSize * 0.76, iconBoxSize * 0.76);
+            } catch {
+              ctx.fillStyle = item.color || '#ef4444';
+              ctx.beginPath();
+              ctx.arc(renderIconCenterX, itemMidY, iconBoxSize / 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          } else if (item.iconType === 'explosion') {
+            ctx.font = `${Math.round(iconBoxSize * 0.85)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('💥', renderIconCenterX, itemMidY);
+          } else if (item.iconType === 'arrow') {
+            ctx.font = `bold ${Math.round(iconBoxSize * 0.85)}px sans-serif`;
+            ctx.fillStyle = item.color || '#ef4444';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('➔', renderIconCenterX, itemMidY);
+          } else if (item.iconType === 'dot') {
+            ctx.fillStyle = item.color || '#ef4444';
+            ctx.beginPath();
+            ctx.arc(renderIconCenterX, itemMidY, iconBoxSize / 3.5, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            try {
+              const svg = getIconSvgContent(item.iconType || 'plane', item.color || '#ef4444', isLight ? '#0f172a' : '#ffffff');
+              const svgImg = await loadSvgImage(svg);
+              ctx.drawImage(svgImg, renderIconCenterX - iconBoxSize * 0.38, itemMidY - iconBoxSize * 0.38, iconBoxSize * 0.76, iconBoxSize * 0.76);
+            } catch {
+              ctx.fillStyle = item.color || '#ef4444';
+              ctx.beginPath();
+              ctx.arc(renderIconCenterX, itemMidY, iconBoxSize / 3, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+          ctx.restore();
+
+          // Render Name
+          ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
+          ctx.font = `bold ${textFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          const nameX = iconBoxX + iconBoxSize + Math.round(10 * visualScale);
+          ctx.fillText(item.name || (language === 'en' ? 'Object' : 'Обʼєкт'), nameX, itemMidY);
+
+          // Render Count (Apple Pill Capsule)
+          const countStr = item.countText || item.count || '1 шт';
+          ctx.font = `900 ${textFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif`;
+          const countW = ctx.measureText(countStr).width;
+          const countBadgePadX = Math.round(10 * visualScale);
+          const countBadgeH = Math.round(textFontSize * 1.6);
+          const countBadgeW = countW + countBadgePadX * 2;
+          const countBadgeX = boxX + boxW - padX - Math.round(8 * visualScale) - countBadgeW;
+
+          // Apple Pill Background
+          const pillRadius = Math.round(countBadgeH / 2);
+          drawRoundRect(ctx, countBadgeX, itemMidY - countBadgeH / 2, countBadgeW, countBadgeH, pillRadius);
+          ctx.fillStyle = isLight ? 'rgba(37, 99, 235, 0.12)' : 'rgba(245, 158, 11, 0.22)';
+          ctx.fill();
+          ctx.strokeStyle = isLight ? 'rgba(37, 99, 235, 0.35)' : 'rgba(245, 158, 11, 0.50)';
+          ctx.lineWidth = 1 * visualScale;
+          ctx.stroke();
+
+          ctx.fillStyle = isLight ? '#1d4ed8' : '#fcd34d';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(countStr, countBadgeX + countBadgeW / 2, itemMidY);
+
+          curItemY += rowHeight;
+        }
+
+        ctx.restore();
+      } catch (legendErr) {
+        console.warn('Failed to render conventional signs legend', legendErr);
+      }
+    }
   }
 
   onProgress?.({
