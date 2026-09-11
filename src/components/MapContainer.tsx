@@ -1,11 +1,17 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig } from '../types';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2 } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
-import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
+import {
+  smoothPolylinePoints,
+  generateFadingPolylineSegments,
+  smoothFreehandStrokeOnMap,
+  extractControlPointsFromFreehand,
+  simplifyExistingLinePoints,
+} from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
 import { getMapFontFamilyCss } from '../utils/mapFonts';
@@ -158,6 +164,10 @@ interface MapContainerProps {
   lineEndIconRotation?: number;
   lineEndIconSize?: number;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+  lineDrawMethod?: LineDrawMethod;
+  onChangeLineDrawMethod?: (method: LineDrawMethod) => void;
+  onChangeLineStartStyle?: (style: LineEndpointType) => void;
+  onChangeLineEndStyle?: (style: LineEndpointType) => void;
 
   // Map Legend
   mapLegendConfig?: MapLegendConfig;
@@ -231,6 +241,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   lineEndIconRotation = 0,
   lineEndIconSize = 32,
   lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
+  lineDrawMethod = 'freehand' as LineDrawMethod,
+  onChangeLineDrawMethod,
+  onChangeLineStartStyle,
+  onChangeLineEndStyle,
 
   // Map Legend
   mapLegendConfig,
@@ -260,6 +274,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   
   // Measurement Tool State & Refs
   const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
+  const measurePointsRef = useRef(measurePoints);
+  useEffect(() => {
+    measurePointsRef.current = measurePoints;
+  }, [measurePoints]);
   const measurePolylineRef = useRef<L.Polyline | null>(null);
   const measureMarkersRef = useRef<L.Marker[]>([]);
   const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
@@ -312,18 +330,233 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       startPointStyle: lineStartStyle,
       startCustomIconUrl: lineStartCustomIcon,
       startIconRotation: lineStartIconRotation,
+      startIconSize: lineStartIconSize,
       endPointStyle: lineEndStyle,
       endCustomIconUrl: lineEndCustomIcon,
       endIconRotation: lineEndIconRotation,
+      endIconSize: lineEndIconSize,
     };
     onAddDrawnLine(newLine);
     setDraftLinePoints([]);
-  }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineStartIconRotation, lineEndStyle, lineEndCustomIcon, lineEndIconRotation, onAddDrawnLine]);
+  }, [
+    draftLinePoints,
+    lineColor,
+    lineWeight,
+    lineSmoothed,
+    lineDashStyle,
+    lineStartStyle,
+    lineStartCustomIcon,
+    lineStartIconRotation,
+    lineStartIconSize,
+    lineEndStyle,
+    lineEndCustomIcon,
+    lineEndIconRotation,
+    lineEndIconSize,
+    onAddDrawnLine,
+  ]);
 
   const handleFinishDraftLineRef = useRef(handleFinishDraftLine);
   useEffect(() => {
     handleFinishDraftLineRef.current = handleFinishDraftLine;
   }, [handleFinishDraftLine]);
+
+  // Freehand (Paint-style) drawing states and refs
+  const [justSmoothedNotice, setJustSmoothedNotice] = useState(false);
+  const justSmoothedNoticeTimerRef = useRef<number | null>(null);
+  const isDrawingFreehandRef = useRef(false);
+  const freehandRawPointsRef = useRef<[number, number][]>([]);
+  const freehandPointerIdRef = useRef<number | null>(null);
+  const freehandStartClientRef = useRef<{ x: number; y: number } | null>(null);
+  const isSpacePressedRef = useRef(false);
+
+  // Live Freehand Drawing Layer Refs
+  const liveFreehandPolylineRef = useRef<L.Polyline | null>(null);
+  const liveFreehandStartMarkerRef = useRef<L.Marker | null>(null);
+  const liveFreehandEndMarkerRef = useRef<L.Marker | null>(null);
+
+  // Synchronized prop refs for pointer events and callbacks
+  const lineDrawMethodRef = useRef(lineDrawMethod);
+  useEffect(() => { lineDrawMethodRef.current = lineDrawMethod; }, [lineDrawMethod]);
+
+  const lineColorRef = useRef(lineColor);
+  useEffect(() => { lineColorRef.current = lineColor; }, [lineColor]);
+
+  const lineWeightRef = useRef(lineWeight);
+  useEffect(() => { lineWeightRef.current = lineWeight; }, [lineWeight]);
+
+  const lineDashStyleRef = useRef(lineDashStyle);
+  useEffect(() => { lineDashStyleRef.current = lineDashStyle; }, [lineDashStyle]);
+
+  const lineStartStyleRef = useRef(lineStartStyle);
+  useEffect(() => { lineStartStyleRef.current = lineStartStyle; }, [lineStartStyle]);
+
+  const lineStartCustomIconRef = useRef(lineStartCustomIcon);
+  useEffect(() => { lineStartCustomIconRef.current = lineStartCustomIcon; }, [lineStartCustomIcon]);
+
+  const lineStartIconRotationRef = useRef(lineStartIconRotation);
+  useEffect(() => { lineStartIconRotationRef.current = lineStartIconRotation; }, [lineStartIconRotation]);
+
+  const lineStartIconSizeRef = useRef(lineStartIconSize);
+  useEffect(() => { lineStartIconSizeRef.current = lineStartIconSize; }, [lineStartIconSize]);
+
+  const lineEndStyleRef = useRef(lineEndStyle);
+  useEffect(() => { lineEndStyleRef.current = lineEndStyle; }, [lineEndStyle]);
+
+  const lineEndCustomIconRef = useRef(lineEndCustomIcon);
+  useEffect(() => { lineEndCustomIconRef.current = lineEndCustomIcon; }, [lineEndCustomIcon]);
+
+  const lineEndIconRotationRef = useRef(lineEndIconRotation);
+  useEffect(() => { lineEndIconRotationRef.current = lineEndIconRotation; }, [lineEndIconRotation]);
+
+  const lineEndIconSizeRef = useRef(lineEndIconSize);
+  useEffect(() => { lineEndIconSizeRef.current = lineEndIconSize; }, [lineEndIconSize]);
+
+  const onAddDrawnLineRef = useRef(onAddDrawnLine);
+  useEffect(() => { onAddDrawnLineRef.current = onAddDrawnLine; }, [onAddDrawnLine]);
+
+  // Currently selected drawn line and optimization helper
+  const selectedDrawnLine = drawnLines.find((l) => l.id === selectedLineId) || null;
+
+  const handleOptimizeLinePoints = useCallback(
+    (targetCount = 16) => {
+      if (!selectedDrawnLine) return;
+      const map = mapInstanceRef.current;
+      const optimized = simplifyExistingLinePoints(map, selectedDrawnLine.points, targetCount);
+      onUpdateDrawnLine({
+        ...selectedDrawnLine,
+        points: optimized,
+        smoothed: true,
+      });
+      setJustSmoothedNotice(true);
+      if (justSmoothedNoticeTimerRef.current) clearTimeout(justSmoothedNoticeTimerRef.current);
+      justSmoothedNoticeTimerRef.current = window.setTimeout(() => {
+        setJustSmoothedNotice(false);
+      }, 2400);
+    },
+    [selectedDrawnLine, onUpdateDrawnLine]
+  );
+
+  // Helper to cleanly remove live freehand preview layers
+  const cleanLiveFreehandLayers = useCallback(() => {
+    if (liveFreehandPolylineRef.current) {
+      liveFreehandPolylineRef.current.remove();
+      liveFreehandPolylineRef.current = null;
+    }
+    if (liveFreehandStartMarkerRef.current) {
+      liveFreehandStartMarkerRef.current.remove();
+      liveFreehandStartMarkerRef.current = null;
+    }
+    if (liveFreehandEndMarkerRef.current) {
+      liveFreehandEndMarkerRef.current.remove();
+      liveFreehandEndMarkerRef.current = null;
+    }
+  }, []);
+
+  // Update or render live freehand preview while user moves mouse or finger
+  const renderLiveFreehandPreview = useCallback((pts: [number, number][]) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    if (pts.length < 1) {
+      cleanLiveFreehandLayers();
+      return;
+    }
+
+    let dashArray: string | undefined = undefined;
+    if (lineDashStyleRef.current === 'dashed') dashArray = '12, 8';
+    if (lineDashStyleRef.current === 'dotted') dashArray = '3, 6';
+
+    const color = lineColorRef.current;
+    const weight = lineWeightRef.current;
+
+    if (!liveFreehandPolylineRef.current) {
+      liveFreehandPolylineRef.current = L.polyline(pts, {
+        color,
+        weight,
+        dashArray,
+        opacity: 0.92,
+        lineCap: 'round',
+        lineJoin: 'round',
+        pane: 'drawnLinesPane',
+      }).addTo(map);
+    } else {
+      liveFreehandPolylineRef.current.setLatLngs(pts);
+      liveFreehandPolylineRef.current.setStyle({
+        color,
+        weight,
+        dashArray,
+      });
+    }
+
+    // Dynamic endpoint previews while drawing
+    if (pts.length >= 2) {
+      const startCoord = pts[0];
+      const secondCoord = pts[1] || startCoord;
+      const endCoord = pts[pts.length - 1];
+      const prevEndCoord = pts[pts.length - 2] || endCoord;
+
+      const startStyle = lineStartStyleRef.current;
+      const startCustomIcon = lineStartCustomIconRef.current;
+      const startRotation = lineStartIconRotationRef.current;
+      const startIconSize = lineStartIconSizeRef.current;
+
+      const endStyle = lineEndStyleRef.current;
+      const endCustomIcon = lineEndCustomIconRef.current;
+      const endRotation = lineEndIconRotationRef.current;
+      const endIconSize = lineEndIconSizeRef.current;
+
+      // Start Marker
+      if (startStyle !== 'none' && startStyle !== 'fade') {
+        const startBearing = calculateBearing(startCoord, secondCoord) + (startRotation || 0);
+        let startIcon: L.DivIcon | null = null;
+        if (startStyle === 'explosion') startIcon = createExplosionIcon(color, weight, startIconSize);
+        if (startStyle === 'custom_icon') startIcon = createCustomImageIcon(startCustomIcon, color, weight, startBearing, startIconSize);
+        if (startStyle === 'arrow') startIcon = createArrowIcon(color, startBearing, weight, startIconSize);
+        if (startStyle === 'dot') startIcon = createDotIcon(color, weight, startIconSize);
+
+        if (startIcon) {
+          if (!liveFreehandStartMarkerRef.current) {
+            liveFreehandStartMarkerRef.current = L.marker(startCoord, {
+              icon: startIcon,
+              interactive: false,
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+          } else {
+            liveFreehandStartMarkerRef.current.setLatLng(startCoord);
+            liveFreehandStartMarkerRef.current.setIcon(startIcon);
+          }
+        }
+      } else if (liveFreehandStartMarkerRef.current) {
+        liveFreehandStartMarkerRef.current.remove();
+        liveFreehandStartMarkerRef.current = null;
+      }
+
+      // End Marker (moves dynamically with cursor or finger)
+      if (endStyle !== 'none' && endStyle !== 'fade') {
+        const endBearing = calculateBearing(prevEndCoord, endCoord) + (endRotation || 0);
+        let endIcon: L.DivIcon | null = null;
+        if (endStyle === 'explosion') endIcon = createExplosionIcon(color, weight, endIconSize);
+        if (endStyle === 'custom_icon') endIcon = createCustomImageIcon(endCustomIcon, color, weight, endBearing, endIconSize);
+        if (endStyle === 'arrow') endIcon = createArrowIcon(color, endBearing, weight, endIconSize);
+        if (endStyle === 'dot') endIcon = createDotIcon(color, weight, endIconSize);
+
+        if (endIcon) {
+          if (!liveFreehandEndMarkerRef.current) {
+            liveFreehandEndMarkerRef.current = L.marker(endCoord, {
+              icon: endIcon,
+              interactive: false,
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+          } else {
+            liveFreehandEndMarkerRef.current.setLatLng(endCoord);
+            liveFreehandEndMarkerRef.current.setIcon(endIcon);
+          }
+        }
+      } else if (liveFreehandEndMarkerRef.current) {
+        liveFreehandEndMarkerRef.current.remove();
+        liveFreehandEndMarkerRef.current = null;
+      }
+    }
+  }, [cleanLiveFreehandLayers]);
 
   // Map Readiness State
   const [isMapReady, setIsMapReady] = useState(false);
@@ -1528,21 +1761,38 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const originalEvent = e.originalEvent;
         let target = originalEvent.target as HTMLElement;
         let clickedMarker = false;
-        while (target && target !== mapContainerRef.current) {
-          if (
-            target.classList.contains('leaflet-marker-icon') ||
-            target.classList.contains('measure-node-icon')
-          ) {
-            clickedMarker = true;
-            break;
+
+        if (
+          target.classList.contains('leaflet-marker-icon') ||
+          target.classList.contains('measure-node-icon') ||
+          target.classList.contains('measure-badge-icon') ||
+          Boolean(target.closest?.('.leaflet-popup')) ||
+          Boolean(target.closest?.('.leaflet-popup-content')) ||
+          Boolean(target.closest?.('.measure-node-icon')) ||
+          Boolean(target.closest?.('.measure-badge-icon')) ||
+          Boolean(target.closest?.('.measure-point-popup'))
+        ) {
+          clickedMarker = true;
+        } else {
+          while (target && target !== mapContainerRef.current) {
+            if (
+              target.classList.contains('leaflet-marker-icon') ||
+              target.classList.contains('measure-node-icon') ||
+              target.classList.contains('measure-badge-icon')
+            ) {
+              clickedMarker = true;
+              break;
+            }
+            target = target.parentElement as HTMLElement;
           }
-          target = target.parentElement as HTMLElement;
         }
 
         if (!clickedMarker) {
           const mode = interactionModeRef.current;
           if (mode === 'line') {
-            setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
+            if (lineDrawMethodRef.current === 'points') {
+              setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
+            }
           } else if (mode === 'measure') {
             setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
           } else if (mode === 'redzone') {
@@ -1910,13 +2160,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     measurePoints.forEach((pt, index) => {
       const isLast = index === measurePoints.length - 1;
       const nodeHtml = `
-        <div class="w-6 h-6 rounded-full ${isLast ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-slate-900'} border-2 border-yellow-400 text-yellow-400 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg">
+        <div class="measure-node-inner w-6 h-6 rounded-full ${isLast ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-slate-900'} border-2 border-yellow-400 text-yellow-400 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg hover:scale-110 transition-transform cursor-grab active:cursor-grabbing select-none" title="${language === 'uk' ? `Точка ${index + 1} (Перетягніть для переміщення, клік або ПКМ для видалення)` : `Point ${index + 1} (Drag to move, click or right-click to delete)`}">
           ${index + 1}
         </div>
       `;
 
       const nodeIcon = L.divIcon({
-        className: 'measure-node-icon',
+        className: 'measure-node-icon cursor-grab',
         html: nodeHtml,
         iconSize: [24, 24],
         iconAnchor: [12, 12],
@@ -1924,13 +2174,136 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       const marker = L.marker([pt.lat, pt.lng], {
         icon: nodeIcon,
-        interactive: false,
-        zIndexOffset: 1500,
+        interactive: true,
+        draggable: true,
+        zIndexOffset: 1500 + index,
       }).addTo(map);
+
+      // Stop clicks/drag on marker from bubbling to map and adding extra points
+      marker.on('click', (e: any) => {
+        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+      });
+      marker.on('mousedown', (e: any) => {
+        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+      });
+
+      marker.on('dragstart', (e: any) => {
+        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+        marker.closePopup();
+      });
+
+      marker.on('drag', () => {
+        // Real-time update of polyline coordinates
+        const curLatLngs = measureMarkersRef.current.map((m) => m.getLatLng());
+        if (measurePolylineRef.current) {
+          measurePolylineRef.current.setLatLngs(curLatLngs);
+        }
+
+        // Live update segment badge before (index - 1)
+        if (index > 0 && measureSegmentTooltipsRef.current[index - 1]) {
+          const prevPos = measureMarkersRef.current[index - 1].getLatLng();
+          const curPos = marker.getLatLng();
+          const dist = calculateDistanceMeters(
+            { lat: prevPos.lat, lng: prevPos.lng },
+            { lat: curPos.lat, lng: curPos.lng }
+          );
+          const mid = L.latLng((prevPos.lat + curPos.lat) / 2, (prevPos.lng + curPos.lng) / 2);
+          measureSegmentTooltipsRef.current[index - 1].setLatLng(mid);
+          const el = measureSegmentTooltipsRef.current[index - 1].getElement();
+          if (el) {
+            const inner = el.querySelector('div');
+            if (inner) inner.textContent = formatDistance(dist);
+          }
+        }
+
+        // Live update segment badge after (index)
+        if (index < measureMarkersRef.current.length - 1 && measureSegmentTooltipsRef.current[index]) {
+          const nextPos = measureMarkersRef.current[index + 1].getLatLng();
+          const curPos = marker.getLatLng();
+          const dist = calculateDistanceMeters(
+            { lat: curPos.lat, lng: curPos.lng },
+            { lat: nextPos.lat, lng: nextPos.lng }
+          );
+          const mid = L.latLng((curPos.lat + nextPos.lat) / 2, (curPos.lng + nextPos.lng) / 2);
+          measureSegmentTooltipsRef.current[index].setLatLng(mid);
+          const el = measureSegmentTooltipsRef.current[index].getElement();
+          if (el) {
+            const inner = el.querySelector('div');
+            if (inner) inner.textContent = formatDistance(dist);
+          }
+        }
+      });
+
+      marker.on('dragend', () => {
+        const newPos = marker.getLatLng();
+        setMeasurePoints((prev) => {
+          const next = [...prev];
+          if (next[index]) {
+            next[index] = { lat: newPos.lat, lng: newPos.lng };
+          }
+          return next;
+        });
+      });
+
+      // Right-click to instantly delete this point
+      marker.on('contextmenu', (e: any) => {
+        if (e.originalEvent) {
+          L.DomEvent.stopPropagation(e.originalEvent);
+          L.DomEvent.preventDefault(e.originalEvent);
+        }
+        setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
+      });
+
+      // Double-click to also delete this point
+      marker.on('dblclick', (e: any) => {
+        if (e.originalEvent) {
+          L.DomEvent.stopPropagation(e.originalEvent);
+          L.DomEvent.preventDefault(e.originalEvent);
+        }
+        setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
+      });
+
+      // Interactive popup with coordinate info and delete button
+      const popupEl = document.createElement('div');
+      popupEl.className = 'p-1 text-center select-none font-sans min-w-[140px]';
+      popupEl.innerHTML = `
+        <div class="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-slate-200">
+          <span class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+            <span class="w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-mono font-black flex items-center justify-center">${index + 1}</span>
+            <span>${language === 'uk' ? `Точка №${index + 1}` : `Point #${index + 1}`}</span>
+          </span>
+        </div>
+        <div class="text-[10px] text-slate-500 font-mono mb-1">
+          ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}
+        </div>
+        <div class="text-[10px] text-amber-600 font-medium mb-2">
+          ${language === 'uk' ? '✋ Перетягуйте для зміни' : '✋ Drag to move'}
+        </div>
+        <button type="button" class="del-ruler-pt-btn w-full py-1.5 px-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95">
+          <span>🗑️</span>
+          <span>${language === 'uk' ? 'Видалити точку' : 'Delete Point'}</span>
+        </button>
+      `;
+
+      const delBtn = popupEl.querySelector('.del-ruler-pt-btn');
+      if (delBtn) {
+        delBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          ev.preventDefault();
+          map.closePopup();
+          setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
+        });
+      }
+
+      marker.bindPopup(popupEl, {
+        offset: [0, -12],
+        closeButton: true,
+        className: 'measure-point-popup',
+      });
 
       measureMarkersRef.current.push(marker);
     });
-  }, [measurePoints, isMapReady]);
+  }, [measurePoints, isMapReady, language]);
 
 
   // Handle Tile Layer changes
@@ -3012,14 +3385,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   }, [interactionMode, draftLinePoints.length]);
 
-  // Keyboard shortcut listener for line drawing
+  // Keyboard shortcut listener for line drawing & ruler measuring
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+
       if (interactionModeRef.current === 'line' && draftLinePoints.length >= 2) {
         if (e.key === 'Enter') {
           handleFinishDraftLine();
         } else if (e.key === 'Escape') {
           setDraftLinePoints([]);
+        }
+      }
+
+      if (interactionModeRef.current === 'measure' && measurePointsRef.current.length > 0) {
+        if (e.key === 'Escape') {
+          setMeasurePoints([]);
+        } else if (e.key === 'Backspace' || e.key === 'Delete') {
+          setMeasurePoints((prev) => prev.slice(0, -1));
         }
       }
     };
@@ -3037,6 +3421,211 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       map.doubleClickZoom.enable();
     }
   }, [interactionMode, isMapReady]);
+
+  // Keyboard spacebar listener to toggle panning while in freehand line mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        isSpacePressedRef.current = true;
+        const map = mapInstanceRef.current;
+        if (map && interactionModeRef.current === 'line' && lineDrawMethodRef.current === 'freehand') {
+          map.dragging.enable();
+          if (mapContainerRef.current) {
+            mapContainerRef.current.style.cursor = 'grab';
+          }
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        isSpacePressedRef.current = false;
+        const map = mapInstanceRef.current;
+        if (map && interactionModeRef.current === 'line' && lineDrawMethodRef.current === 'freehand') {
+          map.dragging.disable();
+          if (mapContainerRef.current) {
+            mapContainerRef.current.style.cursor = 'crosshair';
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Manage map dragging and touch zooming based on interactionMode and lineDrawMethod
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const container = mapContainerRef.current;
+    if (!map || !isMapReady) return;
+
+    if (interactionMode === 'line' && lineDrawMethod === 'freehand') {
+      map.dragging.disable();
+      map.touchZoom.disable();
+      if (container) {
+        container.style.cursor = 'crosshair';
+        container.style.touchAction = 'none';
+      }
+    } else {
+      map.dragging.enable();
+      map.touchZoom.enable();
+      if (container) {
+        container.style.cursor = '';
+        container.style.touchAction = '';
+      }
+    }
+  }, [interactionMode, lineDrawMethod, isMapReady]);
+
+  // Freehand pointer event listeners on map container
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    const map = mapInstanceRef.current;
+    if (!container || !map || !isMapReady) return;
+
+    if (interactionMode !== 'line' || lineDrawMethod !== 'freehand') {
+      cleanLiveFreehandLayers();
+      return;
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (isSpacePressedRef.current) return;
+
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('.leaflet-control') ||
+        target.closest('.pointer-events-auto') ||
+        target.closest('.tactical-logo-container-outer') ||
+        target.closest('.leaflet-popup') ||
+        target.closest('.leaflet-marker-icon') ||
+        target.closest('.measure-node-icon') ||
+        target.closest('.draft-line-node') ||
+        target.closest('.line-vertex-marker') ||
+        target.closest('button') ||
+        target.closest('input')
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      isDrawingFreehandRef.current = true;
+      freehandPointerIdRef.current = e.pointerId;
+
+      try {
+        container.setPointerCapture(e.pointerId);
+      } catch {}
+
+      const latlng = map.mouseEventToLatLng(e);
+      const startPt: [number, number] = [latlng.lat, latlng.lng];
+      freehandRawPointsRef.current = [startPt];
+      freehandStartClientRef.current = { x: e.clientX, y: e.clientY };
+
+      renderLiveFreehandPreview([startPt]);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      if (freehandPointerIdRef.current !== null && e.pointerId !== freehandPointerIdRef.current) return;
+
+      e.preventDefault();
+      const latlng = map.mouseEventToLatLng(e);
+      const rawPoints = freehandRawPointsRef.current;
+      const lastPt = rawPoints[rawPoints.length - 1];
+
+      if (lastPt) {
+        const lastPointPix = map.latLngToContainerPoint(L.latLng(lastPt[0], lastPt[1]));
+        const currPointPix = map.latLngToContainerPoint(latlng);
+        const distSq = (currPointPix.x - lastPointPix.x) ** 2 + (currPointPix.y - lastPointPix.y) ** 2;
+        // Jitter filter: 2.5px threshold
+        if (distSq < 6.25) {
+          return;
+        }
+      }
+
+      rawPoints.push([latlng.lat, latlng.lng]);
+      renderLiveFreehandPreview(rawPoints);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      if (freehandPointerIdRef.current !== null && e.pointerId !== freehandPointerIdRef.current) return;
+
+      isDrawingFreehandRef.current = false;
+      try {
+        container.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      const rawPoints = [...freehandRawPointsRef.current];
+      freehandRawPointsRef.current = [];
+      cleanLiveFreehandLayers();
+
+      const startClient = freehandStartClientRef.current;
+      const totalDistPx = startClient ? Math.hypot(e.clientX - startClient.x, e.clientY - startClient.y) : 0;
+
+      if (rawPoints.length >= 2 && totalDistPx >= 8) {
+        // Extract clean, compact key control points (6-18 points) instead of saving hundreds of dense raw points!
+        // When rendered with smoothed: true, it draws a silky-smooth spline while giving the user only 6-18 comfortable drag handles.
+        const controlPoints = extractControlPointsFromFreehand(map, rawPoints, 36, 18);
+
+        const newLine: DrawnLine = {
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          points: controlPoints,
+          color: lineColorRef.current,
+          weight: lineWeightRef.current,
+          smoothed: true, // Auto smoothed!
+          dashStyle: lineDashStyleRef.current,
+          startPointStyle: lineStartStyleRef.current,
+          startCustomIconUrl: lineStartCustomIconRef.current,
+          startIconRotation: lineStartIconRotationRef.current,
+          startIconSize: lineStartIconSizeRef.current,
+          endPointStyle: lineEndStyleRef.current,
+          endCustomIconUrl: lineEndCustomIconRef.current,
+          endIconRotation: lineEndIconRotationRef.current,
+          endIconSize: lineEndIconSizeRef.current,
+        };
+
+        onAddDrawnLineRef.current(newLine);
+        onSelectLineRef.current(newLine.id);
+
+        setJustSmoothedNotice(true);
+        if (justSmoothedNoticeTimerRef.current) clearTimeout(justSmoothedNoticeTimerRef.current);
+        justSmoothedNoticeTimerRef.current = window.setTimeout(() => {
+          setJustSmoothedNotice(false);
+        }, 2400);
+      }
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      isDrawingFreehandRef.current = false;
+      try {
+        container.releasePointerCapture(e.pointerId);
+      } catch {}
+      freehandRawPointsRef.current = [];
+      cleanLiveFreehandLayers();
+    };
+
+    container.addEventListener('pointerdown', onPointerDown, { passive: false });
+    container.addEventListener('pointermove', onPointerMove, { passive: false });
+    container.addEventListener('pointerup', onPointerUp, { passive: false });
+    container.addEventListener('pointercancel', onPointerCancel, { passive: false });
+
+    return () => {
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerCancel);
+      cleanLiveFreehandLayers();
+    };
+  }, [interactionMode, lineDrawMethod, isMapReady, renderLiveFreehandPreview, cleanLiveFreehandLayers]);
 
   // Center map on selected marker when it changes (or coordinates manual edits)
   const lastSelectedIdRef = useRef<string | null>(null);
@@ -3861,75 +4450,301 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         {/* Floating Line Drawing Mobile/Desktop Control Toolbar */}
         {!(isExporting || isCopying) && interactionMode === 'line' && (
-          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[95vw] animate-fade-in">
-            <div className={`px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 ${
+          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[96vw] animate-fade-in">
+            {/* Warning banner if selected line has excessive editing points */}
+            {selectedDrawnLine && selectedDrawnLine.points.length > 20 && (
+              <div className="px-3.5 py-1.5 rounded-2xl bg-amber-500 text-slate-950 font-extrabold text-xs shadow-2xl flex items-center gap-2.5 border-2 border-amber-300 animate-pulse">
+                <span>⚠️ {language === 'uk' ? `У вибраній лінії ${selectedDrawnLine.points.length} точок (забагато для зручного редагування).` : `Line has ${selectedDrawnLine.points.length} points (too many for easy editing).`}</span>
+                <button
+                  type="button"
+                  onClick={() => handleOptimizeLinePoints(16)}
+                  className="px-2.5 py-1 bg-slate-950 text-amber-300 hover:bg-slate-900 rounded-xl text-xs font-black shadow transition-all cursor-pointer hover:scale-105 active:scale-95"
+                >
+                  {language === 'uk' ? '✨ Зменшити до ~16 точок' : '✨ Reduce to ~16 pts'}
+                </button>
+              </div>
+            )}
+
+            <div className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-3 ${
               theme === 'light'
                 ? 'bg-slate-900/90 border-slate-700/80 text-white'
                 : 'bg-slate-950/90 border-white/20 text-white'
             }`}>
-              {/* Line Status Info */}
-              <div className="flex items-center gap-2 border-r border-white/20 pr-2.5 sm:pr-3.5">
-                <PenTool className="w-4 h-4 text-emerald-400 animate-pulse flex-shrink-0" />
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
-                    {language === 'uk' ? 'Нанесення лінії' : 'Line Drawing'}
+              {/* Technique Switcher: Freehand (Paint) vs Point-by-point */}
+              <div className="flex items-center p-0.5 rounded-xl bg-black/40 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => onChangeLineDrawMethod?.('freehand')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    lineDrawMethod === 'freehand'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title={language === 'uk' ? 'Малювання лінії мишкою або пальцем як в Paint з авто-згладжуванням' : 'Freehand draw with mouse/touch like Paint with auto-smoothing'}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'Від руки (Paint)' : 'Freehand (Paint)'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeLineDrawMethod?.('points')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    lineDrawMethod === 'points'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title={language === 'uk' ? 'Покрокове нанесення лінії по окремих точках на карті' : 'Point-by-point click line vertices'}
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'По точках' : 'Point-by-point'}</span>
+                </button>
+              </div>
+
+              {/* Endpoints Selectors (Початок / Кінець) */}
+              <div className="flex items-center gap-1.5 px-2 border-l border-r border-white/15">
+                {/* Start endpoint */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const order: LineEndpointType[] = ['none', 'arrow', 'dot', 'explosion', 'fade'];
+                    const idx = order.indexOf(lineStartStyle);
+                    const next = order[(idx + 1) % order.length];
+                    onChangeLineStartStyle?.(next);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-white/10 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Натисніть щоб змінити початкову точку лінії' : 'Click to change start endpoint'}
+                >
+                  <span className="text-slate-400 text-[10px]">{language === 'uk' ? 'Початок:' : 'Start:'}</span>
+                  <span className="text-emerald-400 font-extrabold">
+                    {lineStartStyle === 'arrow' && '➔'}
+                    {lineStartStyle === 'dot' && '⏺'}
+                    {lineStartStyle === 'explosion' && '💥'}
+                    {lineStartStyle === 'fade' && '✨'}
+                    {lineStartStyle === 'custom_icon' && '🖼️'}
+                    {lineStartStyle === 'none' && '—'}
                   </span>
-                  <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
-                    {draftLinePoints.length === 0 ? (
-                      <span className="text-slate-400 italic">
-                        {language === 'uk' ? 'Торкніться карти...' : 'Tap on map...'}
-                      </span>
-                    ) : (
-                      <>
-                        <strong>{draftLinePoints.length}</strong> {language === 'uk' ? 'точок' : 'pts'}
-                        {draftLinePoints.length >= 2 && (
-                          <span className="ml-1.5 text-amber-300 font-bold">
-                            ({(calculateDraftLineDistance() >= 1000 
-                              ? `${(calculateDraftLineDistance() / 1000).toFixed(2)} км` 
-                              : `${Math.round(calculateDraftLineDistance())} м`)})
-                          </span>
-                        )}
-                      </>
-                    )}
+                </button>
+
+                {/* End endpoint */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const order: LineEndpointType[] = ['none', 'arrow', 'dot', 'explosion', 'fade'];
+                    const idx = order.indexOf(lineEndStyle);
+                    const next = order[(idx + 1) % order.length];
+                    onChangeLineEndStyle?.(next);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-white/10 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Натисніть щоб змінити кінцеву точку лінії' : 'Click to change end endpoint'}
+                >
+                  <span className="text-slate-400 text-[10px]">{language === 'uk' ? 'Кінець:' : 'End:'}</span>
+                  <span className="text-emerald-400 font-extrabold">
+                    {lineEndStyle === 'arrow' && '➔'}
+                    {lineEndStyle === 'dot' && '⏺'}
+                    {lineEndStyle === 'explosion' && '💥'}
+                    {lineEndStyle === 'fade' && '✨'}
+                    {lineEndStyle === 'custom_icon' && '🖼️'}
+                    {lineEndStyle === 'none' && '—'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Specific Mode Controls */}
+              {lineDrawMethod === 'freehand' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 animate-pulse" />
+                      <span>{language === 'uk' ? 'Режим Paint' : 'Paint Mode'}</span>
+                    </span>
+                    <span className="text-xs font-semibold whitespace-nowrap">
+                      {justSmoothedNotice ? (
+                        <span className="text-emerald-400 font-extrabold animate-bounce inline-block">
+                          {language === 'uk' ? '✨ Лінію авто-згладжено!' : '✨ Line auto-smoothed!'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">
+                          {language === 'uk' ? 'Проведіть лінію по карті' : 'Draw line on map'}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Undo last drawn line in freehand mode */}
+                  {drawnLines.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const last = drawnLines[drawnLines.length - 1];
+                        if (last) onDeleteDrawnLine(last.id);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
+                      title={language === 'uk' ? 'Видалити останню намальовану лінію' : 'Undo last drawn line'}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати лінію' : 'Undo Line'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                /* Point-by-point controls */
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="flex flex-col text-left pr-1.5">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
+                      {language === 'uk' ? 'По точках' : 'Points'}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
+                      {draftLinePoints.length === 0 ? (
+                        <span className="text-slate-400 italic">
+                          {language === 'uk' ? 'Торкніться карти...' : 'Tap on map...'}
+                        </span>
+                      ) : (
+                        <>
+                          <strong>{draftLinePoints.length}</strong> {language === 'uk' ? 'точок' : 'pts'}
+                          {draftLinePoints.length >= 2 && (
+                            <span className="ml-1 text-amber-300 font-bold">
+                              ({(calculateDraftLineDistance() >= 1000 
+                                ? `${(calculateDraftLineDistance() / 1000).toFixed(2)} км` 
+                                : `${Math.round(calculateDraftLineDistance())} м`)})
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Undo point */}
+                  <button
+                    onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
+                    disabled={draftLinePoints.length === 0}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
+                    title={language === 'uk' ? 'Скасувати останню точку' : 'Undo last vertex'}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати точку' : 'Undo'}</span>
+                  </button>
+
+                  {/* Finish Line */}
+                  <button
+                    onClick={handleFinishDraftLine}
+                    disabled={draftLinePoints.length < 2}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-400/50 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
+                  </button>
+
+                  {/* Clear / Cancel */}
+                  {draftLinePoints.length > 0 && (
+                    <button
+                      onClick={() => setDraftLinePoints([])}
+                      className="p-1.5 sm:p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all border border-red-500/30 cursor-pointer active:scale-95"
+                      title={language === 'uk' ? 'Очистити чернетку' : 'Clear draft'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Selected line points & quick optimization */}
+              {selectedDrawnLine && (
+                <div className="flex items-center gap-2 pl-2 border-l border-white/15">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                      {language === 'uk' ? 'Точки:' : 'Points:'}
+                    </span>
+                    <span className={`text-xs font-black ${selectedDrawnLine.points.length > 22 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {selectedDrawnLine.points.length} {language === 'uk' ? 'вузлів' : 'pts'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOptimizeLinePoints(16)}
+                    className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 transition-colors cursor-pointer flex items-center gap-1 active:scale-95"
+                    title={language === 'uk' ? 'Зменшити кількість точок для зручного перетягування' : 'Reduce edit points to optimal ~16'}
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>{language === 'uk' ? 'Зменшити точки' : 'Reduce Points'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Ruler / Measure Tool Toolbar */}
+        {!(isExporting || isCopying) && interactionMode === 'measure' && (
+          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[96vw] animate-fade-in">
+            <div className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 ${
+              theme === 'light'
+                ? 'bg-slate-900/90 border-slate-700/80 text-white'
+                : 'bg-slate-950/90 border-white/20 text-white'
+            }`}>
+              <div className="flex items-center gap-2 pr-2.5 border-r border-white/15">
+                <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-xs">
+                  <Ruler className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col text-left">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {language === 'uk' ? 'Лінійка' : 'Ruler'}
+                  </span>
+                  <span className="text-xs font-black text-amber-400">
+                    {measurePoints.length >= 2 
+                      ? formatDistance(totalMeasureDistance)
+                      : (language === 'uk' ? 'Клікніть на карту' : 'Click on map')}
                   </span>
                 </div>
               </div>
 
-              {/* Control Action Buttons */}
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* Undo last vertex point */}
+              <div className="flex items-center gap-1 text-xs text-slate-300 font-medium px-1">
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-black text-[11px]">
+                  {measurePoints.length} {language === 'uk' 
+                    ? (measurePoints.length === 1 ? 'точка' : (measurePoints.length >= 2 && measurePoints.length <= 4 ? 'точки' : 'точок'))
+                    : (measurePoints.length === 1 ? 'point' : 'points')}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 border-l border-white/15 pl-2.5">
+                {/* Undo last point button */}
                 <button
-                  onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
-                  disabled={draftLinePoints.length === 0}
-                  className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
-                  title={language === 'uk' ? 'Скасувати останню точку' : 'Undo last vertex'}
+                  type="button"
+                  onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))}
+                  disabled={measurePoints.length === 0}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    measurePoints.length > 0
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-95'
+                      : 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-800/40'
+                  }`}
+                  title={language === 'uk' ? 'Видалити останню точку (Backspace / Del)' : 'Undo last point (Backspace / Del)'}
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати точку' : 'Undo Point'}</span>
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати' : 'Undo'}</span>
                 </button>
 
-                {/* Finish Line */}
+                {/* Clear all measure points button */}
                 <button
-                  onClick={handleFinishDraftLine}
-                  disabled={draftLinePoints.length < 2}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-400/50 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
+                  type="button"
+                  onClick={() => setMeasurePoints([])}
+                  disabled={measurePoints.length === 0}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    measurePoints.length > 0
+                      ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 active:scale-95'
+                      : 'opacity-40 cursor-not-allowed text-slate-500 bg-rose-500/5'
+                  }`}
+                  title={language === 'uk' ? 'Очистити всю лінійку (Esc)' : 'Clear all ruler points (Esc)'}
                 >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'Очистити' : 'Clear'}</span>
                 </button>
-
-                {/* Clear / Cancel */}
-                {draftLinePoints.length > 0 && (
-                  <button
-                    onClick={() => setDraftLinePoints([])}
-                    className="p-1.5 sm:p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all border border-red-500/30 cursor-pointer active:scale-95"
-                    title={language === 'uk' ? 'Очистити чернетку' : 'Clear draft'}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
               </div>
             </div>
+
+            {measurePoints.length > 0 && (
+              <div className="text-[10px] text-amber-200/90 bg-slate-950/85 px-3 py-1 rounded-full border border-amber-400/30 backdrop-blur-xs flex items-center gap-1.5 shadow-md">
+                <span>💡 {language === 'uk' ? 'Перетягуйте точки для зміни позиції. Клік або ПКМ по точці для видалення.' : 'Drag points to move. Click or right-click a point to delete.'}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -4051,6 +4866,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
           .leaflet-popup-tip-container {
             margin-top: -1px;
+          }
+          /* Measure node drag cursors and popup styles */
+          .measure-node-icon {
+            cursor: grab !important;
+          }
+          .measure-node-icon:active,
+          .leaflet-dragging .measure-node-icon {
+            cursor: grabbing !important;
+          }
+          .measure-point-popup .leaflet-popup-content-wrapper {
+            background: #0f172a;
+            border: 1px solid rgba(250, 204, 21, 0.4);
+            color: #f8fafc;
+            border-radius: 16px;
+            padding: 6px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+          }
+          .measure-point-popup .leaflet-popup-tip {
+            background: #0f172a;
           }
           /* Hide selected marker outline and box-shadow during image export/copy */
           .exporting-map .selected-marker-highlight {

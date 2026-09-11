@@ -63,6 +63,8 @@ export type WatermarkType = 'text' | 'image';
 
 export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settlement' | 'line';
 
+export type LineDrawMethod = 'freehand' | 'points';
+
 export type LineEndpointType = 'none' | 'arrow' | 'dot' | 'fade' | 'explosion' | 'custom_icon';
 
 export type AlertType =

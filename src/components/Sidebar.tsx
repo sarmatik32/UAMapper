@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
+import { simplifyLatLngPath } from '../utils/smoothing';
 import { 
   Map as MapIcon, 
   Settings, 
@@ -155,6 +156,8 @@ interface SidebarProps {
   onChangeLineEndIconSize?: (size: number) => void;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
   onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
+  lineDrawMethod?: LineDrawMethod;
+  onChangeLineDrawMethod?: (method: LineDrawMethod) => void;
 
   // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
   mapLegendConfig?: MapLegendConfig;
@@ -302,6 +305,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeLineEndIconSize = (_size) => {},
   lineDashStyle = 'solid',
   onChangeLineDashStyle = (_style) => {},
+  lineDrawMethod = 'freehand',
+  onChangeLineDrawMethod = (_method) => {},
 
   // Map Legend
   mapLegendConfig,
@@ -384,6 +389,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currLineLabel = selectedLine ? (selectedLine.label || '') : '';
   const currLineLabelSize = selectedLine ? (selectedLine.labelSize || 12) : 12;
   const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
+
+  const handleSimplifySelectedLine = (targetCount: number) => {
+    if (!selectedLine) return;
+    const optimized = simplifyLatLngPath(selectedLine.points, targetCount);
+    onUpdateLine({
+      ...selectedLine,
+      points: optimized,
+      smoothed: true,
+    });
+  };
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
 
@@ -1104,33 +1119,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.mode && (
-            <div className="p-3 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onSetInteractionMode('draw')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'draw'
-                    ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <PenTool className="w-4 h-4" />
-                <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
-              </button>
+            <div className="p-3 space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onSetInteractionMode('draw')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'draw'
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <PenTool className="w-4 h-4" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('line')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'line'
-                    ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
-              </button>
+                <button
+                  onClick={() => onSetInteractionMode('line')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'line'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('pan')}
+                <button
+                  onClick={() => onSetInteractionMode('pan')}
                   className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                     interactionMode === 'pan'
                       ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
@@ -1165,6 +1181,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
                 </button>
               </div>
+
+              {interactionMode === 'measure' && (
+                <div className="mt-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs">
+                    <Ruler className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Режим лінійки (Вимірювання)' : 'Ruler Mode (Measurement)'}</span>
+                  </div>
+                  <ul className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 pl-3.5 list-disc leading-tight">
+                    <li>{isUa ? 'Клікайте по карті для додавання точок' : 'Click on map to add points'}</li>
+                    <li>{isUa ? 'Перетягуйте нанесені точки мишкою' : 'Drag placed points with mouse'}</li>
+                    <li>{isUa ? 'Клік по точці відкриває меню видалення (або ПКМ)' : 'Click point to delete (or right-click)'}</li>
+                    <li>{isUa ? 'Backspace — скасувати точку, Esc — очистити' : 'Backspace removes last point, Esc clears all'}</li>
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -1232,6 +1264,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{isUa ? 'Увімкнути режим малювання лінії' : 'Activate Line Drawing Mode'}</span>
                 </button>
               )}
+
+              {/* Спосіб нанесення лінії (Від руки як в Paint чи По точках) */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Спосіб малювання' : 'Drawing Technique'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('freehand')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'freehand'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'Від руки (Paint)' : 'Freehand (Paint)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('points')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'points'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <PenTool className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'По точках' : 'Point-by-point'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {lineDrawMethod === 'freehand'
+                    ? (isUa 
+                        ? '✨ Проведіть мишкою або пальцем по екрану (як в Paint). Після відпускання лінія автоматично згладиться сама.' 
+                        : '✨ Draw with mouse or finger (like Paint). Once released, the line will automatically smooth itself.')
+                    : (isUa 
+                        ? '📐 Послідовні натискання на карті для точного нанесення лінії по вузлових точках.' 
+                        : '📐 Click sequentially on the map to place precise path vertices.')}
+                </p>
+              </div>
 
               {/* 1. Color Picker */}
               <div>
@@ -1318,6 +1392,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {isUa ? 'Повороти та кути сильно згладжуються плавною дугою' : 'Turn angles and corners are strongly smoothed into curves'}
                 </p>
               </div>
+
+              {/* 3.1 Point Simplification for Hand-Drawn Lines / Easy Editing */}
+              {selectedLine && (
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">
+                        {isUa ? 'Точки редагування лінії' : 'Editing Control Points'}
+                      </span>
+                    </div>
+                    <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                      selectedLine.points.length > 22
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      {selectedLine.points.length} {isUa ? 'точок' : 'pts'}
+                    </span>
+                  </div>
+
+                  {selectedLine.points.length > 20 ? (
+                    <p className="text-[10px] text-amber-400 leading-snug font-medium">
+                      {isUa
+                        ? 'У лінії забагато точок для зручного редагування. Оберіть кількість вузлів для оптимізації:'
+                        : 'Too many points for comfortable editing. Choose desired point count to optimize:'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      {isUa
+                        ? 'Зменшення точок робить перетягування та зміну форми лінії легким і точним:'
+                        : 'Fewer points make shaping and adjusting the line much easier:'}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(10)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Зменшити до ~10 ключових точок' : 'Reduce to ~10 points'}
+                    >
+                      {isUa ? 'Мінімум (~10)' : 'Min (~10)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(16)}
+                      className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold transition-all cursor-pointer text-center shadow-sm active:scale-95"
+                      title={isUa ? 'Оптимально: ~16 точок для гарної форми' : 'Optimal: ~16 points'}
+                    >
+                      {isUa ? 'Оптимально (~16)' : 'Optimal (~16)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(24)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Детальніше: ~24 точки' : 'Detailed: ~24 points'}
+                    >
+                      {isUa ? 'Детально (~24)' : 'Detailed (~24)'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 4. Dash Style */}
               <div>

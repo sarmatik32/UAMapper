@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -371,6 +371,20 @@ export default function App() {
   const [lineEndIconRotation, setLineEndIconRotation] = useState<number>(0);
   const [lineEndIconSize, setLineEndIconSize] = useState<number>(32);
   const [lineDashStyle, setLineDashStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+  const [lineDrawMethod, setLineDrawMethod] = useState<LineDrawMethod>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_line_draw_method');
+      if (saved === 'points' || saved === 'freehand') return saved;
+    } catch {}
+    return 'freehand'; // Default to freehand (Paint-style auto-smoothed)
+  });
+
+  const handleSetLineDrawMethod = useCallback((method: LineDrawMethod) => {
+    setLineDrawMethod(method);
+    try {
+      localStorage.setItem('visicom_line_draw_method', method);
+    } catch {}
+  }, []);
 
   // Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") state
   const [mapLegendConfig, setMapLegendConfig] = useState<MapLegendConfig>(() => {
@@ -1573,6 +1587,10 @@ export default function App() {
             lineEndIconRotation={lineEndIconRotation}
             lineEndIconSize={lineEndIconSize}
             lineDashStyle={lineDashStyle}
+            lineDrawMethod={lineDrawMethod}
+            onChangeLineDrawMethod={handleSetLineDrawMethod}
+            onChangeLineStartStyle={setLineStartStyle}
+            onChangeLineEndStyle={setLineEndStyle}
             mapLegendConfig={mapLegendConfig}
             onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
             activeAlerts={activeAlerts}
@@ -2077,6 +2095,8 @@ export default function App() {
               onChangeLineEndIconSize={setLineEndIconSize}
               lineDashStyle={lineDashStyle}
               onChangeLineDashStyle={setLineDashStyle}
+              lineDrawMethod={lineDrawMethod}
+              onChangeLineDrawMethod={handleSetLineDrawMethod}
               mapLegendConfig={mapLegendConfig}
               onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
               activeAlerts={activeAlerts}
