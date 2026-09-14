@@ -8,6 +8,7 @@ import { AirAlertsPanel } from './components/AirAlertsPanel';
 import { fetchActiveAlerts } from './utils/alertsService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
+import { preloadFontEmbedCSS } from './utils/mapFonts';
 import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
@@ -61,16 +62,41 @@ const TILE_LAYERS: TileLayerConfig[] = [
     isDark: false,
   },
   {
-    id: 'esri_light_gray',
-    nameEn: 'Esri Light Gray Canvas (Clean, No Watermark)',
-    nameUa: 'Esri Світла сіра Canvas (Без водяних знаків)',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    id: 'apple_maps',
+    nameEn: 'Apple Maps (Standard Light, Clean)',
+    nameUa: 'Apple Maps (Світла, без водяних знаків)',
+    url: '/api/tiles/apple/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, HERE, NGA, USGS',
+    attribution: '© Apple Maps (maps.apple.com)',
     requiresKey: false,
     isDark: false,
+  },
+  {
+    id: 'apple_maps_satellite',
+    nameEn: 'Apple Maps Satellite (Clean, High-Res)',
+    nameUa: 'Apple Maps Супутник (Без водяних знаків)',
+    url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
+    tms: false,
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Apple Maps (maps.apple.com)',
+    requiresKey: false,
+    isDark: true,
+  },
+  {
+    id: 'apple_maps_hybrid',
+    nameEn: 'Apple Maps Hybrid (Satellite + Labels)',
+    nameUa: 'Apple Maps Гібрид (Супутник + Підписи)',
+    url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Apple Maps (maps.apple.com)',
+    requiresKey: false,
+    isDark: true,
   },
   {
     id: 'osm',
@@ -449,8 +475,12 @@ export default function App() {
 
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
+    if (savedId === 'esri_light_gray') {
+      const apple = TILE_LAYERS.find((l) => l.id === 'apple_maps');
+      if (apple) return apple;
+    }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
-    return matched || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
+    return matched || TILE_LAYERS.find((l) => l.id === 'apple_maps') || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
   });
 
   const [watermarkType, setWatermarkType] = useState<WatermarkType>(() => {
@@ -522,9 +552,14 @@ export default function App() {
     return (saved as MapFontFamily) || 'inter';
   });
 
+  useEffect(() => {
+    preloadFontEmbedCSS(mapFont);
+  }, [mapFont]);
+
   const handleUpdateMapFont = (font: MapFontFamily) => {
     setMapFont(font);
     localStorage.setItem('uamapper_map_font', font);
+    preloadFontEmbedCSS(font);
   };
 
   const [showSettlementLabels, setShowSettlementLabels] = useState<boolean>(() => {

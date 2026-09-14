@@ -43,6 +43,7 @@ import {
   Type,
   PanelRightClose,
   KeyRound,
+  ExternalLink,
   X
 } from 'lucide-react';
 
@@ -946,11 +947,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={`p-2 sm:p-3 border-b flex justify-between items-center gap-1 sm:gap-2 backdrop-blur-2xl ${
         theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
       }`}>
-        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
+        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[2px] sm:gap-[3px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
           theme === 'light' 
             ? 'bg-slate-950/90 border-slate-900 text-white' 
             : 'bg-white/90 border-white text-slate-950'
         }`}>
+          <img 
+            src="/favicon-32x32.png" 
+            alt="UAMapper" 
+            className="w-4 h-4 rounded-[5px] object-cover shadow-xs -ml-0.5 mr-0.5" 
+            referrerPolicy="no-referrer"
+          />
           <span 
             className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
             style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
@@ -2511,6 +2518,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 ))}
               </div>
+
+              {/* Apple Maps Info & Direct Link */}
+              {activeTileLayer.id.startsWith('apple_maps') && (
+                <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 animate-fade-in ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base select-none">🍎</span>
+                    <div>
+                      <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                        <span>Apple Maps</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                          {isUa ? 'Офіційні тайли' : 'Official MapKit'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Офіційні карти Apple без водяних знаків' : 'Clean Apple tiles, no watermark'}
+                      </div>
+                    </div>
+                  </div>
+                  <a
+                    href="https://maps.apple.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 border border-blue-500/20 shrink-0"
+                    title="Відкрити maps.apple.com"
+                  >
+                    <span>maps.apple.com</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
 
               {/* Visicom API Key / Token Setting */}
               <div className={`p-3 rounded-2xl border space-y-2.5 ${

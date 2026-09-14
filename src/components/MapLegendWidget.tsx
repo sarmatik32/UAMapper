@@ -8,6 +8,7 @@ interface MapLegendWidgetProps {
   onUpdateConfig: (config: MapLegendConfig) => void;
   language: 'uk' | 'en';
   theme: 'light' | 'dark';
+  fontFamily?: string;
 }
 
 export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
@@ -15,6 +16,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
   onUpdateConfig,
   language,
   theme,
+  fontFamily,
 }) => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -126,6 +128,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
     <div
       id="map-legend-widget-container"
       className={`absolute z-[990] ${positionClasses} select-none transition-all duration-300 pointer-events-auto max-w-[340px] w-auto`}
+      style={{ fontFamily: fontFamily || 'inherit' }}
     >
       {/* Apple Frosted Glass Container with Specular Highlights */}
       <div
@@ -134,6 +137,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
             ? 'bg-white/95 border-slate-300/80 shadow-[0_20px_45px_rgba(0,0,0,0.18),inset_0_1px_1px_rgba(255,255,255,1)] text-slate-900'
             : 'bg-slate-950/85 border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.25)] text-white'
         }`}
+        style={{ fontFamily: fontFamily || 'inherit' }}
       >
         {/* Top Rim Specular Highlight */}
         <div
@@ -164,11 +168,12 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
               <Layers className="w-3.5 h-3.5 shrink-0" />
             </div>
             <span
-              className={`text-[11.5px] font-black tracking-[0.08em] uppercase font-sans ${
+              className={`text-[11.5px] font-black tracking-[0.08em] uppercase ${
                 isLight
                   ? 'text-slate-900'
                   : 'text-amber-300 drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
               }`}
+              style={{ fontFamily: fontFamily || 'inherit' }}
             >
               {config.title || (isUa ? 'УМОВНІ ПОЗНАЧЕННЯ:' : 'CONVENTIONAL SIGNS:')}
             </span>
@@ -180,6 +185,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
                   ? 'bg-slate-200 border-slate-300/80 text-slate-800'
                   : 'bg-white/15 border-white/20 text-white'
               }`}
+              style={{ fontFamily: fontFamily || 'inherit' }}
             >
               {visibleItems.length}
             </span>
@@ -232,6 +238,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
                             ? 'text-slate-900 font-extrabold'
                             : 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]'
                         }`}
+                        style={{ fontFamily: fontFamily || 'inherit' }}
                         title={item.name}
                       >
                         {item.name || (isUa ? 'Без назви' : 'Unnamed')}

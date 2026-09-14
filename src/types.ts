@@ -63,6 +63,13 @@ export type WatermarkType = 'text' | 'image';
 
 export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settlement' | 'line';
 
+export interface MeasureTrack {
+  id: string;
+  name: string;
+  color: string;
+  points: { lat: number; lng: number }[];
+}
+
 export type LineDrawMethod = 'freehand' | 'points';
 
 export type LineEndpointType = 'none' | 'arrow' | 'dot' | 'fade' | 'explosion' | 'custom_icon';

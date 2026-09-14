@@ -321,7 +321,7 @@ export function createMarkerHtml(
       const effectiveAngle = (normAngle > 90 && normAngle < 270) ? normAngle - 180 : normAngle;
       labelHtml = `
         <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%) rotate(${effectiveAngle}deg); margin-top: 6px; z-index: 1000;">
-          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em;">
+          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em; font-family: inherit;">
             ${title || 'Маркер'}
           </div>
         </div>
@@ -330,7 +330,7 @@ export function createMarkerHtml(
       // Default: Always upright & strictly horizontal (0deg) regardless of icon heading, guaranteed 100% readable
       labelHtml = `
         <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px; z-index: 1000;">
-          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em;">
+          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em; font-family: inherit;">
             ${title || 'Маркер'}
           </div>
         </div>

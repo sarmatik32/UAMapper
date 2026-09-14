@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2 } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig } from '../types';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
+import { CityRulerPreset, MAJOR_CITIES_RULER, MEASURE_TRACK_COLORS, INTER_CITY_MEASURE_PRESETS } from '../data/cityRulerPresets';
+import { CityRulerModal } from './CityRulerModal';
 import {
   smoothPolylinePoints,
   generateFadingPolylineSegments,
@@ -14,7 +16,7 @@ import {
 } from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
-import { getMapFontFamilyCss } from '../utils/mapFonts';
+import { getMapFontFamilyCss, getFontEmbedCSS } from '../utils/mapFonts';
 import { MapLegendWidget } from './MapLegendWidget';
 
 export interface MapContainerRef {
@@ -272,15 +274,156 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
   const hromadasLayerGroupRef = useRef<L.LayerGroup | null>(null);
   
-  // Measurement Tool State & Refs
-  const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
+  // Measurement Tool State & Refs (Multi-Track & Multi-City Support)
+  const [measureTracks, setMeasureTracks] = useState<MeasureTrack[]>([
+    { id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] },
+  ]);
+  const [activeTrackId, setActiveTrackId] = useState<string>('track_1');
+  const [isCityRulerModalOpen, setIsCityRulerModalOpen] = useState<boolean>(false);
+
+  const measureTracksRef = useRef(measureTracks);
+  useEffect(() => {
+    measureTracksRef.current = measureTracks;
+  }, [measureTracks]);
+
+  const activeTrackIdRef = useRef(activeTrackId);
+  useEffect(() => {
+    activeTrackIdRef.current = activeTrackId;
+  }, [activeTrackId]);
+
+  const activeTrack = React.useMemo(() => {
+    return (
+      measureTracks.find((t) => t.id === activeTrackId) ||
+      measureTracks[0] || { id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] }
+    );
+  }, [measureTracks, activeTrackId]);
+
+  const measurePoints = activeTrack.points;
   const measurePointsRef = useRef(measurePoints);
   useEffect(() => {
     measurePointsRef.current = measurePoints;
   }, [measurePoints]);
-  const measurePolylineRef = useRef<L.Polyline | null>(null);
-  const measureMarkersRef = useRef<L.Marker[]>([]);
-  const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
+
+  const setMeasurePoints = useCallback(
+    (
+      updater:
+        | { lat: number; lng: number }[]
+        | ((prev: { lat: number; lng: number }[]) => { lat: number; lng: number }[])
+    ) => {
+      setMeasureTracks((prevTracks) => {
+        const curActiveId = activeTrackIdRef.current;
+        return prevTracks.map((t) => {
+          if (t.id === curActiveId) {
+            const nextPoints = typeof updater === 'function' ? updater(t.points) : updater;
+            return { ...t, points: nextPoints };
+          }
+          return t;
+        });
+      });
+    },
+    []
+  );
+
+  const measureTrackLayersRef = useRef<{
+    [trackId: string]: {
+      polyline?: L.Polyline;
+      markers: L.Marker[];
+      segmentTooltips: L.Marker[];
+    };
+  }>({});
+
+  const handleAddTrack = useCallback(
+    (initialName?: string, initialCityCenter?: { lat: number; lng: number }) => {
+      const nextNum = measureTracksRef.current.length + 1;
+      const newId = `track_${Date.now()}`;
+      const nextColor =
+        MEASURE_TRACK_COLORS[measureTracksRef.current.length % MEASURE_TRACK_COLORS.length].hex;
+      const newTrack: MeasureTrack = {
+        id: newId,
+        name: initialName || `${language === 'uk' ? 'Вимір' : 'Measure'} ${nextNum}`,
+        color: nextColor,
+        points: initialCityCenter ? [initialCityCenter] : [],
+      };
+      setMeasureTracks((prev) => [...prev, newTrack]);
+      setActiveTrackId(newId);
+    },
+    [language]
+  );
+
+  const handleDeleteTrack = useCallback((trackId: string) => {
+    setMeasureTracks((prev) => {
+      if (prev.length <= 1) {
+        // Keep 1 empty track
+        return [{ id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] }];
+      }
+      const filtered = prev.filter((t) => t.id !== trackId);
+      if (activeTrackIdRef.current === trackId) {
+        setActiveTrackId(filtered[0].id);
+      }
+      return filtered;
+    });
+  }, []);
+
+  const handleApplyInterCityPreset = useCallback(
+    (city1: CityRulerPreset, city2: CityRulerPreset) => {
+      const trackName = `${city1.nameUa} — ${city2.nameUa}`;
+      const points = [
+        { lat: city1.lat, lng: city1.lng },
+        { lat: city2.lat, lng: city2.lng },
+      ];
+
+      setMeasureTracks((prev) => {
+        const active = prev.find((t) => t.id === activeTrackIdRef.current);
+        if (active && active.points.length === 0) {
+          return prev.map((t) =>
+            t.id === activeTrackIdRef.current ? { ...t, name: trackName, points } : t
+          );
+        } else {
+          const nextColor =
+            MEASURE_TRACK_COLORS[prev.length % MEASURE_TRACK_COLORS.length].hex;
+          const newTrack: MeasureTrack = {
+            id: `track_${Date.now()}`,
+            name: trackName,
+            color: nextColor,
+            points,
+          };
+          setActiveTrackId(newTrack.id);
+          return [...prev, newTrack];
+        }
+      });
+
+      const map = mapInstanceRef.current;
+      if (map) {
+        const bounds = L.latLngBounds([
+          [city1.lat, city1.lng],
+          [city2.lat, city2.lng],
+        ]);
+        map.fitBounds(bounds, { padding: [70, 70], maxZoom: 12 });
+      }
+    },
+    []
+  );
+
+  const handleJumpToCity = useCallback(
+    (city: CityRulerPreset, createNewTrack = false) => {
+      const map = mapInstanceRef.current;
+      if (map) {
+        map.flyTo([city.lat, city.lng], 13, { duration: 1.2 });
+      }
+      if (createNewTrack) {
+        handleAddTrack(city.nameUa, { lat: city.lat, lng: city.lng });
+      }
+    },
+    [handleAddTrack]
+  );
+
+  const handleAddCityPointToActive = useCallback((city: CityRulerPreset) => {
+    setMeasurePoints((prev) => [...prev, { lat: city.lat, lng: city.lng }]);
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.panTo([city.lat, city.lng]);
+    }
+  }, [setMeasurePoints]);
 
   // Line Drawing Mode State & Refs
   const [draftLinePoints, setDraftLinePoints] = useState<[number, number][]>([]);
@@ -2097,213 +2240,264 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     };
   }, [showHromadaBoundaries, isMapReady]);
 
-  // Synchronize Measurement Tool Graphics on Map
+  // Synchronize Measurement Tool Graphics on Map (Multi-Track & Multi-City Support)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Clear old graphics
-    if (measurePolylineRef.current) {
-      measurePolylineRef.current.remove();
-      measurePolylineRef.current = null;
-    }
-    measureMarkersRef.current.forEach((m) => m.remove());
-    measureMarkersRef.current = [];
-    measureSegmentTooltipsRef.current.forEach((m) => m.remove());
-    measureSegmentTooltipsRef.current = [];
+    // Remove layers for deleted tracks
+    const existingTrackIds = new Set(measureTracks.map((t) => t.id));
+    Object.keys(measureTrackLayersRef.current).forEach((trackId) => {
+      if (!existingTrackIds.has(trackId)) {
+        const layers = measureTrackLayersRef.current[trackId];
+        if (layers) {
+          if (layers.polyline) layers.polyline.remove();
+          layers.markers.forEach((m) => m.remove());
+          layers.segmentTooltips.forEach((m) => m.remove());
+        }
+        delete measureTrackLayersRef.current[trackId];
+      }
+    });
 
-    if (measurePoints.length === 0) return;
+    // Render or update each track
+    measureTracks.forEach((track) => {
+      const isActive = track.id === activeTrackId;
+      const trackId = track.id;
 
-    const latLngs = measurePoints.map((p) => [p.lat, p.lng] as [number, number]);
+      // Clear previous layers for this track
+      if (measureTrackLayersRef.current[trackId]) {
+        const old = measureTrackLayersRef.current[trackId];
+        if (old.polyline) old.polyline.remove();
+        old.markers.forEach((m) => m.remove());
+        old.segmentTooltips.forEach((m) => m.remove());
+      }
 
-    // Draw connecting polyline
-    if (latLngs.length >= 2) {
-      measurePolylineRef.current = L.polyline(latLngs, {
-        color: '#facc15', // Bright yellow ruler line
-        weight: 3.5,
-        dashArray: '6, 6',
-        opacity: 0.95,
-        lineCap: 'round',
-        lineJoin: 'round',
-        pane: 'drawnLinesPane',
-      }).addTo(map);
+      measureTrackLayersRef.current[trackId] = {
+        markers: [],
+        segmentTooltips: [],
+      };
 
-      // Render segment distance badges
-      for (let i = 0; i < measurePoints.length - 1; i++) {
-        const p1 = measurePoints[i];
-        const p2 = measurePoints[i + 1];
-        const dist = calculateDistanceMeters(p1, p2);
-        const midLat = (p1.lat + p2.lat) / 2;
-        const midLng = (p1.lng + p2.lng) / 2;
+      const points = track.points;
+      if (points.length === 0) return;
 
-        const badgeHtml = `<div class="bg-slate-900/95 text-yellow-400 font-mono font-bold text-[10px] px-2 py-0.5 rounded-full border border-yellow-400/50 shadow-md whitespace-nowrap">${formatDistance(dist)}</div>`;
+      const latLngs = points.map((p) => [p.lat, p.lng] as [number, number]);
 
-        const badgeIcon = L.divIcon({
-          className: 'measure-badge-icon',
-          html: badgeHtml,
-          iconSize: [60, 20],
-          iconAnchor: [30, 10],
-        });
-
-        const badgeMarker = L.marker([midLat, midLng], {
-          icon: badgeIcon,
-          interactive: false,
-          pane: 'userMarkersPane',
-          zIndexOffset: 1200,
+      // Draw connecting polyline
+      if (latLngs.length >= 2) {
+        const polyline = L.polyline(latLngs, {
+          color: track.color || '#facc15',
+          weight: isActive ? 4 : 3,
+          dashArray: isActive ? '6, 6' : '4, 4',
+          opacity: isActive ? 0.95 : 0.7,
+          lineCap: 'round',
+          lineJoin: 'round',
+          pane: 'drawnLinesPane',
         }).addTo(map);
 
-        measureSegmentTooltipsRef.current.push(badgeMarker);
-      }
-    }
-
-    // Render node markers
-    measurePoints.forEach((pt, index) => {
-      const isLast = index === measurePoints.length - 1;
-      const nodeHtml = `
-        <div class="measure-node-inner w-6 h-6 rounded-full ${isLast ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-slate-900'} border-2 border-yellow-400 text-yellow-400 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg hover:scale-110 transition-transform cursor-grab active:cursor-grabbing select-none" title="${language === 'uk' ? `Точка ${index + 1} (Перетягніть для переміщення, клік або ПКМ для видалення)` : `Point ${index + 1} (Drag to move, click or right-click to delete)`}">
-          ${index + 1}
-        </div>
-      `;
-
-      const nodeIcon = L.divIcon({
-        className: 'measure-node-icon cursor-grab',
-        html: nodeHtml,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
-      });
-
-      const marker = L.marker([pt.lat, pt.lng], {
-        icon: nodeIcon,
-        interactive: true,
-        draggable: true,
-        zIndexOffset: 1500 + index,
-      }).addTo(map);
-
-      // Stop clicks/drag on marker from bubbling to map and adding extra points
-      marker.on('click', (e: any) => {
-        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
-      });
-      marker.on('mousedown', (e: any) => {
-        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
-      });
-
-      marker.on('dragstart', (e: any) => {
-        if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
-        marker.closePopup();
-      });
-
-      marker.on('drag', () => {
-        // Real-time update of polyline coordinates
-        const curLatLngs = measureMarkersRef.current.map((m) => m.getLatLng());
-        if (measurePolylineRef.current) {
-          measurePolylineRef.current.setLatLngs(curLatLngs);
-        }
-
-        // Live update segment badge before (index - 1)
-        if (index > 0 && measureSegmentTooltipsRef.current[index - 1]) {
-          const prevPos = measureMarkersRef.current[index - 1].getLatLng();
-          const curPos = marker.getLatLng();
-          const dist = calculateDistanceMeters(
-            { lat: prevPos.lat, lng: prevPos.lng },
-            { lat: curPos.lat, lng: curPos.lng }
-          );
-          const mid = L.latLng((prevPos.lat + curPos.lat) / 2, (prevPos.lng + curPos.lng) / 2);
-          measureSegmentTooltipsRef.current[index - 1].setLatLng(mid);
-          const el = measureSegmentTooltipsRef.current[index - 1].getElement();
-          if (el) {
-            const inner = el.querySelector('div');
-            if (inner) inner.textContent = formatDistance(dist);
-          }
-        }
-
-        // Live update segment badge after (index)
-        if (index < measureMarkersRef.current.length - 1 && measureSegmentTooltipsRef.current[index]) {
-          const nextPos = measureMarkersRef.current[index + 1].getLatLng();
-          const curPos = marker.getLatLng();
-          const dist = calculateDistanceMeters(
-            { lat: curPos.lat, lng: curPos.lng },
-            { lat: nextPos.lat, lng: nextPos.lng }
-          );
-          const mid = L.latLng((curPos.lat + nextPos.lat) / 2, (curPos.lng + nextPos.lng) / 2);
-          measureSegmentTooltipsRef.current[index].setLatLng(mid);
-          const el = measureSegmentTooltipsRef.current[index].getElement();
-          if (el) {
-            const inner = el.querySelector('div');
-            if (inner) inner.textContent = formatDistance(dist);
-          }
-        }
-      });
-
-      marker.on('dragend', () => {
-        const newPos = marker.getLatLng();
-        setMeasurePoints((prev) => {
-          const next = [...prev];
-          if (next[index]) {
-            next[index] = { lat: newPos.lat, lng: newPos.lng };
-          }
-          return next;
+        polyline.on('click', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          setActiveTrackId(trackId);
         });
-      });
 
-      // Right-click to instantly delete this point
-      marker.on('contextmenu', (e: any) => {
-        if (e.originalEvent) {
-          L.DomEvent.stopPropagation(e.originalEvent);
-          L.DomEvent.preventDefault(e.originalEvent);
+        measureTrackLayersRef.current[trackId].polyline = polyline;
+
+        // Render segment distance badges
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const dist = calculateDistanceMeters(p1, p2);
+          const midLat = (p1.lat + p2.lat) / 2;
+          const midLng = (p1.lng + p2.lng) / 2;
+
+          const badgeHtml = `<div class="bg-slate-900/95 font-mono font-bold text-[10px] px-2 py-0.5 rounded-full border shadow-md whitespace-nowrap" style="color: ${track.color}; border-color: ${track.color}80">${formatDistance(dist)}</div>`;
+
+          const badgeIcon = L.divIcon({
+            className: 'measure-badge-icon',
+            html: badgeHtml,
+            iconSize: [60, 20],
+            iconAnchor: [30, 10],
+          });
+
+          const badgeMarker = L.marker([midLat, midLng], {
+            icon: badgeIcon,
+            interactive: false,
+            pane: 'userMarkersPane',
+            zIndexOffset: isActive ? 1200 : 1000,
+          }).addTo(map);
+
+          measureTrackLayersRef.current[trackId].segmentTooltips.push(badgeMarker);
         }
-        setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
-      });
-
-      // Double-click to also delete this point
-      marker.on('dblclick', (e: any) => {
-        if (e.originalEvent) {
-          L.DomEvent.stopPropagation(e.originalEvent);
-          L.DomEvent.preventDefault(e.originalEvent);
-        }
-        setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
-      });
-
-      // Interactive popup with coordinate info and delete button
-      const popupEl = document.createElement('div');
-      popupEl.className = 'p-1 text-center select-none font-sans min-w-[140px]';
-      popupEl.innerHTML = `
-        <div class="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-slate-200">
-          <span class="text-xs font-black text-slate-800 flex items-center gap-1.5">
-            <span class="w-4 h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-mono font-black flex items-center justify-center">${index + 1}</span>
-            <span>${language === 'uk' ? `Точка №${index + 1}` : `Point #${index + 1}`}</span>
-          </span>
-        </div>
-        <div class="text-[10px] text-slate-500 font-mono mb-1">
-          ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}
-        </div>
-        <div class="text-[10px] text-amber-600 font-medium mb-2">
-          ${language === 'uk' ? '✋ Перетягуйте для зміни' : '✋ Drag to move'}
-        </div>
-        <button type="button" class="del-ruler-pt-btn w-full py-1.5 px-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95">
-          <span>🗑️</span>
-          <span>${language === 'uk' ? 'Видалити точку' : 'Delete Point'}</span>
-        </button>
-      `;
-
-      const delBtn = popupEl.querySelector('.del-ruler-pt-btn');
-      if (delBtn) {
-        delBtn.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          ev.preventDefault();
-          map.closePopup();
-          setMeasurePoints((prev) => prev.filter((_, i) => i !== index));
-        });
       }
 
-      marker.bindPopup(popupEl, {
-        offset: [0, -12],
-        closeButton: true,
-        className: 'measure-point-popup',
-      });
+      // Render node markers
+      points.forEach((pt, index) => {
+        const isLast = index === points.length - 1;
+        const nodeHtml = `
+          <div class="measure-node-inner w-6 h-6 rounded-full bg-slate-900 border-2 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg hover:scale-110 transition-transform ${isActive ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} select-none" style="color: ${track.color}; border-color: ${track.color}; ${isLast && isActive ? `box-shadow: 0 0 0 4px ${track.color}40;` : ''}" title="${track.name} - ${language === 'uk' ? `Точка ${index + 1}` : `Point ${index + 1}`}">
+            ${index + 1}
+          </div>
+        `;
 
-      measureMarkersRef.current.push(marker);
+        const nodeIcon = L.divIcon({
+          className: 'measure-node-icon cursor-grab',
+          html: nodeHtml,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        });
+
+        const marker = L.marker([pt.lat, pt.lng], {
+          icon: nodeIcon,
+          interactive: true,
+          draggable: isActive,
+          zIndexOffset: (isActive ? 1500 : 1300) + index,
+        }).addTo(map);
+
+        // Stop clicks from bubbling to map
+        marker.on('click', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          if (!isActive) {
+            setActiveTrackId(trackId);
+          }
+        });
+        marker.on('mousedown', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          if (!isActive) {
+            setActiveTrackId(trackId);
+          }
+        });
+
+        if (isActive) {
+          marker.on('dragstart', (e: any) => {
+            if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+            marker.closePopup();
+          });
+
+          marker.on('drag', () => {
+            const trackLayers = measureTrackLayersRef.current[trackId];
+            if (!trackLayers) return;
+            const curLatLngs = trackLayers.markers.map((m) => m.getLatLng());
+            if (trackLayers.polyline) {
+              trackLayers.polyline.setLatLngs(curLatLngs);
+            }
+
+            // Live update segment badge before (index - 1)
+            if (index > 0 && trackLayers.segmentTooltips[index - 1]) {
+              const prevPos = trackLayers.markers[index - 1].getLatLng();
+              const curPos = marker.getLatLng();
+              const dist = calculateDistanceMeters(
+                { lat: prevPos.lat, lng: prevPos.lng },
+                { lat: curPos.lat, lng: curPos.lng }
+              );
+              const mid = L.latLng((prevPos.lat + curPos.lat) / 2, (prevPos.lng + curPos.lng) / 2);
+              trackLayers.segmentTooltips[index - 1].setLatLng(mid);
+              const el = trackLayers.segmentTooltips[index - 1].getElement();
+              if (el) {
+                const inner = el.querySelector('div');
+                if (inner) inner.textContent = formatDistance(dist);
+              }
+            }
+
+            // Live update segment badge after (index)
+            if (index < trackLayers.markers.length - 1 && trackLayers.segmentTooltips[index]) {
+              const nextPos = trackLayers.markers[index + 1].getLatLng();
+              const curPos = marker.getLatLng();
+              const dist = calculateDistanceMeters(
+                { lat: curPos.lat, lng: curPos.lng },
+                { lat: nextPos.lat, lng: nextPos.lng }
+              );
+              const mid = L.latLng((curPos.lat + nextPos.lat) / 2, (curPos.lng + nextPos.lng) / 2);
+              trackLayers.segmentTooltips[index].setLatLng(mid);
+              const el = trackLayers.segmentTooltips[index].getElement();
+              if (el) {
+                const inner = el.querySelector('div');
+                if (inner) inner.textContent = formatDistance(dist);
+              }
+            }
+          });
+
+          marker.on('dragend', () => {
+            const newPos = marker.getLatLng();
+            setMeasureTracks((prev) =>
+              prev.map((t) => {
+                if (t.id === trackId) {
+                  const nextPts = [...t.points];
+                  if (nextPts[index]) {
+                    nextPts[index] = { lat: newPos.lat, lng: newPos.lng };
+                  }
+                  return { ...t, points: nextPts };
+                }
+                return t;
+              })
+            );
+          });
+
+          // Right-click to instantly delete this point
+          marker.on('contextmenu', (e: any) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+              L.DomEvent.preventDefault(e.originalEvent);
+            }
+            setMeasureTracks((prev) =>
+              prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+            );
+          });
+
+          // Double-click to delete point
+          marker.on('dblclick', (e: any) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+              L.DomEvent.preventDefault(e.originalEvent);
+            }
+            setMeasureTracks((prev) =>
+              prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+            );
+          });
+
+          // Interactive popup with coordinate info and delete button
+          const popupEl = document.createElement('div');
+          popupEl.className = 'p-1 text-center select-none font-sans min-w-[140px]';
+          popupEl.innerHTML = `
+            <div class="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-slate-200">
+              <span class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <span class="w-4 h-4 rounded-full text-slate-950 text-[10px] font-mono font-black flex items-center justify-center" style="background: ${track.color};">${index + 1}</span>
+                <span>${track.name} (${language === 'uk' ? `Точка №${index + 1}` : `Point #${index + 1}`})</span>
+              </span>
+            </div>
+            <div class="text-[10px] text-slate-500 font-mono mb-1">
+              ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}
+            </div>
+            <div class="text-[10px] text-amber-600 font-medium mb-2">
+              ${language === 'uk' ? '✋ Перетягуйте для зміни' : '✋ Drag to move'}
+            </div>
+            <button type="button" class="del-ruler-pt-btn w-full py-1.5 px-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95">
+              <span>🗑️</span>
+              <span>${language === 'uk' ? 'Видалити точку' : 'Delete Point'}</span>
+            </button>
+          `;
+
+          const delBtn = popupEl.querySelector('.del-ruler-pt-btn');
+          if (delBtn) {
+            delBtn.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              ev.preventDefault();
+              map.closePopup();
+              setMeasureTracks((prev) =>
+                prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+              );
+            });
+          }
+
+          marker.bindPopup(popupEl, {
+            offset: [0, -12],
+            closeButton: true,
+            className: 'measure-point-popup',
+          });
+        }
+
+        measureTrackLayersRef.current[trackId].markers.push(marker);
+      });
     });
-  }, [measurePoints, isMapReady, language]);
+  }, [measureTracks, activeTrackId, isMapReady, language]);
 
 
   // Handle Tile Layer changes
@@ -3917,12 +4111,22 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         );
       };
 
+      // Prepare embedded font CSS with base64 web fonts for 100% accurate text rendering in buffer/PNG
+      const fontEmbedCSS = await getFontEmbedCSS(mapFont);
+
+      // Ensure browser document fonts have settled
+      if (typeof document !== 'undefined' && (document as any).fonts?.ready) {
+        try {
+          await (document as any).fonts.ready;
+        } catch (_) {}
+      }
+
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         pixelRatio: capturePixelRatio,
         quality: 1,
-        skipFonts: true,
+        fontEmbedCSS: fontEmbedCSS,
         filter: filterNode as any,
       };
 
@@ -4127,7 +4331,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   return (
     <div className="relative w-full h-full" style={{ '--map-font-family': fontCssValue } as React.CSSProperties}>
-      <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`}>
+      <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`} style={{ fontFamily: fontCssValue }}>
         {/* Actual Map Container */}
         <div 
           id="visicom-leaflet-map"
@@ -4422,21 +4626,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             onUpdateConfig={(cfg) => onUpdateMapLegendConfig?.(cfg)}
             language={language}
             theme={theme || 'dark'}
+            fontFamily={fontCssValue}
           />
         )}
 
         {/* Tactical Legend Box - captured in PNG */}
         {showLegendOverlay && (
-          <div className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
-            (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
-          }`}>
-            <div className={`tactical-legend-wrapper px-4 py-2 md:px-6 md:py-1.5 border rounded-2xl md:rounded-full shadow-2xl transition-all flex items-center justify-center max-w-[92vw] sm:max-w-[85vw] pointer-events-auto ${
-              theme === 'light' 
-                ? 'bg-slate-950/50 border-slate-900/30 text-slate-100' 
-                : 'bg-white/50 border-white/20 text-slate-950'
-            }`}>
+          <div 
+            className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
+              (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
+            }`}
+            style={{ fontFamily: fontCssValue }}
+          >
+            <div 
+              className={`tactical-legend-wrapper px-4 py-2 md:px-6 md:py-1.5 border rounded-2xl md:rounded-full shadow-2xl transition-all flex items-center justify-center max-w-[92vw] sm:max-w-[85vw] pointer-events-auto ${
+                theme === 'light' 
+                  ? 'bg-slate-950/50 border-slate-900/30 text-slate-100' 
+                  : 'bg-white/50 border-white/20 text-slate-950'
+              }`}
+              style={{ fontFamily: fontCssValue }}
+            >
               <p 
-                className="tactical-legend-text font-aptos text-[7.5px] sm:text-[8px] md:text-[9px] font-bold opacity-95 text-center whitespace-normal md:whitespace-nowrap leading-relaxed"
+                className="tactical-legend-text text-[7.5px] sm:text-[8px] md:text-[9px] font-bold opacity-95 text-center whitespace-normal md:whitespace-nowrap leading-relaxed"
+                style={{ fontFamily: fontCssValue }}
               >
                 {legendOverlayText !== undefined && legendOverlayText !== '' 
                   ? legendOverlayText 
@@ -4673,39 +4885,136 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
-        {/* Floating Ruler / Measure Tool Toolbar */}
+        {/* Floating Ruler / Measure Tool Toolbar with Multi-City & Multi-Track support */}
         {!(isExporting || isCopying) && interactionMode === 'measure' && (
           <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[96vw] animate-fade-in">
-            <div className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2.5 sm:gap-3 ${
-              theme === 'light'
-                ? 'bg-slate-900/90 border-slate-700/80 text-white'
-                : 'bg-slate-950/90 border-white/20 text-white'
-            }`}>
+            {/* Track Switcher if multiple tracks exist */}
+            {measureTracks.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-full px-2 py-1 rounded-full bg-slate-950/80 border border-white/10 backdrop-blur-md">
+                {measureTracks.map((tr) => {
+                  const isCur = tr.id === activeTrackId;
+                  const dist = tr.points.length >= 2 ? formatDistance(calculateDistanceMeters(tr.points[0], tr.points[tr.points.length - 1])) : null;
+                  return (
+                    <button
+                      key={tr.id}
+                      type="button"
+                      onClick={() => setActiveTrackId(tr.id)}
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isCur
+                          ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full inline-block flex-shrink-0"
+                        style={{ backgroundColor: tr.color }}
+                      />
+                      <span className="truncate max-w-[120px]">{tr.name}</span>
+                      {dist && <span className="opacity-75 font-mono text-[10px]">({dist})</span>}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => handleAddTrack()}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Додати новий вимір (інший колір/маршрут)' : 'Add new measurement track'}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{language === 'uk' ? 'Новий вимір' : 'New track'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Main Ruler Control Bar */}
+            <div
+              className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-2.5 ${
+                theme === 'light'
+                  ? 'bg-slate-900/90 border-slate-700/80 text-white'
+                  : 'bg-slate-950/90 border-white/20 text-white'
+              }`}
+            >
               <div className="flex items-center gap-2 pr-2.5 border-r border-white/15">
-                <div className="w-7 h-7 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-xs">
+                <div
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-slate-950 font-black shadow-xs"
+                  style={{ backgroundColor: activeTrack.color }}
+                >
                   <Ruler className="w-4 h-4" />
                 </div>
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    {language === 'uk' ? 'Лінійка' : 'Ruler'}
-                  </span>
-                  <span className="text-xs font-black text-amber-400">
-                    {measurePoints.length >= 2 
+                <div className="flex flex-col text-left min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate max-w-[100px]">
+                      {activeTrack.name}
+                    </span>
+                  </div>
+                  <span
+                    className="text-xs font-black truncate"
+                    style={{ color: activeTrack.color }}
+                  >
+                    {measurePoints.length >= 2
                       ? formatDistance(totalMeasureDistance)
-                      : (language === 'uk' ? 'Клікніть на карту' : 'Click on map')}
+                      : language === 'uk'
+                      ? 'Клікніть на карту'
+                      : 'Click on map'}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 text-xs text-slate-300 font-medium px-1">
+              {/* Point counter */}
+              <div className="flex items-center gap-1 text-xs text-slate-300 font-medium px-0.5">
                 <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-black text-[11px]">
-                  {measurePoints.length} {language === 'uk' 
-                    ? (measurePoints.length === 1 ? 'точка' : (measurePoints.length >= 2 && measurePoints.length <= 4 ? 'точки' : 'точок'))
-                    : (measurePoints.length === 1 ? 'point' : 'points')}
+                  {measurePoints.length}{' '}
+                  {language === 'uk'
+                    ? measurePoints.length === 1
+                      ? 'точка'
+                      : measurePoints.length >= 2 && measurePoints.length <= 4
+                      ? 'точки'
+                      : 'точок'
+                    : measurePoints.length === 1
+                    ? 'point'
+                    : 'points'}
                 </span>
               </div>
 
-              <div className="flex items-center gap-1.5 border-l border-white/15 pl-2.5">
+              {/* Button: City Ruler Measurements Modal */}
+              <button
+                type="button"
+                onClick={() => setIsCityRulerModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                title={
+                  language === 'uk'
+                    ? 'Виміри між містами та швидкий перехід до міст'
+                    : 'City ruler measurements & quick jump'
+                }
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>{language === 'uk' ? 'Виміри в містах' : 'City Presets'}</span>
+              </button>
+
+              {/* Quick Jump Chips (Popular cities) */}
+              <div className="hidden lg:flex items-center gap-1 pl-1 border-l border-white/15">
+                <span className="text-[10px] text-slate-400 font-medium mr-0.5">
+                  {language === 'uk' ? 'Міста:' : 'Cities:'}
+                </span>
+                {MAJOR_CITIES_RULER.slice(0, 4).map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => handleJumpToCity(c, false)}
+                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white text-[10px] font-bold border border-white/10 transition-colors cursor-pointer"
+                    title={
+                      language === 'uk'
+                        ? `Перейти до м. ${c.nameUa}`
+                        : `Jump to ${c.nameEn}`
+                    }
+                  >
+                    {c.nameUa.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 border-l border-white/15 pl-2">
                 {/* Undo last point button */}
                 <button
                   type="button"
@@ -4716,10 +5025,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                       ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-95'
                       : 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-800/40'
                   }`}
-                  title={language === 'uk' ? 'Видалити останню точку (Backspace / Del)' : 'Undo last point (Backspace / Del)'}
+                  title={
+                    language === 'uk'
+                      ? 'Видалити останню точку (Backspace / Del)'
+                      : 'Undo last point (Backspace / Del)'
+                  }
                 >
                   <Undo2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати' : 'Undo'}</span>
+                  <span className="hidden sm:inline">
+                    {language === 'uk' ? 'Скасувати' : 'Undo'}
+                  </span>
                 </button>
 
                 {/* Clear all measure points button */}
@@ -4732,21 +5047,53 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                       ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 active:scale-95'
                       : 'opacity-40 cursor-not-allowed text-slate-500 bg-rose-500/5'
                   }`}
-                  title={language === 'uk' ? 'Очистити всю лінійку (Esc)' : 'Clear all ruler points (Esc)'}
+                  title={
+                    language === 'uk'
+                      ? 'Очистити точки цього виміру (Esc)'
+                      : 'Clear current track points (Esc)'
+                  }
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>{language === 'uk' ? 'Очистити' : 'Clear'}</span>
                 </button>
+
+                {/* Delete track if multiple tracks */}
+                {measureTracks.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTrack(activeTrackId)}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+                    title={language === 'uk' ? 'Видалити цей вимір' : 'Delete this measurement track'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             </div>
 
             {measurePoints.length > 0 && (
               <div className="text-[10px] text-amber-200/90 bg-slate-950/85 px-3 py-1 rounded-full border border-amber-400/30 backdrop-blur-xs flex items-center gap-1.5 shadow-md">
-                <span>💡 {language === 'uk' ? 'Перетягуйте точки для зміни позиції. Клік або ПКМ по точці для видалення.' : 'Drag points to move. Click or right-click a point to delete.'}</span>
+                <span>
+                  💡{' '}
+                  {language === 'uk'
+                    ? 'Перетягуйте точки для зміни позиції. Клік або ПКМ по точці для видалення.'
+                    : 'Drag points to move. Click or right-click a point to delete.'}
+                </span>
               </div>
             )}
           </div>
         )}
+
+        {/* City Ruler Modal */}
+        <CityRulerModal
+          isOpen={isCityRulerModalOpen}
+          onClose={() => setIsCityRulerModalOpen(false)}
+          language={language}
+          theme={theme}
+          onApplyInterCityPreset={handleApplyInterCityPreset}
+          onJumpToCity={handleJumpToCity}
+          onAddCityPointToActive={handleAddCityPointToActive}
+        />
 
         {!(isExporting || isCopying) && lastAutoZoneName && (
           <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
@@ -4771,23 +5118,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         {/* Watermark branding overlay for Кривий Ріг Alerts and @krrig_alerts - NOT blurred, background/border 50% transparent */}
 
         <div className="tactical-logo-container-outer absolute top-4 left-0 right-0 z-20 pointer-events-none select-none flex justify-center">
-          <div className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
-            theme === 'light' 
-              ? 'bg-slate-950/50 border-slate-900/30' 
-              : 'bg-white/50 border-white/20'
-          }`}>
+          <div 
+            className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
+              theme === 'light' 
+                ? 'bg-slate-950/50 border-slate-900/30' 
+                : 'bg-white/50 border-white/20'
+            }`}
+            style={{ fontFamily: fontCssValue }}
+          >
             <span 
-              className="tactical-logo-title font-sans font-bold tracking-tight text-[15.5px] sm:text-[18.5px] leading-none flex items-center"
-              style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
+              className="tactical-logo-title font-bold tracking-tight text-[15.5px] sm:text-[18.5px] leading-none flex items-center"
+              style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)', fontFamily: fontCssValue }}
             >
               UA Mapper
             </span>
             <span className={`inline-block w-[1px] h-3.5 mx-0.5 sm:mx-1 self-center ${
               theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
             }`} />
-            <span className={`tactical-logo-author font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[8.5px] sm:text-[9.5px] ${
-              theme === 'light' ? 'text-white' : 'text-slate-950'
-            }`}>
+            <span 
+              className={`tactical-logo-author font-bold tracking-wider uppercase leading-none flex items-center text-[8.5px] sm:text-[9.5px] ${
+                theme === 'light' ? 'text-white' : 'text-slate-950'
+              }`}
+              style={{ fontFamily: fontCssValue }}
+            >
               BY @KRRIG_ALERTS
             </span>
             <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 ml-0.5 flex-shrink-0" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4814,15 +5167,31 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             justify-content: center !important;
             overflow: visible !important;
           }
-          .leaflet-container {
-            font-family: ${fontCssValue} !important;
-          }
+          #map-stage-wrapper,
+          #map-stage-wrapper *,
+          .tactical-logo-container,
+          .tactical-logo-container *,
+          .tactical-logo-title,
+          .tactical-logo-author,
+          .tactical-legend-container,
+          .tactical-legend-container *,
+          .tactical-legend-wrapper,
+          .tactical-legend-text,
+          #map-legend-widget-container,
+          #map-legend-widget-container *,
+          .leaflet-container,
+          .leaflet-container *,
           .settlement-label-marker,
+          .settlement-label-marker *,
           .custom-leaflet-div-icon,
+          .custom-leaflet-div-icon *,
           .leaflet-marker-icon,
           .leaflet-popup,
+          .leaflet-popup *,
           .leaflet-tooltip,
-          .map-measurement-badge {
+          .map-measurement-badge,
+          .exporting-map,
+          .exporting-map * {
             font-family: ${fontCssValue} !important;
           }
           /* Theme map filter */
@@ -4936,9 +5305,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             max-width: 90% !important;
           }
           .exporting-map .tactical-logo-title {
+            font-family: ${fontCssValue} !important;
             font-size: 18.5px !important;
           }
           .exporting-map .tactical-logo-author {
+            font-family: ${fontCssValue} !important;
             font-size: 9.5px !important;
           }
           .exporting-map .tactical-logo-container svg {
@@ -4963,6 +5334,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             max-width: 88% !important;
           }
           .exporting-map .tactical-legend-text {
+            font-family: ${fontCssValue} !important;
             font-size: 12px !important;
             font-weight: 700 !important;
             line-height: 1.45 !important;
