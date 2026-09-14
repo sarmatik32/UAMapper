@@ -473,6 +473,34 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
 
   ctx.restore();
 
+  // If activeTileLayer has an overlayUrl (e.g. Ukrainian settlement names and roads overlay), render overlay tiles on top
+  if (activeTileLayer.overlayUrl) {
+    const overlayConfig: TileLayerConfig = {
+      ...activeTileLayer,
+      url: activeTileLayer.overlayUrl,
+      tms: false,
+    };
+    const overlayJobs: TileJob[] = tileJobs.map((job) => ({
+      ...job,
+      url: buildTileUrl(overlayConfig, targetTileZoom, job.tx, job.ty, visicomKey),
+    }));
+
+    await asyncPool(12, overlayJobs, async (job) => {
+      try {
+        const overlayImg = await loadTileImage(job.url);
+        ctx.drawImage(
+          overlayImg,
+          Math.floor(job.rect.x),
+          Math.floor(job.rect.y),
+          Math.ceil(job.rect.w) + 0.5,
+          Math.ceil(job.rect.h) + 0.5
+        );
+      } catch {
+        // Silently skip missing overlay tiles
+      }
+    });
+  }
+
   // If blur on export is enabled
   if (blurMapOnExport) {
     ctx.save();

@@ -2557,7 +2557,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      crossOrigin: 'anonymous',
+      crossOrigin: url.startsWith('http') ? 'anonymous' : undefined,
       detectRetina: false, // Prevent artificial 200% scale stretching that blurs non-retina raster tiles
       tileSize: 256,
       keepBuffer: 6,
@@ -2568,7 +2568,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     tileLayer.addTo(map);
     tileLayerInstanceRef.current = tileLayer;
 
-    // Optional reference overlay layer (e.g. Esri Dark Gray Reference for oblasts/hromadas/settlements)
+    // Optional reference overlay layer (e.g. Ukrainian settlement names and roads overlay)
     if (activeTileLayer.overlayUrl) {
       let overlayUrl = activeTileLayer.overlayUrl;
       if (overlayUrl.includes('{r}')) {
@@ -2578,7 +2578,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
-        crossOrigin: 'anonymous',
+        crossOrigin: overlayUrl.startsWith('http') ? 'anonymous' : undefined,
         detectRetina: false,
         tileSize: 256,
         keepBuffer: 6,

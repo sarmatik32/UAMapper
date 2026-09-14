@@ -15,49 +15,53 @@ import { ICON_TYPES } from './components/IconLibrary';
 const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'carto_dark',
-    nameEn: 'CartoDB Dark Matter (Clean, No Watermark)',
-    nameUa: 'CartoDB Темна (Без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
-    tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
-    requiresKey: false,
-    isDark: true,
-  },
-  {
-    id: 'esri_dark_gray',
     nameEn: 'Esri Dark Gray Canvas (Clean, No Watermark)',
     nameUa: 'Esri Темна сіра (Без водяних знаків)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, HERE, NGA, USGS',
+    attribution: '© Esri, © Apple Maps (Підписи українською)',
     requiresKey: false,
     isDark: true,
   },
   {
-    id: 'carto_voyager',
-    nameEn: 'CartoDB Voyager (Clean, No Watermark)',
-    nameUa: 'CartoDB Детальна Voyager (Світла, без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
+    id: 'carto_light',
+    nameEn: 'Esri Light Gray Canvas (Clean, No Watermark)',
+    nameUa: 'Esri Світла сіра (Без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, © Apple Maps (Підписи українською)',
     requiresKey: false,
     isDark: false,
   },
   {
-    id: 'carto_light',
-    nameEn: 'CartoDB Positron / Light (Clean, No Watermark)',
-    nameUa: 'CartoDB Світла Positron (Без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
+    id: 'carto_voyager',
+    nameEn: 'Esri Detailed Streets (Clean, No Watermark)',
+    nameUa: 'Esri Детальна вулична (Без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, © Apple Maps (Підписи українською)',
+    requiresKey: false,
+    isDark: false,
+  },
+  {
+    id: 'esri_topo',
+    nameEn: 'Esri World Topo Map (Clean, No Watermark)',
+    nameUa: 'Esri Топографічна рельєфна (Без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, © Apple Maps (Підписи українською)',
     requiresKey: false,
     isDark: false,
   },
@@ -76,8 +80,9 @@ const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'apple_maps_satellite',
     nameEn: 'Apple Maps Satellite (Clean, High-Res)',
-    nameUa: 'Apple Maps Супутник (Без водяних знаків)',
+    nameUa: 'Apple Maps Супутник (Підписи міст та сіл українською)',
     url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
@@ -113,12 +118,13 @@ const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'esri_satellite',
     nameEn: 'Esri World Imagery (Satellite)',
-    nameUa: 'Супутникова карта Esri Satellite',
+    nameUa: 'Супутникова карта Esri Satellite (Підписи міст та сіл українською)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
+    attribution: '© Esri, DigitalGlobe, © Apple Maps (Підписи українською)',
     requiresKey: false,
     isDark: true,
   },
@@ -476,11 +482,15 @@ export default function App() {
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
     if (savedId === 'esri_light_gray') {
-      const apple = TILE_LAYERS.find((l) => l.id === 'apple_maps');
-      if (apple) return apple;
+      const light = TILE_LAYERS.find((l) => l.id === 'carto_light' || l.id === 'apple_maps');
+      if (light) return light;
+    }
+    if (savedId === 'esri_dark_gray') {
+      const dark = TILE_LAYERS.find((l) => l.id === 'carto_dark');
+      if (dark) return dark;
     }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
-    return matched || TILE_LAYERS.find((l) => l.id === 'apple_maps') || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
+    return matched || TILE_LAYERS.find((l) => l.id === 'apple_maps') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
   });
 
   const [watermarkType, setWatermarkType] = useState<WatermarkType>(() => {

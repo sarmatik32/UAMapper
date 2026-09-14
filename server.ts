@@ -80,6 +80,7 @@ interface AppleMapKitConfig {
 }
 
 let appleConfig: AppleMapKitConfig | null = null;
+let pendingBootstrapPromise: Promise<AppleMapKitConfig> | null = null;
 let appleMasterToken =
   "eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6IkdKNUdaREZMODkifQ.eyJpc3MiOiJDNVU4OTI3MzZZIiwib3JpZ2luIjoiaHR0cHM6Ly9iZXRhLm1hcHMuYXBwbGUuY29tLGh0dHBzOi8vbWFwcy5hcHBsZS5jb20iLCJpYXQiOjE3ODkxMjk1MjEsImV4cCI6MTc5OTQ5NzUyMX0.CAEYM6xXfVhEdWGedQJRTtelM1KuZ84p-xqBjRdD3NY0eHTHViJT8jM4L1BqAuJfdkXFpyTBUeK7eGw5GnQdXQ";
 
@@ -87,16 +88,25 @@ const tileCache = new Map<
   string,
   { buffer: Buffer; contentType: string; timestamp: number }
 >();
-const MAX_TILE_CACHE = 1200;
+const MAX_TILE_CACHE = 2000;
+
+// Persistent HTTP keep-alive agent to reuse TCP/TLS connections to Apple's CDN
+const httpsKeepAliveAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 64,
+  maxFreeSockets: 32,
+  timeout: 15000,
+});
 
 function scrapeMasterTokenFromApple(): Promise<string> {
   return new Promise((resolve, reject) => {
     const req = https.get(
       "https://maps.apple.com/",
       {
+        agent: httpsKeepAliveAgent,
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
           Accept:
             "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
@@ -132,12 +142,13 @@ function fetchAppleBootstrap(token: string): Promise<AppleMapKitConfig> {
     const req = https.request(
       "https://cdn.apple-mapkit.com/ma/bootstrap?apiVersion=2&mkjsVersion=5.75.2",
       {
+        agent: httpsKeepAliveAgent,
         headers: {
           Origin: "https://maps.apple.com",
           Referer: "https://maps.apple.com/",
           Authorization: `Bearer ${token}`,
           "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
         },
         timeout: 8000,
       },
@@ -213,27 +224,39 @@ async function getValidAppleConfig(): Promise<AppleMapKitConfig> {
     return appleConfig;
   }
 
-  try {
-    appleConfig = await fetchAppleBootstrap(appleMasterToken);
-    return appleConfig;
-  } catch (err: any) {
-    console.warn(
-      "[Apple Maps] Bootstrap with current token failed, refreshing...",
-      err?.message
-    );
+  // Mutex pattern: If a bootstrap request is already in progress, await the same promise
+  // This prevents dozens of concurrent tile requests from flooding Apple's servers simultaneously
+  if (pendingBootstrapPromise) {
+    return pendingBootstrapPromise;
+  }
+
+  pendingBootstrapPromise = (async () => {
     try {
-      const newToken = await scrapeMasterTokenFromApple();
-      appleMasterToken = newToken;
       appleConfig = await fetchAppleBootstrap(appleMasterToken);
       return appleConfig;
-    } catch (scrapeErr: any) {
-      console.error("[Apple Maps] Token refresh failed:", scrapeErr?.message);
-      if (appleConfig) {
+    } catch (err: any) {
+      console.warn(
+        "[Apple Maps] Bootstrap with cached token failed, scraping fresh token...",
+        err?.message
+      );
+      try {
+        const newToken = await scrapeMasterTokenFromApple();
+        appleMasterToken = newToken;
+        appleConfig = await fetchAppleBootstrap(appleMasterToken);
         return appleConfig;
+      } catch (scrapeErr: any) {
+        console.error("[Apple Maps] Token refresh failed:", scrapeErr?.message);
+        if (appleConfig) {
+          return appleConfig;
+        }
+        throw scrapeErr;
       }
-      throw scrapeErr;
+    } finally {
+      pendingBootstrapPromise = null;
     }
-  }
+  })();
+
+  return pendingBootstrapPromise;
 }
 
 function fetchTileBuffer(
@@ -243,13 +266,15 @@ function fetchTileBuffer(
     const req = https.get(
       tileUrl,
       {
+        agent: httpsKeepAliveAgent,
         headers: {
           Origin: "https://maps.apple.com",
           Referer: "https://maps.apple.com/",
+          Accept: "image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
           "User-Agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
         },
-        timeout: 9000,
+        timeout: 10000,
       },
       (res) => {
         if (res.statusCode !== 200) {
@@ -276,6 +301,17 @@ function fetchTileBuffer(
 async function startServer() {
   const app = express();
   app.use(express.json());
+
+  // Global CORS and Preflight handler - guarantees mobile Safari & Chrome never block tile or API requests
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS, POST");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
 
   // Health check endpoint
   app.get("/api/health", (_req, res) => {
@@ -344,7 +380,8 @@ async function startServer() {
     isRetina: boolean
   ) => {
     const tileSizeIndex = isRetina ? 2 : 1;
-    const resolution = isRetina ? 2 : 1;
+    // Apple satellite CDN exclusively supports resolution scale=1
+    const resolution = layerType === "satellite" ? 1 : isRetina ? 2 : 1;
     if (layerType === "satellite") {
       const template =
         cfg.satelliteTemplate ||
@@ -390,13 +427,15 @@ async function startServer() {
     const z = parseInt(req.params.z, 10);
     const x = parseInt(req.params.x, 10);
     const tileParam = req.params.tile || "";
-    const isRetina = tileParam.includes("@2x");
-    const y = parseInt(
-      tileParam.replace("@2x", "").replace(/\.(png|jpg|jpeg)$/, ""),
-      10
-    );
+    const isRetina = tileParam.includes("@2x") || tileParam.includes("@3x");
+    const cleanYStr = tileParam
+      .split("?")[0]
+      .replace(/@\d+x/g, "")
+      .replace(/\.(png|jpg|jpeg|webp)$/i, "");
+    const y = parseInt(cleanYStr, 10);
 
     if (isNaN(z) || isNaN(x) || isNaN(y)) {
+      res.setHeader("Access-Control-Allow-Origin", "*");
       return res.status(400).send("Invalid tile coordinates");
     }
 
@@ -419,12 +458,16 @@ async function startServer() {
 
       try {
         tileData = await fetchTileBuffer(tileUrl);
-      } catch (fetchErr) {
+      } catch (fetchErr: any) {
+        // If 401/403 unauthorized or invalid token, refresh token
+        const errMsg = fetchErr?.message || "";
+        const isAuthError = errMsg.includes("401") || errMsg.includes("403");
         console.warn(
-          `[Apple Maps ${layerType}] Tile fetch failed, retrying with fresh bootstrap...`,
-          fetchErr
+          `[Apple Maps ${layerType}] Tile fetch error (${errMsg}), ${isAuthError ? "refreshing bootstrap" : "retrying"}...`
         );
-        appleConfig = null;
+        if (isAuthError) {
+          appleConfig = null;
+        }
         cfg = await getValidAppleConfig();
         tileUrl = getAppleTileUrl(cfg, layerType, z, x, y, isRetina);
         tileData = await fetchTileBuffer(tileUrl);
@@ -449,13 +492,22 @@ async function startServer() {
       return res.send(tileData.buffer);
     } catch (err: any) {
       console.error(`[Apple Maps ${layerType} Error]:`, err?.message || err);
-      // Fallback
-      let fallbackUrl = `https://a.basemaps.cartocdn.com/light_nolabels/${z}/${x}/${y}.png`;
+      // Fallback to reliable, clean Esri basemaps (zero watermarks, no API key)
+      let fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
       if (layerType === "satellite") {
         fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
       }
-      https
-        .get(fallbackUrl, (fbRes) => {
+      const fbReq = https.get(
+        fallbackUrl,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            Accept: "image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5",
+          },
+          timeout: 6000,
+        },
+        (fbRes) => {
           if (fbRes.statusCode === 200) {
             res.setHeader(
               "Content-Type",
@@ -465,12 +517,15 @@ async function startServer() {
             res.setHeader("Access-Control-Allow-Origin", "*");
             fbRes.pipe(res);
           } else {
+            res.setHeader("Access-Control-Allow-Origin", "*");
             res.status(502).send("Failed to load map tile");
           }
-        })
-        .on("error", () => {
-          res.status(502).send("Failed to load map tile");
-        });
+        }
+      );
+      fbReq.on("error", () => {
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.status(502).send("Failed to load map tile");
+      });
     }
   }
 
