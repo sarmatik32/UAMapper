@@ -102,6 +102,8 @@ interface SidebarProps {
   onUpdateShowDistrictBoundary?: (show: boolean) => void;
   showHromadaBoundaries?: boolean;
   onUpdateShowHromadaBoundaries?: (show: boolean) => void;
+  showQuickSettlements?: boolean;
+  onToggleQuickSettlements?: (show: boolean) => void;
   showSettlementLabels?: boolean;
   onUpdateShowSettlementLabels?: (show: boolean) => void;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
@@ -238,6 +240,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateShowDistrictBoundary,
   showHromadaBoundaries = true,
   onUpdateShowHromadaBoundaries,
+  showQuickSettlements = true,
+  onToggleQuickSettlements,
   showSettlementLabels = true,
   onUpdateShowSettlementLabels = (_show) => {},
   settlementLabelMode = 'all',
@@ -947,17 +951,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={`p-2 sm:p-3 border-b flex justify-between items-center gap-1 sm:gap-2 backdrop-blur-2xl ${
         theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
       }`}>
-        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[2px] sm:gap-[3px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
+        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
           theme === 'light' 
             ? 'bg-slate-950/90 border-slate-900 text-white' 
             : 'bg-white/90 border-white text-slate-950'
         }`}>
-          <img 
-            src="/favicon-32x32.png" 
-            alt="UAMapper" 
-            className="w-4 h-4 rounded-[5px] object-cover shadow-xs -ml-0.5 mr-0.5" 
-            referrerPolicy="no-referrer"
-          />
           <span 
             className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
             style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
@@ -3240,6 +3238,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       type="checkbox" 
                       checked={showHromadaBoundaries} 
                       onChange={(e) => onUpdateShowHromadaBoundaries?.(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
+
+                {/* 4. Quick Settlement Buttons Toggle */}
+                <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      {isUa ? 'Швидкі кнопки н/п під пошуком' : 'Quick settlement buttons'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal">
+                      {isUa ? 'Відображати кнопки міст і сіл під районами Кривого Рогу' : 'Show town buttons under Kryvyi Rih districts'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={showQuickSettlements} 
+                      onChange={(e) => onToggleQuickSettlements?.(e.target.checked)}
                       className="sr-only peer" 
                     />
                     <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>

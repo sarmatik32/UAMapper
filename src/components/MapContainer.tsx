@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation } from 'lucide-react';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
@@ -143,6 +143,8 @@ interface MapContainerProps {
   showDistrictBoundary?: boolean;
   showHromadaBoundaries?: boolean;
   onToggleHromadaBoundaries?: (show: boolean) => void;
+  showQuickSettlements?: boolean;
+  onToggleQuickSettlements?: (show: boolean) => void;
   customSettlements?: Settlement[];
   onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
   onEditSettlement?: (settlement: Settlement) => void;
@@ -221,6 +223,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   showDistrictBoundary = true,
   showHromadaBoundaries = true,
   onToggleHromadaBoundaries,
+  showQuickSettlements: propShowQuickSettlements,
+  onToggleQuickSettlements,
   customSettlements = [],
   onAddCustomSettlementPoint,
   onEditSettlement,
@@ -999,6 +1003,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       return [];
     }
   });
+
+  // Toggle to show/hide quick settlement buttons (leaving only search & district buttons)
+  const [localShowQuickSettlements, setLocalShowQuickSettlements] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('uamapper_show_quick_settlements');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const showQuickSettlements = propShowQuickSettlements !== undefined ? propShowQuickSettlements : localShowQuickSettlements;
+
+  const handleToggleQuickSettlements = (val: boolean) => {
+    setLocalShowQuickSettlements(val);
+    onToggleQuickSettlements?.(val);
+    try {
+      localStorage.setItem('uamapper_show_quick_settlements', String(val));
+    } catch (e) {
+      console.warn('Failed to save showQuickSettlements state:', e);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -4378,26 +4404,47 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
             {/* Quick District & Settlement Buttons */}
             <div className="space-y-2 py-1 max-h-36 overflow-y-auto pr-1">
-              {/* Urban Districts of Kryvyi Rih (Circular Buttons with Initial Letter) */}
+              {/* Urban Districts of Kryvyi Rih & Settlement Toggle */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[11px] font-extrabold tracking-wider px-0.5">
-                  <span className="text-slate-900 dark:text-slate-100 uppercase drop-shadow-xs">
-                    {language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}
-                  </span>
-                  {searchedAreas.length > 0 ? (
+                <div className="flex items-center justify-between px-0.5 min-h-[24px]">
+                  {/* Toggle quick settlement buttons */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleQuickSettlements(!showQuickSettlements)}
+                    className={`h-6 px-2.5 rounded-full text-[10px] flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer border whitespace-nowrap ${
+                      showQuickSettlements
+                        ? theme === 'light'
+                          ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300 font-extrabold'
+                          : 'bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border-blue-500/40 font-extrabold'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border-slate-300/90 font-bold'
+                          : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border-white/15 font-bold'
+                    }`}
+                    title={showQuickSettlements ? (language === 'uk' ? 'Приховати кнопки населених пунктів' : 'Hide settlement buttons') : (language === 'uk' ? 'Показати кнопки населених пунктів' : 'Show settlement buttons')}
+                  >
+                    {showQuickSettlements ? (
+                      <>
+                        <ChevronUp className="w-3 h-3 text-blue-500" />
+                        <span>{language === 'uk' ? 'Населені пункти' : 'Settlements'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                        <span>{language === 'uk' ? 'Населені пункти' : 'Settlements'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {searchedAreas.length > 0 && (
                     <button
                       type="button"
                       onClick={handleClearAllAreas}
-                      className="px-2 py-0.5 rounded-md bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer"
+                      className="h-6 px-2.5 rounded-full bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                       title={language === 'uk' ? 'Прибрати всі виділені зони та населені пункти' : 'Clear all highlighted zones & settlements'}
                     >
                       <Trash2 className="w-2.5 h-2.5" />
-                      <span>{language === 'uk' ? `Очистити виділені (${searchedAreas.length})` : `Clear (${searchedAreas.length})`}</span>
+                      <span>{language === 'uk' ? `Очистити (${searchedAreas.length})` : `Clear (${searchedAreas.length})`}</span>
                     </button>
-                  ) : (
-                    <span className="text-[10px] font-semibold text-slate-700 dark:text-slate-300">
-                      {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
-                    </span>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -4434,70 +4481,72 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               </div>
 
               {/* Other Boundaries, Settlements & Custom Saved Quick Zones */}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {/* Toggle for Dark Gray Hromada Demarcation Lines */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleHromadaBoundaries?.(!showHromadaBoundaries);
-                  }}
-                  title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
-                  className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
-                    showHromadaBoundaries
-                      ? 'bg-slate-800 hover:bg-slate-900 border-slate-500 text-white shadow-md ring-1 ring-slate-400 font-black'
-                      : theme === 'light'
-                        ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
-                        : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
-                  <span>{language === 'uk' ? 'Межі громад (темно-сірі)' : 'Hromada Boundaries (Dark Gray)'}</span>
-                </button>
+              {showQuickSettlements && (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {/* Toggle for Dark Gray Hromada Demarcation Lines */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleHromadaBoundaries?.(!showHromadaBoundaries);
+                    }}
+                    title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                      showHromadaBoundaries
+                        ? 'bg-slate-800 hover:bg-slate-900 border-slate-500 text-white shadow-md ring-1 ring-slate-400 font-black'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
+                    <span>{language === 'uk' ? 'Межі громад (темно-сірі)' : 'Hromada Boundaries (Dark Gray)'}</span>
+                  </button>
 
-                {allQuickZones.map((dist) => {
-                  const isHighlighted = searchedAreas.some(
-                    (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
-                  );
-                  const isLoading = loadingDistrict === dist.id;
-                  const isCustom = dist.id.startsWith('custom_') || dist.category === 'custom';
+                  {allQuickZones.map((dist) => {
+                    const isHighlighted = searchedAreas.some(
+                      (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
+                    );
+                    const isLoading = loadingDistrict === dist.id;
+                    const isCustom = dist.id.startsWith('custom_') || dist.category === 'custom';
 
-                  return (
-                    <div key={dist.id} className="relative group inline-flex items-center">
-                      <button
-                        type="button"
-                        onClick={() => !isLoading && handleToggleDistrict(dist)}
-                        disabled={isLoading}
-                        title={dist.fullName || dist.label}
-                        className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
-                          isHighlighted
-                            ? 'bg-red-600 hover:bg-red-700 border-red-400 text-white shadow-lg ring-2 ring-red-400/60 font-black'
-                            : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
-                              ? 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-white font-black shadow-md'
-                              : theme === 'light'
-                                ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
-                                : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
-                        }`}
-                      >
-                        {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
-                        <span>{dist.label}</span>
-                      </button>
-                      {isCustom && (
+                    return (
+                      <div key={dist.id} className="relative group inline-flex items-center">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveCustomQuickZone(dist.id);
-                          }}
-                          title={language === 'uk' ? 'Видалити зі швидких зон' : 'Remove from quick zones'}
-                          className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+                          onClick={() => !isLoading && handleToggleDistrict(dist)}
+                          disabled={isLoading}
+                          title={dist.fullName || dist.label}
+                          className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                            isHighlighted
+                              ? 'bg-red-600 hover:bg-red-700 border-red-400 text-white shadow-lg ring-2 ring-red-400/60 font-black'
+                              : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
+                                ? 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-white font-black shadow-md'
+                                : theme === 'light'
+                                  ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                                  : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                          }`}
                         >
-                          <X className="w-2.5 h-2.5" />
+                          {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
+                          <span>{dist.label}</span>
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        {isCustom && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveCustomQuickZone(dist.id);
+                            }}
+                            title={language === 'uk' ? 'Видалити зі швидких зон' : 'Remove from quick zones'}
+                            className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
 

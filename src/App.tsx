@@ -9,7 +9,7 @@ import { fetchActiveAlerts } from './utils/alertsService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
 import { preloadFontEmbedCSS } from './utils/mapFonts';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
+import { RotateCw, Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
@@ -547,6 +547,16 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
+  const [showQuickSettlements, setShowQuickSettlements] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_quick_settlements');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleUpdateShowQuickSettlements = (val: boolean) => {
+    setShowQuickSettlements(val);
+    localStorage.setItem('uamapper_show_quick_settlements', String(val));
+  };
+
   const [mapFont, setMapFont] = useState<MapFontFamily>(() => {
     const saved = localStorage.getItem('uamapper_map_font');
     return (saved as MapFontFamily) || 'inter';
@@ -967,6 +977,12 @@ export default function App() {
   };
 
   const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [isReloading, setIsReloading] = useState<boolean>(false);
+
+  const handleReloadPage = () => {
+    setIsReloading(true);
+    window.location.reload();
+  };
 
   // GPS centering handler
   const handleFindMyLocation = () => {
@@ -1336,6 +1352,7 @@ export default function App() {
         showCityBoundary,
         showDistrictBoundary,
         showHromadaBoundaries,
+        showQuickSettlements,
         showSettlementLabels,
         settlementLabelMode,
         disabledSettlementCategories,
@@ -1472,6 +1489,10 @@ export default function App() {
             setShowHromadaBoundaries(settings.showHromadaBoundaries);
             localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
           }
+          if (settings.showQuickSettlements !== undefined) {
+            setShowQuickSettlements(settings.showQuickSettlements);
+            localStorage.setItem('uamapper_show_quick_settlements', String(settings.showQuickSettlements));
+          }
           if (settings.showSettlementLabels !== undefined) {
             setShowSettlementLabels(settings.showSettlementLabels);
             localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
@@ -1595,6 +1616,8 @@ export default function App() {
             showDistrictBoundary={showDistrictBoundary}
             showHromadaBoundaries={showHromadaBoundaries}
             onToggleHromadaBoundaries={setShowHromadaBoundaries}
+            showQuickSettlements={showQuickSettlements}
+            onToggleQuickSettlements={handleUpdateShowQuickSettlements}
             showSettlementLabels={showSettlementLabels}
             settlementLabelMode={settlementLabelMode}
             disabledSettlementCategories={disabledSettlementCategories}
@@ -1758,13 +1781,13 @@ export default function App() {
                 <Camera className="w-5 h-5 text-slate-950" />
               </button>
 
-              {/* Find Location GPS Button */}
+              {/* Page Reload / Refresh (F5) Button */}
               <button
-                onClick={handleFindMyLocation}
-                title={language === 'uk' ? 'Моє місцезнаходження' : 'My Location'}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-200 ${isLocating ? 'animate-spin text-blue-400' : ''}`}
+                onClick={handleReloadPage}
+                title={language === 'uk' ? 'Оновити сторінку (F5)' : 'Reload page (F5)'}
+                className="w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-200 active:scale-95"
               >
-                <Compass className="w-5 h-5" />
+                <RotateCw className={`w-5 h-5 ${isReloading ? 'animate-spin text-blue-400' : ''}`} />
               </button>
 
               {/* Theme Toggle Button */}
@@ -2081,6 +2104,8 @@ export default function App() {
               onUpdateShowDistrictBoundary={setShowDistrictBoundary}
               showHromadaBoundaries={showHromadaBoundaries}
               onUpdateShowHromadaBoundaries={setShowHromadaBoundaries}
+              showQuickSettlements={showQuickSettlements}
+              onToggleQuickSettlements={handleUpdateShowQuickSettlements}
               showSettlementLabels={showSettlementLabels}
               onUpdateShowSettlementLabels={handleToggleSettlementLabels}
               autoHighlightZone={autoHighlightZone}
