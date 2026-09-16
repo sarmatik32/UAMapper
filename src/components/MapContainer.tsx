@@ -21,7 +21,7 @@ import { MapLegendWidget } from './MapLegendWidget';
 
 export interface MapContainerRef {
   exportPNG: () => void;
-  copyPNG: () => void;
+  copyPNG: () => Promise<boolean>;
   getMapBlob: (mode?: 'export' | 'clipboard') => Promise<Blob>;
   centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
   highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
@@ -2557,7 +2557,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      crossOrigin: url.startsWith('http') ? 'anonymous' : undefined,
+      crossOrigin: 'anonymous',
       detectRetina: false, // Prevent artificial 200% scale stretching that blurs non-retina raster tiles
       tileSize: 256,
       keepBuffer: 6,
@@ -2578,7 +2578,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
-        crossOrigin: overlayUrl.startsWith('http') ? 'anonymous' : undefined,
+        crossOrigin: 'anonymous',
         detectRetina: false,
         tileSize: 256,
         keepBuffer: 6,
@@ -4233,56 +4233,99 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  const handleCopyPNG = async () => {
+  const handleCopyPNG = async (): Promise<boolean> => {
     const mapElement = prepareExportState();
-    if (!mapElement) return;
+    if (!mapElement) return false;
     setIsCopying(true);
-    setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер (HD)...' : 'Copying to clipboard (HD)...');
+    setScreenshotStatus(language === 'uk' ? 'Створення знімка...' : 'Capturing map...');
     let blob: Blob | null = null;
     try {
-      // Clipboard is intentionally captured at native browser scale.
-      // This matches what Lightshot sees and avoids making Leaflet's raster
-      // tiles look soft by enlarging them 3.5x+ before copying.
       blob = await captureMapBlob('clipboard');
-      if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
-        throw new Error('Clipboard image API is unavailable');
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
-      setTimeout(() => setScreenshotStatus(null), 2500);
-    } catch (err) {
-      console.warn('Clipboard write failed, using Web Share / download fallback:', err);
+    } catch (captureErr) {
+      console.warn('Clipboard mode capture failed, falling back to standard capture:', captureErr);
       try {
-        if (!blob) throw new Error('PNG blob was not created');
-        const filename = `tactical_map_${Date.now()}.png`;
-        const file = new File([blob], filename, { type: 'image/png' });
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+        blob = await captureMapBlob('export');
+      } catch (retryErr) {
+        console.error('All capture attempts failed:', retryErr);
+      }
+    }
 
-        if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (!blob) {
+      cleanupExportState(mapElement);
+      setIsCopying(false);
+      setScreenshotStatus(language === 'uk' ? 'Помилка знімка карти' : 'Map capture failed');
+      setTimeout(() => setScreenshotStatus(null), 2500);
+      return false;
+    }
+
+    try {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+      const filename = `tactical_map_${Date.now()}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+
+      // 1. On desktop devices, try standard clipboard API first
+      if (!isMobile && navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return true;
+        } catch (clipErr) {
+          console.warn('Desktop clipboard write failed:', clipErr);
+        }
+      }
+
+      // 2. On mobile devices, attempt Web Share API if supported
+      if (isMobile && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        try {
           await navigator.share({
             files: [file],
             title: language === 'uk' ? 'Тактична карта (UA Mapper)' : 'Tactical Map (UA Mapper)',
           });
           setScreenshotStatus(language === 'uk' ? 'Зображення збережено / поширено!' : 'Map saved / shared!');
           setTimeout(() => setScreenshotStatus(null), 2500);
-          return;
+          return true;
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') {
+            // User voluntarily dismissed the share dialog
+            setScreenshotStatus(null);
+            return true;
+          }
+          console.warn('Web Share failed (transient activation or permission), falling back to download:', shareErr);
         }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
-        setTimeout(() => setScreenshotStatus(null), 2500);
-      } catch (fallbackErr) {
-        console.error('Clipboard fallback failed:', fallbackErr);
-        setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
-        setTimeout(() => setScreenshotStatus(null), 2500);
       }
+
+      // 3. Try mobile clipboard if browser supports it
+      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return true;
+        } catch (_) {}
+      }
+
+      // 4. Universal 100% reliable fallback for all devices: direct file download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setScreenshotStatus(
+        language === 'uk'
+          ? (isMobile ? 'Карту завантажено на телефон!' : 'Карту завантажено як файл!')
+          : 'Map downloaded!'
+      );
+      setTimeout(() => setScreenshotStatus(null), 3000);
+      return true;
+    } catch (fallbackErr) {
+      console.error('Clipboard / download fallback failed:', fallbackErr);
+      setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
+      setTimeout(() => setScreenshotStatus(null), 2500);
+      return false;
     } finally {
       cleanupExportState(mapElement);
       setIsCopying(false);

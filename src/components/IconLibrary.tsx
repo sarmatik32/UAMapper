@@ -39,12 +39,9 @@ export const PRESET_COLORS = [
   { nameUa: 'Білий', nameEn: 'White', hex: '#ffffff' },
 ];
 
-export function getIconSvgContent(type: string, fillColor: string = 'currentColor', strokeColor: string = 'white'): string {
-  const isTransparent = fillColor === 'transparent' || fillColor === 'none';
-  const fill = isTransparent ? 'none' : fillColor;
-  const stroke = strokeColor;
-  const strokeWidth = isTransparent ? '2.5' : '1.5';
+const svgCache = new Map<string, string>();
 
+function buildIconSvgContent(type: string, fill: string, stroke: string, strokeWidth: string): string {
   switch (type) {
     case 'standard-aircraft':
       return `
@@ -209,6 +206,21 @@ export function getIconSvgContent(type: string, fillColor: string = 'currentColo
         </svg>
       `;
   }
+}
+
+export function getIconSvgContent(type: string, fillColor: string = 'currentColor', strokeColor: string = 'white'): string {
+  const cacheKey = `${type}_${fillColor}_${strokeColor}`;
+  const cached = svgCache.get(cacheKey);
+  if (cached) return cached;
+
+  const isTransparent = fillColor === 'transparent' || fillColor === 'none';
+  const fill = isTransparent ? 'none' : fillColor;
+  const stroke = strokeColor;
+  const strokeWidth = isTransparent ? '2.5' : '1.5';
+
+  const res = buildIconSvgContent(type, fill, stroke, strokeWidth);
+  svgCache.set(cacheKey, res);
+  return res;
 }
 
 export function hexToRgba(hex: string, alpha: number): string {

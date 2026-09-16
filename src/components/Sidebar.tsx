@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
@@ -119,6 +119,8 @@ interface SidebarProps {
   onImportCustomSettlements?: (settlements: Settlement[]) => void;
   onExportAllSettings?: () => void;
   onImportAllSettings?: (file: File) => void;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
+  onUpdateCustomLibrary?: (lib: { id: string; name: string; dataUrl: string }[]) => void;
   autoHighlightZone?: boolean;
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
@@ -257,6 +259,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onImportCustomSettlements = (_settlements) => {},
   onExportAllSettings,
   onImportAllSettings,
+  customLibrary: propsCustomLibrary,
+  onUpdateCustomLibrary,
   autoHighlightZone = false,
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
@@ -325,8 +329,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [newVisicomKeyInput, setNewVisicomKeyInput] = useState('');
   const [visicomKeySavedSuccess, setVisicomKeySavedSuccess] = useState(false);
 
-  // Custom PNG Library State
+  // Custom PNG Library State (synced with props / App state)
   const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    if (propsCustomLibrary && propsCustomLibrary.length > 0) return propsCustomLibrary;
     try {
       const saved = localStorage.getItem('visicom_custom_library');
       return saved ? JSON.parse(saved) : [];
@@ -334,6 +339,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return [];
     }
   });
+
+  useEffect(() => {
+    if (propsCustomLibrary) {
+      setCustomLibrary(propsCustomLibrary);
+    }
+  }, [propsCustomLibrary]);
 
   const handleWatermarkImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -407,12 +418,64 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
 
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
+  const accordionContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSection = (sectionKey: string) => {
+    setTimeout(() => {
+      const container = accordionContainerRef.current;
+      const targetEl = document.getElementById(`section-${sectionKey}`);
+      if (!container || !targetEl) return;
+      
+      const targetOffset = targetEl.offsetTop - container.offsetTop;
+      container.scrollTo({
+        top: Math.max(0, targetOffset - 4),
+        behavior: 'smooth'
+      });
+    }, 60);
   };
+
+  const openSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections({
+      mode: section === 'mode',
+      lines: section === 'lines',
+      styles: section === 'styles',
+      objects: section === 'objects',
+      map: section === 'map',
+      overlays: section === 'overlays',
+      settings: section === 'settings',
+    });
+    scrollToSection(String(section));
+  };
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => {
+      const isCurrentlyOpen = prev[section];
+      const willBeOpen = !isCurrentlyOpen;
+      
+      if (willBeOpen) {
+        scrollToSection(String(section));
+      }
+      
+      return {
+        mode: willBeOpen && section === 'mode',
+        lines: willBeOpen && section === 'lines',
+        styles: willBeOpen && section === 'styles',
+        objects: willBeOpen && section === 'objects',
+        map: willBeOpen && section === 'map',
+        overlays: willBeOpen && section === 'overlays',
+        settings: willBeOpen && section === 'settings',
+      };
+    });
+  };
+
+  const isLinesOpen = expandedSections.lines;
+  const isAnySectionOpen = expandedSections.mode || isLinesOpen || expandedSections.styles || expandedSections.objects || expandedSections.map || expandedSections.overlays;
+
+  useEffect(() => {
+    if (interactionMode === 'line' || selectedLineId !== null) {
+      openSection('lines');
+    }
+  }, [interactionMode, selectedLineId]);
 
   const saveToLibrary = async (name: string, rawDataUrl: string) => {
     const optimizedDataUrl = await optimizeIconDataUrl(rawDataUrl);
@@ -421,12 +484,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name,
       dataUrl: optimizedDataUrl,
     };
-    setCustomLibrary((prev) => {
-      const updated = [...prev, newItem];
-      safeSetItem('visicom_custom_library', JSON.stringify(updated));
-      return updated;
-    });
-    return newItem.dataUrl;
+    const updated = [...customLibrary, newItem];
+    setCustomLibrary(updated);
+    safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
+    return newItem;
   };
 
   const deleteFromLibrary = (id: string, e: React.MouseEvent) => {
@@ -434,6 +496,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const updated = customLibrary.filter((item) => item.id !== id);
     setCustomLibrary(updated);
     safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
   };
 
   const handleFileImportSettlements = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -677,13 +740,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           const defaultName = file.name.replace(/\.[^/.]+$/, "");
           const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
           
-          const savedUrl = await saveToLibrary(name, base64);
-          const newItem = {
-            id: 'custom_' + Date.now(),
-            name,
-            dataUrl: savedUrl,
-          };
-          
+          const newItem = await saveToLibrary(name, base64);
           handleSelectCustomIcon(newItem);
         };
         reader.readAsDataURL(file);
@@ -784,7 +841,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
-    setExpandedSections((prev) => ({ ...prev, styles: true }));
+    openSection('styles');
 
     const fallbackPreset = getDefaultPresetForIcon(iconTypeId);
     const preset = iconPresets[iconTypeId] || fallbackPreset;
@@ -941,28 +998,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
 
   return (
-    <div className={`modern-sidebar w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 backdrop-blur-3xl backdrop-saturate-200 transition-colors duration-300 ${
+    <div className={`modern-sidebar w-full flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 backdrop-blur-3xl backdrop-saturate-200 transition-colors duration-300 ${
       theme === 'light'
         ? 'bg-white/45 border-l border-white/60 text-slate-800 shadow-2xl'
         : 'bg-[#0a0d14]/45 border-l border-white/10 text-slate-200 shadow-2xl'
     }`}>
       
       {/* Header section with App Branding */}
-      <div className={`p-2 sm:p-3 border-b flex justify-between items-center gap-1 sm:gap-2 backdrop-blur-2xl ${
+      <div className={`px-3 py-2.5 border-b flex justify-between items-center gap-2 backdrop-blur-2xl shrink-0 ${
         theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
       }`}>
-        <div className={`px-2 py-1 sm:px-2.5 sm:py-1 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-sm transition-all select-none flex-shrink min-w-0 ${
-          theme === 'light' 
-            ? 'bg-slate-950/90 border-slate-900 text-white' 
-            : 'bg-white/90 border-white text-slate-950'
-        }`}>
+        {/* Logo and channel badge (Clickable link to Telegram) */}
+        <a
+          href="https://t.me/krrig_alerts"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Telegram: @krrig_alerts"
+          className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-sm transition-all select-none min-w-0 cursor-pointer hover:opacity-90 active:scale-95 ${
+            theme === 'light' 
+              ? 'bg-slate-950/90 border-slate-900 text-white' 
+              : 'bg-white/90 border-white text-slate-950'
+          }`}
+        >
           <span 
-            className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
+            className="font-sans font-bold tracking-tight text-[11px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
             style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
           >
             UA Mapper
           </span>
-          <svg className="w-3.5 h-3.5 sm:w-3.5 sm:h-3.5 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-3.5 h-3.5 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="telegram-watermark-sidebar" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#2AABEE" />
@@ -975,20 +1039,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className={`inline-block w-[1px] h-2.5 self-center ${
             theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
           }`} />
-          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7px] sm:text-[7.5px] whitespace-nowrap ${
+          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7.5px] whitespace-nowrap ${
             theme === 'light' ? 'text-white' : 'text-slate-950'
           }`}>
             BY @KRRIG_ALERTS
           </span>
-        </div>
+        </a>
 
         {/* Top-Right utility buttons */}
-        <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Theme Toggle Button */}
           <button
             onClick={onToggleTheme}
             title={isUa ? 'Перемкнути світлу/темну тему' : 'Toggle light/dark theme'}
-            className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
             }`}
           >
@@ -998,7 +1062,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onToggleLanguage}
             title={isUa ? 'Switch to English' : 'Перемкнути на українську'}
-            className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
             }`}
           >
@@ -1010,7 +1074,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               onClick={onClose}
               title={isUa ? 'Сховати бічну панель' : 'Hide sidebar panel'}
-              className={`w-[28px] h-[28px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer ${
+              className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
                 theme === 'light' 
                   ? 'bg-white/70 border-slate-200/80 text-slate-700 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm' 
                   : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-red-400'
@@ -1023,10 +1087,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Accordion List wrapper */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+      <div 
+        ref={accordionContainerRef}
+        className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 pb-3 pt-1 space-y-2.5 scroll-smooth"
+      >
 
         {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
-        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl flex items-center justify-around transition-all ${
+        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl grid grid-cols-6 gap-1.5 items-center flex-shrink-0 transition-all ${
           theme === 'light' 
             ? 'border-slate-200/80 bg-white/60' 
             : 'border-white/10 bg-white/[0.04]'
@@ -1034,7 +1101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onUpdateShowSettlementLabels?.(!showSettlementLabels)}
             title={isUa ? `Назви населених пунктів: ${showSettlementLabels ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Settlement labels: ${showSettlementLabels ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               showSettlementLabels
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1046,7 +1113,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
             title={isUa ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               autoHighlightZone
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1056,9 +1123,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'redzone' ? 'draw' : 'redzone')}
+            onClick={() => {
+              const next = interactionMode === 'redzone' ? 'draw' : 'redzone';
+              onSetInteractionMode(next);
+              if (next === 'redzone') openSection('mode');
+            }}
             title={isUa ? 'Червоні зони' : 'Red Zone Mode'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'redzone'
                 ? 'bg-red-500 text-white font-bold shadow-md shadow-red-500/30 ring-2 ring-red-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-red-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1068,9 +1139,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'settlement' ? 'draw' : 'settlement')}
+            onClick={() => {
+              const next = interactionMode === 'settlement' ? 'draw' : 'settlement';
+              onSetInteractionMode(next);
+              if (next === 'settlement') openSection('objects');
+            }}
             title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'settlement'
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1080,9 +1155,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'line' ? 'draw' : 'line')}
+            onClick={() => {
+              const next = interactionMode === 'line' ? 'draw' : 'line';
+              onSetInteractionMode(next);
+              if (next === 'line') openSection('lines');
+            }}
             title={isUa ? 'Малювання ліній зі зглажуванням' : 'Draw Smoothed Lines'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'line'
                 ? 'bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-emerald-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1092,9 +1171,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'measure' ? 'draw' : 'measure')}
+            onClick={() => {
+              const next = interactionMode === 'measure' ? 'draw' : 'measure';
+              onSetInteractionMode(next);
+              if (next === 'measure') openSection('mode');
+            }}
             title={isUa ? 'Виміряти відстань' : 'Measure Distance'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'measure'
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
                 : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
@@ -1105,15 +1188,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-mode"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            expandedSections.mode ? 'flex-1 min-h-[260px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            expandedSections.mode
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('mode')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+              expandedSections.mode
+                ? (theme === 'light'
+                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs'
+                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -1124,8 +1217,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.mode && (
-            <div className="p-3 space-y-2.5">
-              <div className="grid grid-cols-2 gap-2">
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onSetInteractionMode('draw')}
                   className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
@@ -1201,20 +1296,45 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </ul>
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>
 
         {/* 1.5 НАЛАШТУВАННЯ ЛІНІЙ (LINE DRAWING & CONFIGURATION) */}
-        <div className={`border rounded-2xl overflow-hidden transition-all ${
-          interactionMode === 'line' || selectedLineId !== null ? 'ring-2 ring-emerald-500/60 border-emerald-500' : (theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20')
-        }`}>
+        <div 
+          id="section-lines"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            isLinesOpen ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            isLinesOpen
+              ? (interactionMode === 'line' || selectedLineId !== null
+                  ? (theme === 'light'
+                      ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-white shadow-xl'
+                      : 'ring-2 ring-emerald-500/60 border-emerald-500 bg-[#141824] shadow-2xl')
+                  : (theme === 'light'
+                      ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5'
+                      : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5'))
+              : (interactionMode === 'line' || selectedLineId !== null
+                  ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-emerald-500/10'
+                  : (theme === 'light' 
+                      ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' 
+                      : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50'))
+          }`}>
           <button
             onClick={() => toggleSection('lines')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              interactionMode === 'line'
-                ? 'bg-emerald-500/15 text-emerald-400'
-                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+              isLinesOpen
+                ? (interactionMode === 'line'
+                    ? (theme === 'light' 
+                        ? 'rounded-t-2xl bg-emerald-50/95 text-emerald-800 border-b border-emerald-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#13221d]/95 text-emerald-400 border-b border-emerald-500/20 shadow-xs')
+                    : (theme === 'light'
+                        ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs'))
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -1227,12 +1347,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {drawnLines.length}
                 </span>
               )}
-              {expandedSections.lines ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+              {isLinesOpen ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
             </div>
           </button>
 
-          {(expandedSections.lines || interactionMode === 'line' || selectedLineId !== null) && (
-            <div className="p-3.5 space-y-4 text-xs">
+          {isLinesOpen && (
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 space-y-4 text-xs">
               
               {/* Target indicator */}
               <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-200 dark:border-white/10">
@@ -1830,21 +1952,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
               )}
 
+              </div>
             </div>
           )}
         </div>
 
         {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
-
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-styles"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            expandedSections.styles ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            expandedSections.styles
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('styles')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+              expandedSections.styles
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -1855,7 +1987,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.styles && (
-            <div className="p-3 space-y-3.5">
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3.5">
               
               {/* Editing Target Indicator */}
               <div className="flex items-center justify-between pb-1 border-b border-dashed border-slate-200 dark:border-white/5">
@@ -2370,20 +2504,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
 
+              </div>
             </div>
           )}
         </div>
 
         {/* 3. ОБ'ЄКТИ (OBJECTS) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-objects"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            expandedSections.objects ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            expandedSections.objects
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('objects')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+              expandedSections.objects
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2394,7 +2539,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.objects && (
-            <div className="p-3 space-y-2">
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2">
               {markers.length === 0 ? (
                 <div className="text-center py-4 text-xs text-slate-500">
                   {t.noObjects}
@@ -2469,20 +2616,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ))}
                 </div>
               )}
+              </div>
             </div>
           )}
         </div>
 
         {/* 4. КАРТА (MAP) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-map"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            expandedSections.map ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            expandedSections.map
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('map')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+              expandedSections.map
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2493,7 +2651,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.map && (
-            <div className="p-3 space-y-3">
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3">
               
               {/* Tile Layer selector */}
               <div className="space-y-1.5">
@@ -2729,22 +2889,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               </div>
+              </div>
             </div>
           )}
         </div>
 
-        {/* MAP OVERLAYS SECTION */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' 
-            ? 'bg-white border-slate-200' 
-            : 'bg-[#181d28]/60 border-white/5'
-        }`}>
+        {/* MAP OVERLAYS & SETTINGS SECTION */}
+        <div 
+          id="section-overlays"
+          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
+            expandedSections.overlays ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
+          } ${
+            expandedSections.overlays
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('overlays')}
-            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all ${
+            className={`w-full flex-shrink-0 px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
               expandedSections.overlays
-                ? (theme === 'light' ? 'bg-slate-50 text-slate-900 border-b border-slate-100' : 'bg-white/5 text-white border-b border-white/5')
-                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2755,7 +2924,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.overlays && (
-            <div className="p-3 space-y-3.5">
+            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3.5">
               {/* Air Raid Alerts (alerts.in.ua) Block */}
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
                 <div className="flex items-center justify-between">
@@ -2891,10 +3062,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
-                    {isUa ? 'Експорт усіх налаштувань' : 'Export All Settings'}
+                    {isUa ? 'Експорт ZIP (все + власні іконки)' : 'Export ZIP (All Settings + Icons)'}
                   </span>
                   <span className="text-[9px] text-slate-400 leading-normal">
-                    {isUa ? 'Перенести всі позначки, лінії та опції на інший пристрій' : 'Transfer all markers, lines & config to another device'}
+                    {isUa ? 'Архів ZIP з усіма налаштуваннями, мітками, лініями та доданими іконками для іншого пристрою' : 'ZIP archive with settings, markers, lines & custom icons for migration'}
                   </span>
                 </div>
 
@@ -2903,21 +3074,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     type="button"
                     onClick={onExportAllSettings}
                     className="py-2 px-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
-                    title={isUa ? 'Експортувати всі налаштування та дані у файл JSON' : 'Export all settings and data to JSON file'}
+                    title={isUa ? 'Експортувати всі налаштування та додані іконки у ZIP-архів' : 'Export all settings and custom icons as ZIP archive'}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>{isUa ? 'Експорт усіх' : 'Export All'}</span>
+                    <span>{isUa ? 'Експорт ZIP' : 'Export ZIP'}</span>
                   </button>
 
                   <label
                     className="py-2 px-2 rounded-lg bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/20 font-bold text-xs text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    title={isUa ? 'Імпортувати всі налаштування з файлу JSON' : 'Import all settings from JSON file'}
+                    title={isUa ? 'Імпортувати ZIP або JSON з налаштуваннями та власними іконками' : 'Import ZIP or JSON with settings & custom icons'}
                   >
                     <Upload className="w-3.5 h-3.5 text-emerald-400" />
                     <span>{isUa ? 'Імпорт' : 'Import'}</span>
                     <input
                       type="file"
-                      accept=".json"
+                      accept=".zip,.json"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file && onImportAllSettings) {
@@ -3725,6 +3896,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 )}
               </div>
+
+              </div>
             </div>
           )}
         </div>
@@ -3733,92 +3906,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       </div>
 
-      {/* Action panel at the bottom (Split Export: Save PNG & Telegram) */}
-      <div className={`p-3.5 border-t space-y-2.5 ${
-        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/80 border-[#262c38] backdrop-blur-md'
+      {/* Action panel at the bottom (Icon-only compact bar: Export PNG, Telegram, Clipboard, Undo, Clear) */}
+      <div className={`p-2.5 px-3 border-t shrink-0 ${
+        theme === 'light' ? 'bg-white/95 border-slate-200 shadow-lg' : 'bg-[#0e1117]/95 border-[#262c38] backdrop-blur-md shadow-2xl'
       }`}>
-        <div className="space-y-2">
-          {/* Row 1: Split Export Buttons (PNG & Telegram) */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Save as PNG */}
-            <button
-              type="button"
-              onClick={onExportPNG}
-              className={`w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
-                theme === 'light'
-                  ? 'bg-[#0057B7] hover:bg-[#004494] text-white border-[#0057B7]/20 shadow-[#0057B7]/10'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/20 shadow-blue-600/10'
-              }`}
-              title={isUa ? 'Завантажити карту як PNG файл високої роздільності' : 'Download HD PNG'}
-            >
-              <Download className="w-4 h-4 flex-shrink-0 text-white" />
-              <span className="leading-tight text-center">{t.btnSavePng}</span>
-            </button>
+        <div className="grid grid-cols-5 gap-1.5 w-full">
+          {/* 1. Save as PNG */}
+          <button
+            type="button"
+            onClick={onExportPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-blue-500/30 bg-[#0057B7] hover:bg-[#004494] text-white shadow-sm shadow-[#0057B7]/25 active:scale-95"
+            title={isUa ? 'Завантажити карту як PNG' : 'Download HD PNG'}
+            aria-label={t.btnSavePng}
+          >
+            <Download className="w-5 h-5 text-white" />
+          </button>
 
-            {/* Export to Telegram (Telegram Brand Colors & Logo) */}
-            <button
-              type="button"
-              onClick={onExportTelegram}
-              className="w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-lg shadow-[#24A1DE]/25"
-              title={isUa ? 'Поділитися картою або опублікувати в Telegram-канал на вибір' : 'Share or publish map to Telegram channel'}
-            >
-              <Send className="w-4 h-4 flex-shrink-0 text-white fill-current -translate-x-0.5 translate-y-0.5" />
-              <span className="leading-tight text-center">{t.btnExportTelegram}</span>
-            </button>
-          </div>
+          {/* 2. Export to Telegram */}
+          <button
+            type="button"
+            onClick={onExportTelegram}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-sm shadow-[#24A1DE]/25 active:scale-95"
+            title={isUa ? 'Поділитися / надіслати в Telegram' : 'Export / Share to Telegram'}
+            aria-label={t.btnExportTelegram}
+          >
+            <Send className="w-5 h-5 text-white fill-current" />
+          </button>
 
-          {/* Row 2: Share Buffer & Undo */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Share / Buffer Copy */}
-            <button
-              type="button"
-              onClick={onCopyPNG}
-              className="w-full h-[44px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#FFD700]/30 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-md shadow-[#FFD700]/15"
-              title={isUa ? 'Скопіювати зображення в буфер обміну' : 'Copy to clipboard'}
-            >
-              <Copy className="w-4 h-4 flex-shrink-0 text-slate-950" />
-              <span className="leading-tight text-center">{t.btnShare}</span>
-            </button>
+          {/* 3. Copy to Clipboard */}
+          <button
+            type="button"
+            onClick={onCopyPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#FFD700]/40 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-sm shadow-[#FFD700]/20 active:scale-95"
+            title={isUa ? 'Скопіювати в буфер обміну' : 'Copy to clipboard'}
+            aria-label={t.btnShare}
+          >
+            <Copy className="w-5 h-5 text-slate-950" />
+          </button>
 
-            {/* Undo */}
-            <button
-              type="button"
-              onClick={onUndo}
-              className={`w-full h-[44px] px-2 font-bold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
-                theme === 'light'
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#181d28] border-white/5 hover:bg-white/5 text-slate-300 hover:text-white'
-              }`}
-              title={isUa ? 'Скасувати останню дію' : 'Undo last action'}
-            >
-              <RotateCcw className="w-4 h-4 flex-shrink-0" />
-              <span className="leading-tight text-center">{t.btnUndo}</span>
-            </button>
-          </div>
+          {/* 4. Undo */}
+          <button
+            type="button"
+            onClick={onUndo}
+            className={`h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-sm active:scale-95 ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                : 'bg-white/10 hover:bg-white/15 border-white/10 text-slate-200 hover:text-white'
+            }`}
+            title={isUa ? 'Скасувати останню дію (Undo)' : 'Undo last action'}
+            aria-label={t.btnUndo}
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
 
-          {/* Row 3: Clear All */}
+          {/* 5. Clear All */}
           <button
             type="button"
             onClick={onClearMarkers}
-            className="w-full h-[36px] px-2 bg-red-600/90 hover:bg-red-600 active:scale-[0.97] hover:scale-[1.01] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-red-500/20"
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-red-500/40 bg-red-600 hover:bg-red-500 text-white shadow-sm shadow-red-600/25 active:scale-95"
+            title={isUa ? 'Очистити всі нанесені об\'єкти' : 'Clear all markers & objects'}
+            aria-label={t.btnClearAll}
           >
-            <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="leading-tight text-center">{t.btnClearAll}</span>
+            <Trash2 className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        {/* Support Banner & Footer */}
-        <div className="flex items-center justify-center gap-3 pt-1.5 text-[11px] text-slate-500 font-mono">
-          <a
-            href="https://t.me/krrig_alerts"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1 bg-[#24A1DE]/10 hover:bg-[#24A1DE]/20 text-[#24A1DE] font-bold rounded-lg border border-[#24A1DE]/10 transition-all text-xs"
-          >
-            <Send className="w-3 h-3 fill-current" />
-            <span>{t.btnSupport}</span>
-          </a>
-          <span className="font-bold">v3.0</span>
+        {/* Minimal Footer */}
+        <div className="flex items-center justify-end pt-1 px-1 text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+          <span>v3.0</span>
         </div>
       </div>
 

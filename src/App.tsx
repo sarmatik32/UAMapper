@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import JSZip from 'jszip';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
@@ -15,53 +16,51 @@ import { ICON_TYPES } from './components/IconLibrary';
 const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'carto_dark',
-    nameEn: 'Esri Dark Gray Canvas (Clean, No Watermark)',
-    nameUa: 'Esri Темна сіра (Без водяних знаків)',
+    nameEn: 'Dark Canvas (Clean)',
+    nameUa: 'Темна (Чиста, без водяних знаків)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
+    overlayUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, © Apple Maps (Підписи українською)',
+    attribution: '© Esri, HERE, Garmin, NGA, USGS',
     requiresKey: false,
     isDark: true,
   },
   {
     id: 'carto_light',
-    nameEn: 'Esri Light Gray Canvas (Clean, No Watermark)',
-    nameUa: 'Esri Світла сіра (Без водяних знаків)',
+    nameEn: 'Light Canvas (Clean)',
+    nameUa: 'Світла (Чиста, без водяних знаків)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
+    overlayUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, © Apple Maps (Підписи українською)',
+    attribution: '© Esri, HERE, Garmin, NGA, USGS',
     requiresKey: false,
     isDark: false,
   },
   {
     id: 'carto_voyager',
-    nameEn: 'Esri Detailed Streets (Clean, No Watermark)',
-    nameUa: 'Esri Детальна вулична (Без водяних знаків)',
+    nameEn: 'Detailed Street Map',
+    nameUa: 'Детальна вулична (Street Map)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
-    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, © Apple Maps (Підписи українською)',
+    attribution: '© Esri, HERE, Garmin, USGS',
     requiresKey: false,
     isDark: false,
   },
   {
     id: 'esri_topo',
-    nameEn: 'Esri World Topo Map (Clean, No Watermark)',
-    nameUa: 'Esri Топографічна рельєфна (Без водяних знаків)',
+    nameEn: 'Esri World Topo Map',
+    nameUa: 'Esri Топографічна рельєфна',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
-    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, © Apple Maps (Підписи українською)',
+    attribution: '© Esri, HERE, Garmin, Intermap, USGS',
     requiresKey: false,
     isDark: false,
   },
@@ -80,9 +79,8 @@ const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'apple_maps_satellite',
     nameEn: 'Apple Maps Satellite (Clean, High-Res)',
-    nameUa: 'Apple Maps Супутник (Підписи міст та сіл українською)',
+    nameUa: 'Apple Maps Супутник (Чистий супутник Apple)',
     url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
-    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
@@ -93,7 +91,7 @@ const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'apple_maps_hybrid',
     nameEn: 'Apple Maps Hybrid (Satellite + Labels)',
-    nameUa: 'Apple Maps Гібрид (Супутник + Підписи)',
+    nameUa: 'Apple Maps Гібрид (Супутник + Підписи українською)',
     url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
     overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
@@ -437,6 +435,21 @@ export default function App() {
     try {
       localStorage.setItem('tactical_map_legend_cfg', JSON.stringify(cfg));
     } catch {}
+  }, []);
+
+  // Custom Icons Library (custom uploaded PNG / SVG / JPG icons) state
+  const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_custom_library');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleUpdateCustomLibrary = useCallback((lib: { id: string; name: string; dataUrl: string }[]) => {
+    setCustomLibrary(lib);
+    safeSetItem('visicom_custom_library', JSON.stringify(lib));
   }, []);
 
   const handleAddDrawnLine = (newLine: DrawnLine) => {
@@ -964,17 +977,23 @@ export default function App() {
 
   const [isQuickCopied, setIsQuickCopied] = useState<boolean>(false);
 
-  const handleQuickCopyBuffer = () => {
+  const handleQuickCopyBuffer = async () => {
     if (mobileView !== 'map') {
       setMobileView('map');
-      setTimeout(() => {
-        mapRef.current?.copyPNG();
+      setTimeout(async () => {
+        const success = await mapRef.current?.copyPNG();
+        if (success !== false) {
+          setIsQuickCopied(true);
+          setTimeout(() => setIsQuickCopied(false), 2000);
+        }
       }, 450);
     } else {
-      mapRef.current?.copyPNG();
+      const success = await mapRef.current?.copyPNG();
+      if (success !== false) {
+        setIsQuickCopied(true);
+        setTimeout(() => setIsQuickCopied(false), 2000);
+      }
     }
-    setIsQuickCopied(true);
-    setTimeout(() => setIsQuickCopied(false), 2000);
   };
 
   const [autoHighlightZone, setAutoHighlightZone] = useState<boolean>(() => {
@@ -1339,240 +1358,445 @@ export default function App() {
     setSelectedMarkerId(null);
   };
 
-  // Handler: Export all settings & data
-  const handleExportAllSettings = () => {
-    const exportData = {
-      version: 1,
-      type: 'uamapper_full_backup',
-      exportedAt: new Date().toISOString(),
-      settings: {
-        theme,
-        language,
-        watermarkType,
-        watermarkText,
-        watermarkImageUrl,
-        watermarkSize,
-        watermarkOpacity,
-        watermarkRotation,
-        legendOverlayText,
-        showLegendOverlay,
-        showRadarOverlay,
-        blurMapOnExport,
-        mapFont,
-        showCityBoundary,
-        showDistrictBoundary,
-        showHromadaBoundaries,
-        showQuickSettlements,
-        showSettlementLabels,
-        settlementLabelMode,
-        disabledSettlementCategories,
-        activeTileLayerId: activeTileLayer.id,
-        autoHighlightZone,
-        visicomKey,
-        customIconTitles,
-        iconPresets,
-        activeStyle,
-        telegramBotToken: localStorage.getItem('visicom_tg_bot_token') || '',
-        telegramChannels: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('visicom_telegram_channels') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-      },
-      data: {
-        markers,
-        drawnLines,
-        customSettlements: customSettlements.filter(
-          (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
-        ),
-        customQuickZones: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('uamapper_custom_quick_zones') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-        searchedAreas: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('visicom_searched_areas') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-      },
-    };
+  // Handler: Export all settings & data as ZIP archive (with custom icons)
+  const handleExportAllSettings = async () => {
+    try {
+      const zip = new JSZip();
 
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const dateStr = new Date().toISOString().slice(0, 10);
-    link.download = `uamapper_settings_backup_${dateStr}.json`;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
+      // 1. Gather all configuration and active states
+      const exportData = {
+        version: 2,
+        type: 'uamapper_full_backup',
+        exportedAt: new Date().toISOString(),
+        settings: {
+          theme,
+          language,
+          watermarkType,
+          watermarkText,
+          watermarkImageUrl,
+          watermarkSize,
+          watermarkOpacity,
+          watermarkRotation,
+          legendOverlayText,
+          showLegendOverlay,
+          showRadarOverlay,
+          blurMapOnExport,
+          mapFont,
+          showCityBoundary,
+          showDistrictBoundary,
+          showHromadaBoundaries,
+          showQuickSettlements,
+          showSettlementLabels,
+          settlementLabelMode,
+          disabledSettlementCategories,
+          activeTileLayerId: activeTileLayer.id,
+          autoHighlightZone,
+          visicomKey,
+          customIconTitles,
+          iconPresets,
+          customLibrary,
+          mapLegendConfig,
+          showAlerts,
+          showAirAlertsPanel,
+          showAlertPolygons,
+          showAlertMarkers,
+          alertsOpacity,
+          alertsStrokeWidth,
+          alertSoundEnabled,
+          alertsCustomUrl: localStorage.getItem('uamapper_alerts_custom_url') || '',
+          alertsToken: localStorage.getItem('uamapper_alerts_token') || '',
+          activeStyle,
+          telegramBotToken: localStorage.getItem('visicom_tg_bot_token') || '',
+          telegramChannels: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('visicom_telegram_channels') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+        },
+        data: {
+          markers,
+          drawnLines,
+          customLibrary,
+          customSettlements: customSettlements.filter(
+            (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
+          ),
+          customQuickZones: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('uamapper_custom_quick_zones') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+          searchedAreas: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('visicom_searched_areas') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+        },
+      };
+
+      // Add main JSON file to ZIP
+      zip.file('uamapper_settings.json', JSON.stringify(exportData, null, 2));
+
+      // 2. Add custom icons to custom_icons/ folder inside ZIP
+      const iconsFolder = zip.folder('custom_icons');
+      const iconsManifest: { id: string; name: string; filename: string; mimeType: string }[] = [];
+
+      if (iconsFolder && Array.isArray(customLibrary) && customLibrary.length > 0) {
+        customLibrary.forEach((icon, index) => {
+          if (!icon.dataUrl) return;
+          const match = icon.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const mimeType = match[1];
+            const base64Data = match[2];
+            let ext = 'png';
+            if (mimeType.includes('svg')) ext = 'svg';
+            else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
+            else if (mimeType.includes('webp')) ext = 'webp';
+
+            const cleanName = (icon.name || `icon_${icon.id}`).replace(/[^a-zA-Z0-9_\u0400-\u04FF-]/g, '_');
+            const filename = `${index + 1}_${cleanName}.${ext}`;
+            iconsFolder.file(filename, base64Data, { base64: true });
+            iconsManifest.push({
+              id: icon.id,
+              name: icon.name,
+              filename,
+              mimeType,
+            });
+          }
+        });
+      }
+
+      // Add watermark image if it's a custom base64 image
+      if (watermarkImageUrl && watermarkImageUrl.startsWith('data:') && iconsFolder) {
+        const wmMatch = watermarkImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (wmMatch) {
+          const wmMime = wmMatch[1];
+          const wmBase64 = wmMatch[2];
+          let wmExt = 'png';
+          if (wmMime.includes('svg')) wmExt = 'svg';
+          else if (wmMime.includes('jpeg') || wmMime.includes('jpg')) wmExt = 'jpg';
+          iconsFolder.file(`watermark_image.${wmExt}`, wmBase64, { base64: true });
+        }
+      }
+
+      if (iconsFolder && iconsManifest.length > 0) {
+        iconsFolder.file('manifest.json', JSON.stringify(iconsManifest, null, 2));
+      }
+
+      // 3. Generate and trigger download
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `uamapper_backup_${dateStr}.zip`;
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      console.error('Error exporting settings ZIP:', err);
+      alert(language === 'uk' ? 'Помилка експорту у ZIP!' : 'Error exporting settings to ZIP!');
+    }
   };
 
-  // Handler: Import all settings & data
-  const handleImportAllSettings = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
+  // Handler: Import all settings & data (supports .zip and .json)
+  const handleImportAllSettings = async (file: File) => {
+    try {
+      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip');
+      let parsed: any = null;
+      let loadedCustomIcons: { id: string; name: string; dataUrl: string }[] = [];
 
-        if (!parsed || (parsed.type !== 'uamapper_full_backup' && !parsed.settings && !parsed.data)) {
-          alert(language === 'uk' ? 'Недійсний файл налаштувань!' : 'Invalid settings backup file!');
+      if (isZip) {
+        const zip = await JSZip.loadAsync(file);
+
+        // Find settings file inside ZIP
+        let settingsFile = zip.file('uamapper_settings.json') || zip.file('settings.json');
+        if (!settingsFile) {
+          const jsonFiles = zip.filter((path) => path.endsWith('.json') && !path.includes('/'));
+          if (jsonFiles.length > 0) {
+            settingsFile = jsonFiles[0];
+          }
+        }
+
+        if (!settingsFile) {
+          alert(language === 'uk' ? 'У ZIP-архіві не знайдено файл налаштувань (uamapper_settings.json)!' : 'No settings file found in ZIP!');
           return;
         }
 
-        const { settings, data } = parsed;
+        const settingsJsonText = await settingsFile.async('string');
+        parsed = JSON.parse(settingsJsonText);
 
-        if (settings) {
-          if (settings.theme) {
-            setTheme(settings.theme);
-            localStorage.setItem('visicom_theme', settings.theme);
-          }
-          if (settings.language) {
-            setLanguage(settings.language);
-            localStorage.setItem('visicom_ui_lang', settings.language);
-          }
-          if (settings.watermarkType !== undefined) {
-            setWatermarkType(settings.watermarkType);
-            localStorage.setItem('visicom_watermark_type', settings.watermarkType);
-          }
-          if (settings.watermarkText !== undefined) {
-            setWatermarkText(settings.watermarkText);
-            localStorage.setItem('visicom_watermark_text', settings.watermarkText);
-          }
-          if (settings.watermarkImageUrl !== undefined) {
-            setWatermarkImageUrl(settings.watermarkImageUrl);
-            if (settings.watermarkImageUrl) {
-              safeSetItem('visicom_watermark_image_url', settings.watermarkImageUrl);
-            } else {
-              localStorage.removeItem('visicom_watermark_image_url');
+        // Check for custom_icons/ folder
+        const iconsFolder = zip.folder('custom_icons');
+        if (iconsFolder) {
+          const manifestFile = iconsFolder.file('manifest.json');
+          if (manifestFile) {
+            try {
+              const manifestText = await manifestFile.async('string');
+              const manifest = JSON.parse(manifestText);
+              if (Array.isArray(manifest)) {
+                for (const item of manifest) {
+                  const iconFile = iconsFolder.file(item.filename);
+                  if (iconFile) {
+                    const base64 = await iconFile.async('base64');
+                    const mime = item.mimeType || (item.filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+                    loadedCustomIcons.push({
+                      id: item.id,
+                      name: item.name,
+                      dataUrl: `data:${mime};base64,${base64}`,
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to parse icons manifest, will read files directly', e);
             }
           }
-          if (settings.watermarkSize !== undefined) {
-            setWatermarkSize(settings.watermarkSize);
-            localStorage.setItem('visicom_watermark_size', String(settings.watermarkSize));
-          }
-          if (settings.watermarkOpacity !== undefined) {
-            setWatermarkOpacity(settings.watermarkOpacity);
-            localStorage.setItem('visicom_watermark_opacity', String(settings.watermarkOpacity));
-          }
-          if (settings.watermarkRotation !== undefined) {
-            setWatermarkRotation(settings.watermarkRotation);
-            localStorage.setItem('visicom_watermark_rotation', String(settings.watermarkRotation));
-          }
-          if (settings.legendOverlayText !== undefined) {
-            setLegendOverlayText(settings.legendOverlayText);
-            localStorage.setItem('visicom_legend_overlay_text', settings.legendOverlayText);
-          }
-          if (settings.showLegendOverlay !== undefined) {
-            setShowLegendOverlay(settings.showLegendOverlay);
-            localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
-          }
-          if (settings.showRadarOverlay !== undefined) {
-            setShowRadarOverlay(settings.showRadarOverlay);
-            localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
-          }
-          if (settings.blurMapOnExport !== undefined) {
-            setBlurMapOnExport(settings.blurMapOnExport);
-            localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
-          }
-          if (settings.mapFont) {
-            setMapFont(settings.mapFont);
-            localStorage.setItem('uamapper_map_font', settings.mapFont);
-          }
-          if (settings.showCityBoundary !== undefined) {
-            setShowCityBoundary(settings.showCityBoundary);
-            localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
-          }
-          if (settings.showDistrictBoundary !== undefined) {
-            setShowDistrictBoundary(settings.showDistrictBoundary);
-            localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
-          }
-          if (settings.showHromadaBoundaries !== undefined) {
-            setShowHromadaBoundaries(settings.showHromadaBoundaries);
-            localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
-          }
-          if (settings.showQuickSettlements !== undefined) {
-            setShowQuickSettlements(settings.showQuickSettlements);
-            localStorage.setItem('uamapper_show_quick_settlements', String(settings.showQuickSettlements));
-          }
-          if (settings.showSettlementLabels !== undefined) {
-            setShowSettlementLabels(settings.showSettlementLabels);
-            localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
-          }
-          if (settings.settlementLabelMode) {
-            setSettlementLabelMode(settings.settlementLabelMode);
-            localStorage.setItem('visicom_settlement_label_mode', settings.settlementLabelMode);
-          }
-          if (Array.isArray(settings.disabledSettlementCategories)) {
-            setDisabledSettlementCategories(settings.disabledSettlementCategories);
-            localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(settings.disabledSettlementCategories));
-          }
-          if (settings.activeTileLayerId) {
-            const matchedLayer = TILE_LAYERS.find((l) => l.id === settings.activeTileLayerId);
-            if (matchedLayer) {
-              setActiveTileLayer(matchedLayer);
-              localStorage.setItem('visicom_active_layer', matchedLayer.id);
+
+          // Fallback: read all image files in custom_icons/
+          if (loadedCustomIcons.length === 0) {
+            const imageEntries = zip.filter((path) => {
+              return path.startsWith('custom_icons/') && /\.(png|jpg|jpeg|svg|webp)$/i.test(path);
+            });
+            for (const imgEntry of imageEntries) {
+              const filename = imgEntry.name.replace('custom_icons/', '');
+              if (filename.startsWith('watermark_image')) continue;
+              const ext = filename.split('.').pop()?.toLowerCase() || 'png';
+              const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+              const base64 = await imgEntry.async('base64');
+              const cleanName = filename.replace(/^\d+_/, '').replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+              loadedCustomIcons.push({
+                id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                name: cleanName,
+                dataUrl: `data:${mime};base64,${base64}`,
+              });
             }
           }
-          if (settings.autoHighlightZone !== undefined) {
-            setAutoHighlightZone(settings.autoHighlightZone);
-            localStorage.setItem('visicom_auto_highlight_zone', settings.autoHighlightZone ? 'true' : 'false');
-          }
-          if (settings.customIconTitles) {
-            setCustomIconTitles(settings.customIconTitles);
-            localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
-          }
-          if (settings.iconPresets) {
-            setIconPresets(settings.iconPresets);
-            localStorage.setItem('visicom_icon_presets', JSON.stringify(settings.iconPresets));
-          }
-          if (settings.activeStyle) {
-            setActiveStyle(settings.activeStyle);
-            localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
-          }
-          if (settings.telegramBotToken !== undefined) {
-            localStorage.setItem('visicom_tg_bot_token', settings.telegramBotToken);
-          }
-          if (Array.isArray(settings.telegramChannels)) {
-            localStorage.setItem('visicom_telegram_channels', JSON.stringify(settings.telegramChannels));
+
+          // Check for watermark image
+          const wmEntries = zip.filter((path) => path.startsWith('custom_icons/watermark_image'));
+          if (wmEntries.length > 0) {
+            const wmEntry = wmEntries[0];
+            const ext = wmEntry.name.split('.').pop()?.toLowerCase() || 'png';
+            const mime = ext === 'svg' ? 'image/svg+xml' : 'image/png';
+            const base64 = await wmEntry.async('base64');
+            const dataUrl = `data:${mime};base64,${base64}`;
+            setWatermarkImageUrl(dataUrl);
+            safeSetItem('visicom_watermark_image_url', dataUrl);
           }
         }
-
-        if (data) {
-          if (Array.isArray(data.markers)) {
-            setMarkers(data.markers);
-            localStorage.setItem('visicom_custom_markers', JSON.stringify(data.markers));
-          }
-          if (Array.isArray(data.drawnLines)) {
-            setDrawnLines(data.drawnLines);
-            localStorage.setItem('visicom_drawn_lines', JSON.stringify(data.drawnLines));
-          }
-          if (Array.isArray(data.customSettlements)) {
-            handleImportCustomSettlements(data.customSettlements);
-          }
-          if (Array.isArray(data.customQuickZones)) {
-            localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(data.customQuickZones));
-          }
-          if (Array.isArray(data.searchedAreas)) {
-            localStorage.setItem('visicom_searched_areas', JSON.stringify(data.searchedAreas));
-          }
-        }
-
-        alert(language === 'uk' ? 'Усі налаштування та дані успішно імпортовано!' : 'All settings and data successfully imported!');
-      } catch (err) {
-        console.error('Error importing backup:', err);
-        alert(language === 'uk' ? 'Помилка зчитування файлу налаштувань!' : 'Error reading settings file!');
+      } else {
+        // Plain JSON file
+        const content = await file.text();
+        parsed = JSON.parse(content);
       }
-    };
-    reader.readAsText(file);
+
+      if (!parsed || (parsed.type !== 'uamapper_full_backup' && !parsed.settings && !parsed.data)) {
+        alert(language === 'uk' ? 'Недійсний файл налаштувань!' : 'Invalid settings backup file!');
+        return;
+      }
+
+      const { settings, data } = parsed;
+
+      // Update custom library first
+      const jsonCustomIcons = settings?.customLibrary || data?.customLibrary || [];
+      const finalCustomLibrary = loadedCustomIcons.length > 0 ? loadedCustomIcons : jsonCustomIcons;
+      if (Array.isArray(finalCustomLibrary) && finalCustomLibrary.length > 0) {
+        handleUpdateCustomLibrary(finalCustomLibrary);
+      }
+
+      if (settings) {
+        if (settings.theme) {
+          setTheme(settings.theme);
+          localStorage.setItem('visicom_theme', settings.theme);
+        }
+        if (settings.language) {
+          setLanguage(settings.language);
+          localStorage.setItem('visicom_ui_lang', settings.language);
+        }
+        if (settings.watermarkType !== undefined) {
+          setWatermarkType(settings.watermarkType);
+          localStorage.setItem('visicom_watermark_type', settings.watermarkType);
+        }
+        if (settings.watermarkText !== undefined) {
+          setWatermarkText(settings.watermarkText);
+          localStorage.setItem('visicom_watermark_text', settings.watermarkText);
+        }
+        if (settings.watermarkImageUrl !== undefined && !loadedCustomIcons.length) {
+          setWatermarkImageUrl(settings.watermarkImageUrl);
+          if (settings.watermarkImageUrl) {
+            safeSetItem('visicom_watermark_image_url', settings.watermarkImageUrl);
+          } else {
+            localStorage.removeItem('visicom_watermark_image_url');
+          }
+        }
+        if (settings.watermarkSize !== undefined) {
+          setWatermarkSize(settings.watermarkSize);
+          localStorage.setItem('visicom_watermark_size', String(settings.watermarkSize));
+        }
+        if (settings.watermarkOpacity !== undefined) {
+          setWatermarkOpacity(settings.watermarkOpacity);
+          localStorage.setItem('visicom_watermark_opacity', String(settings.watermarkOpacity));
+        }
+        if (settings.watermarkRotation !== undefined) {
+          setWatermarkRotation(settings.watermarkRotation);
+          localStorage.setItem('visicom_watermark_rotation', String(settings.watermarkRotation));
+        }
+        if (settings.legendOverlayText !== undefined) {
+          setLegendOverlayText(settings.legendOverlayText);
+          localStorage.setItem('visicom_legend_overlay_text', settings.legendOverlayText);
+        }
+        if (settings.showLegendOverlay !== undefined) {
+          setShowLegendOverlay(settings.showLegendOverlay);
+          localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
+        }
+        if (settings.showRadarOverlay !== undefined) {
+          setShowRadarOverlay(settings.showRadarOverlay);
+          localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
+        }
+        if (settings.blurMapOnExport !== undefined) {
+          setBlurMapOnExport(settings.blurMapOnExport);
+          localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
+        }
+        if (settings.mapFont) {
+          setMapFont(settings.mapFont);
+          localStorage.setItem('uamapper_map_font', settings.mapFont);
+        }
+        if (settings.showCityBoundary !== undefined) {
+          setShowCityBoundary(settings.showCityBoundary);
+          localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
+        }
+        if (settings.showDistrictBoundary !== undefined) {
+          setShowDistrictBoundary(settings.showDistrictBoundary);
+          localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
+        }
+        if (settings.showHromadaBoundaries !== undefined) {
+          setShowHromadaBoundaries(settings.showHromadaBoundaries);
+          localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
+        }
+        if (settings.showQuickSettlements !== undefined) {
+          setShowQuickSettlements(settings.showQuickSettlements);
+          localStorage.setItem('uamapper_show_quick_settlements', String(settings.showQuickSettlements));
+        }
+        if (settings.showSettlementLabels !== undefined) {
+          setShowSettlementLabels(settings.showSettlementLabels);
+          localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
+        }
+        if (settings.settlementLabelMode) {
+          setSettlementLabelMode(settings.settlementLabelMode);
+          localStorage.setItem('visicom_settlement_label_mode', settings.settlementLabelMode);
+        }
+        if (Array.isArray(settings.disabledSettlementCategories)) {
+          setDisabledSettlementCategories(settings.disabledSettlementCategories);
+          localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(settings.disabledSettlementCategories));
+        }
+        if (settings.activeTileLayerId) {
+          const matchedLayer = TILE_LAYERS.find((l) => l.id === settings.activeTileLayerId);
+          if (matchedLayer) {
+            setActiveTileLayer(matchedLayer);
+            localStorage.setItem('visicom_active_layer', matchedLayer.id);
+          }
+        }
+        if (settings.autoHighlightZone !== undefined) {
+          setAutoHighlightZone(settings.autoHighlightZone);
+          localStorage.setItem('visicom_auto_highlight_zone', settings.autoHighlightZone ? 'true' : 'false');
+        }
+        if (settings.customIconTitles) {
+          setCustomIconTitles(settings.customIconTitles);
+          localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
+        }
+        if (settings.iconPresets) {
+          setIconPresets(settings.iconPresets);
+          localStorage.setItem('visicom_icon_presets', JSON.stringify(settings.iconPresets));
+        }
+        if (settings.mapLegendConfig) {
+          setMapLegendConfig(settings.mapLegendConfig);
+          try {
+            localStorage.setItem('tactical_map_legend_cfg', JSON.stringify(settings.mapLegendConfig));
+          } catch {}
+        }
+        if (settings.showAlerts !== undefined) {
+          setShowAlerts(settings.showAlerts);
+          localStorage.setItem('uamapper_show_alerts', String(settings.showAlerts));
+        }
+        if (settings.showAirAlertsPanel !== undefined) {
+          setShowAirAlertsPanel(settings.showAirAlertsPanel);
+          localStorage.setItem('uamapper_show_alerts_panel', String(settings.showAirAlertsPanel));
+        }
+        if (settings.showAlertPolygons !== undefined) {
+          setShowAlertPolygons(settings.showAlertPolygons);
+          localStorage.setItem('uamapper_show_alert_polygons', String(settings.showAlertPolygons));
+        }
+        if (settings.showAlertMarkers !== undefined) {
+          setShowAlertMarkers(settings.showAlertMarkers);
+          localStorage.setItem('uamapper_show_alert_markers', String(settings.showAlertMarkers));
+        }
+        if (settings.alertsOpacity !== undefined) {
+          setAlertsOpacity(settings.alertsOpacity);
+          localStorage.setItem('uamapper_alerts_opacity', String(settings.alertsOpacity));
+        }
+        if (settings.alertsStrokeWidth !== undefined) {
+          setAlertsStrokeWidth(settings.alertsStrokeWidth);
+          localStorage.setItem('uamapper_alerts_stroke_width', String(settings.alertsStrokeWidth));
+        }
+        if (settings.alertSoundEnabled !== undefined) {
+          setAlertSoundEnabled(settings.alertSoundEnabled);
+          localStorage.setItem('uamapper_alert_sound', String(settings.alertSoundEnabled));
+        }
+        if (settings.alertsCustomUrl !== undefined) {
+          localStorage.setItem('uamapper_alerts_custom_url', settings.alertsCustomUrl);
+        }
+        if (settings.alertsToken !== undefined) {
+          localStorage.setItem('uamapper_alerts_token', settings.alertsToken);
+        }
+        if (settings.activeStyle) {
+          setActiveStyle(settings.activeStyle);
+          localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
+        }
+        if (settings.telegramBotToken !== undefined) {
+          localStorage.setItem('visicom_tg_bot_token', settings.telegramBotToken);
+        }
+        if (Array.isArray(settings.telegramChannels)) {
+          localStorage.setItem('visicom_telegram_channels', JSON.stringify(settings.telegramChannels));
+        }
+      }
+
+      if (data) {
+        if (Array.isArray(data.markers)) {
+          setMarkers(data.markers);
+          localStorage.setItem('visicom_custom_markers', JSON.stringify(data.markers));
+        }
+        if (Array.isArray(data.drawnLines)) {
+          setDrawnLines(data.drawnLines);
+          localStorage.setItem('visicom_drawn_lines', JSON.stringify(data.drawnLines));
+        }
+        if (Array.isArray(data.customSettlements)) {
+          handleImportCustomSettlements(data.customSettlements);
+        }
+        if (Array.isArray(data.customQuickZones)) {
+          localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(data.customQuickZones));
+        }
+        if (Array.isArray(data.searchedAreas)) {
+          localStorage.setItem('visicom_searched_areas', JSON.stringify(data.searchedAreas));
+        }
+      }
+
+      alert(
+        language === 'uk'
+          ? (isZip ? 'Усі налаштування та власні іконки успішно імпортовано з ZIP-архіву!' : 'Усі налаштування та дані успішно імпортовано!')
+          : (isZip ? 'All settings and custom icons successfully imported from ZIP!' : 'All settings and data successfully imported!')
+      );
+    } catch (err) {
+      console.error('Error importing backup:', err);
+      alert(language === 'uk' ? 'Помилка зчитування файлу налаштувань!' : 'Error reading settings file!');
+    }
   };
 
   const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
@@ -1963,8 +2187,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Summon / Toggle Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: vertical center of window) */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-2 sm:right-3.5 z-[999] flex flex-col items-end gap-2 pointer-events-auto">
+          {/* Summon Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: Always visible on map) */}
+          <div className="absolute top-1/2 -translate-y-1/2 right-2.5 sm:right-3.5 z-30 flex flex-col items-end gap-2.5 pointer-events-auto">
             <button
               id="summon-sidebar-toggle-btn"
               onClick={() => {
@@ -1974,26 +2198,22 @@ export default function App() {
                   handleToggleSidebar();
                 }
               }}
-              title={(!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768))
-                ? (language === 'uk' ? 'Відкрити панель налаштувань' : 'Open settings panel')
-                : (language === 'uk' ? 'Сховати панель' : 'Hide panel')}
-              className={`px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.35)] flex items-center gap-1.5 sm:gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
-                (!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768))
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-400/80 ring-2 ring-blue-500/40 shadow-blue-500/35 hover:scale-105'
-                  : theme === 'light'
-                    ? 'bg-white/85 hover:bg-white text-slate-800 border-white/90 shadow-md'
-                    : 'bg-slate-900/85 hover:bg-slate-800 text-slate-100 border-white/15 shadow-md'
-              }`}
+              title={
+                isSidebarOpen
+                  ? (language === 'uk' ? 'Сховати бічну панель' : 'Hide sidebar panel')
+                  : (language === 'uk' ? 'Відкрити бічну панель' : 'Open sidebar panel')
+              }
+              className="px-3.5 py-2.5 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex items-center gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 bg-blue-600 hover:bg-blue-700 text-white border-blue-400/80 ring-2 ring-blue-500/40 shadow-blue-500/35 hover:scale-105"
             >
-              {(!isSidebarOpen || (mobileView === 'map' && window.innerWidth < 768)) ? (
+              {isSidebarOpen ? (
                 <>
-                  <PanelRightOpen className="w-4 h-4 text-white shrink-0" />
-                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Панель' : 'Sidebar'}</span>
+                  <PanelRightClose className="w-4 h-4 text-white shrink-0" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Сховати' : 'Hide'}</span>
                 </>
               ) : (
                 <>
-                  <PanelRightClose className="w-4 h-4 text-slate-400 hover:text-slate-200 shrink-0" />
-                  <span className="hidden sm:inline font-bold">{language === 'uk' ? 'Сховати' : 'Hide'}</span>
+                  <PanelRightOpen className="w-4 h-4 text-white shrink-0" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Панель' : 'Sidebar'}</span>
                 </>
               )}
             </button>
@@ -2003,7 +2223,7 @@ export default function App() {
               id="quick-buffer-copy-btn"
               onClick={handleQuickCopyBuffer}
               title={language === 'uk' ? 'Скопіювати карту в буфер обміну (БУФЕР)' : 'Copy map to clipboard (BUFFER)'}
-              className={`px-3 py-2.5 sm:px-3.5 sm:py-3 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.35)] flex items-center gap-1.5 sm:gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
+              className={`px-3.5 py-2.5 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex items-center gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
                 isQuickCopied
                   ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-400/50 shadow-emerald-500/40 scale-105'
                   : 'bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 border-[#FFD700]/50 shadow-[#FFD700]/25 hover:scale-105'
@@ -2026,14 +2246,14 @@ export default function App() {
         </div>
 
         {/* Sidebar Controls (Rendered SECOND to be on the right, wrapped for full responsiveness) */}
-        <div className={`transition-all duration-300 ${
+        <div className={`transition-all duration-300 shrink-0 ${
           mobileView === 'sidebar' 
             ? 'w-full h-full flex flex-col z-40 fixed inset-0 md:relative' 
             : isSidebarOpen 
-              ? 'hidden md:flex md:w-80 md:h-full flex-col' 
+              ? 'hidden md:flex md:w-[360px] lg:w-[380px] md:h-full flex-col' 
               : 'hidden'
         }`}>
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <Sidebar
               onClose={handleToggleSidebar}
               markers={markers}
@@ -2133,6 +2353,8 @@ export default function App() {
               onImportCustomSettlements={handleImportCustomSettlements}
               onExportAllSettings={handleExportAllSettings}
               onImportAllSettings={handleImportAllSettings}
+              customLibrary={customLibrary}
+              onUpdateCustomLibrary={handleUpdateCustomLibrary}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
               drawnLines={drawnLines}

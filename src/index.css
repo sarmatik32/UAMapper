@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 @import "leaflet/dist/leaflet.css";
 
 :root {
@@ -193,22 +194,12 @@ html, body {
 }
 .modern-sidebar .flex-1.overflow-y-auto > div {
   border-radius: var(--panel-radius) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
-  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
-}
-.modern-sidebar .flex-1.overflow-y-auto > div:hover {
-  border-color: rgba(59, 130, 246, 0.35) !important;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.16);
+  box-sizing: border-box;
 }
 .modern-sidebar input:not([type="checkbox"]):not([type="range"]),
 .modern-sidebar select,
 .modern-sidebar textarea {
   border-radius: var(--control-radius) !important;
-  min-height: 34px;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
   transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
 }
 .modern-sidebar input:not([type="checkbox"]):not([type="range"]):focus,
