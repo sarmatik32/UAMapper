@@ -2187,8 +2187,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Summon Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: Always visible on map) */}
-          <div className="absolute top-1/2 -translate-y-1/2 right-2.5 sm:right-3.5 z-30 flex flex-col items-end gap-2.5 pointer-events-auto">
+          {/* Summon Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: Visible on desktop only, hidden on mobile) */}
+          <div className="hidden md:flex absolute top-1/2 -translate-y-1/2 right-2.5 sm:right-3.5 z-30 flex-col items-end gap-2.5 pointer-events-auto">
             <button
               id="summon-sidebar-toggle-btn"
               onClick={() => {
