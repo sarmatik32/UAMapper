@@ -1190,20 +1190,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
         <div 
           id="section-mode"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            expandedSections.mode ? 'flex-1 min-h-[260px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             expandedSections.mode
-              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
               : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
           }`}>
           <button
             onClick={() => toggleSection('mode')}
-            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
               expandedSections.mode
                 ? (theme === 'light'
-                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs'
-                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -1217,9 +1215,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.mode && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2.5">
+            <div className="p-3 space-y-2.5">
                 <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => onSetInteractionMode('draw')}
@@ -1296,7 +1292,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </ul>
                 </div>
               )}
-              </div>
             </div>
           )}
         </div>
@@ -1304,17 +1299,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 1.5 НАЛАШТУВАННЯ ЛІНІЙ (LINE DRAWING & CONFIGURATION) */}
         <div 
           id="section-lines"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            isLinesOpen ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             isLinesOpen
               ? (interactionMode === 'line' || selectedLineId !== null
                   ? (theme === 'light'
-                      ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-white shadow-xl'
-                      : 'ring-2 ring-emerald-500/60 border-emerald-500 bg-[#141824] shadow-2xl')
+                      ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-white shadow-md'
+                      : 'ring-2 ring-emerald-500/60 border-emerald-500 bg-[#141824] shadow-lg')
                   : (theme === 'light'
-                      ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5'
-                      : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5'))
+                      ? 'border-slate-300 bg-white shadow-md'
+                      : 'border-white/15 bg-[#141824] shadow-lg'))
               : (interactionMode === 'line' || selectedLineId !== null
                   ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-emerald-500/10'
                   : (theme === 'light' 
@@ -1323,15 +1316,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}>
           <button
             onClick={() => toggleSection('lines')}
-            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
               isLinesOpen
                 ? (interactionMode === 'line'
                     ? (theme === 'light' 
-                        ? 'rounded-t-2xl bg-emerald-50/95 text-emerald-800 border-b border-emerald-200 shadow-xs'
-                        : 'rounded-t-2xl bg-[#13221d]/95 text-emerald-400 border-b border-emerald-500/20 shadow-xs')
+                        ? 'rounded-t-2xl bg-emerald-50 text-emerald-800 border-b border-emerald-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#13221d] text-emerald-400 border-b border-emerald-500/20 shadow-xs')
                     : (theme === 'light'
-                        ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs'
-                        : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs'))
+                        ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs'))
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -1352,9 +1345,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {isLinesOpen && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 space-y-4 text-xs">
+            <div className="p-3.5 space-y-4 text-xs">
               
               {/* Target indicator */}
               <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-200 dark:border-white/10">
@@ -1951,8 +1942,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               )}
-
-              </div>
             </div>
           )}
         </div>
@@ -1960,20 +1949,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
         <div 
           id="section-styles"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            expandedSections.styles ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             expandedSections.styles
-              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
               : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
           }`}>
           <button
             onClick={() => toggleSection('styles')}
-            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
               expandedSections.styles
                 ? (theme === 'light' 
-                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
-                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -1987,9 +1974,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.styles && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3.5">
+            <div className="p-3 space-y-3.5">
               
               {/* Editing Target Indicator */}
               <div className="flex items-center justify-between pb-1 border-b border-dashed border-slate-200 dark:border-white/5">
@@ -2503,8 +2488,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 )}
               </div>
-
-              </div>
             </div>
           )}
         </div>
@@ -2512,20 +2495,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 3. ОБ'ЄКТИ (OBJECTS) */}
         <div 
           id="section-objects"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            expandedSections.objects ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             expandedSections.objects
-              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
               : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
           }`}>
           <button
             onClick={() => toggleSection('objects')}
-            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
               expandedSections.objects
                 ? (theme === 'light' 
-                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
-                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -2539,9 +2520,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.objects && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-2">
+            <div className="p-3 space-y-2">
               {markers.length === 0 ? (
                 <div className="text-center py-4 text-xs text-slate-500">
                   {t.noObjects}
@@ -2616,7 +2595,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   ))}
                 </div>
               )}
-              </div>
             </div>
           )}
         </div>
@@ -2624,20 +2602,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* 4. КАРТА (MAP) */}
         <div 
           id="section-map"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            expandedSections.map ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             expandedSections.map
-              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
               : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
           }`}>
           <button
             onClick={() => toggleSection('map')}
-            className={`w-full flex-shrink-0 px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
               expandedSections.map
                 ? (theme === 'light' 
-                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
-                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -2651,9 +2627,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.map && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3">
+            <div className="p-3 space-y-3">
               
               {/* Tile Layer selector */}
               <div className="space-y-1.5">
@@ -2889,7 +2863,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               </div>
-              </div>
             </div>
           )}
         </div>
@@ -2897,20 +2870,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* MAP OVERLAYS & SETTINGS SECTION */}
         <div 
           id="section-overlays"
-          className={`border rounded-2xl flex flex-col min-h-0 overflow-hidden transition-all duration-300 ${
-            expandedSections.overlays ? 'flex-1 min-h-[300px] max-h-[calc(100vh-215px)] shadow-xl' : 'flex-shrink-0'
-          } ${
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
             expandedSections.overlays
-              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-xl ring-1 ring-slate-900/5' : 'border-white/15 bg-[#141824] shadow-2xl ring-1 ring-white/5')
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
               : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
           }`}>
           <button
             onClick={() => toggleSection('overlays')}
-            className={`w-full flex-shrink-0 px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all cursor-pointer select-none sticky top-0 z-30 backdrop-blur-md ${
+            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all cursor-pointer select-none ${
               expandedSections.overlays
                 ? (theme === 'light' 
-                    ? 'rounded-t-2xl bg-white/95 text-slate-900 border-b border-slate-200 shadow-xs' 
-                    : 'rounded-t-2xl bg-[#141824]/95 text-white border-b border-white/10 shadow-xs')
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
                 : (theme === 'light' 
                     ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
                     : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
@@ -2924,9 +2895,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.overlays && (
-            <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-              <div className="pointer-events-none absolute top-0 left-0 right-0 h-2.5 bg-gradient-to-b from-black/10 dark:from-black/35 to-transparent z-10" />
-              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-3.5">
+            <div className="p-3 space-y-3.5">
               {/* Air Raid Alerts (alerts.in.ua) Block */}
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
                 <div className="flex items-center justify-between">
@@ -3895,8 +3864,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
                 )}
-              </div>
-
               </div>
             </div>
           )}
