@@ -259,6 +259,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
                             }}
                             autoFocus
                             placeholder="3 шт"
+                            style={{ fontFamily: fontFamily || 'inherit' }}
                             className={`w-16 px-2 py-0.5 text-[11px] font-black rounded-full border focus:outline-none shadow-inner ${
                               isLight
                                 ? 'bg-white border-blue-600 text-slate-900'
@@ -294,6 +295,7 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
                                 ? 'text-blue-700'
                                 : 'text-amber-300 drop-shadow-[0_1px_1px_rgba(0,0,0,0.8)]'
                             }`}
+                            style={{ fontFamily: fontFamily || 'inherit' }}
                           >
                             {item.countText || item.count || '1 шт'}
                           </span>

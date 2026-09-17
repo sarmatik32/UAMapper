@@ -71,6 +71,7 @@ const TILE_LAYERS: TileLayerConfig[] = [
     url: '/api/tiles/apple/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
+    minZoom: 1,
     maxZoom: 19,
     attribution: '© Apple Maps (maps.apple.com)',
     requiresKey: false,
@@ -83,6 +84,7 @@ const TILE_LAYERS: TileLayerConfig[] = [
     url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
     tms: false,
     subdomains: '',
+    minZoom: 2,
     maxZoom: 19,
     attribution: '© Apple Maps (maps.apple.com)',
     requiresKey: false,
@@ -96,6 +98,7 @@ const TILE_LAYERS: TileLayerConfig[] = [
     overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
+    minZoom: 2,
     maxZoom: 19,
     attribution: '© Apple Maps (maps.apple.com)',
     requiresKey: false,
@@ -535,6 +538,11 @@ export default function App() {
 
   const [showLegendOverlay, setShowLegendOverlay] = useState<boolean>(() => {
     const saved = localStorage.getItem('visicom_show_legend_overlay');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [showLogoAndLegendOnMap, setShowLogoAndLegendOnMap] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_logo_and_legend_on_map');
     return saved !== null ? saved === 'true' : true;
   });
 
@@ -1159,6 +1167,10 @@ export default function App() {
   }, [showLegendOverlay]);
 
   useEffect(() => {
+    localStorage.setItem('uamapper_show_logo_and_legend_on_map', String(showLogoAndLegendOnMap));
+  }, [showLogoAndLegendOnMap]);
+
+  useEffect(() => {
     localStorage.setItem('visicom_legend_overlay_text', legendOverlayText);
   }, [legendOverlayText]);
 
@@ -1379,6 +1391,7 @@ export default function App() {
           watermarkRotation,
           legendOverlayText,
           showLegendOverlay,
+          showLogoAndLegendOnMap,
           showRadarOverlay,
           blurMapOnExport,
           mapFont,
@@ -1657,6 +1670,10 @@ export default function App() {
           setShowLegendOverlay(settings.showLegendOverlay);
           localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
         }
+        if (settings.showLogoAndLegendOnMap !== undefined) {
+          setShowLogoAndLegendOnMap(settings.showLogoAndLegendOnMap);
+          localStorage.setItem('uamapper_show_logo_and_legend_on_map', String(settings.showLogoAndLegendOnMap));
+        }
         if (settings.showRadarOverlay !== undefined) {
           setShowRadarOverlay(settings.showRadarOverlay);
           localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
@@ -1842,6 +1859,7 @@ export default function App() {
             watermarkOpacity={watermarkOpacity}
             watermarkRotation={watermarkRotation}
             showLegendOverlay={showLegendOverlay}
+            showLogoAndLegendOnMap={showLogoAndLegendOnMap}
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
@@ -2317,6 +2335,8 @@ export default function App() {
               onUpdateWatermarkRotation={setWatermarkRotation}
               showLegendOverlay={showLegendOverlay}
               onUpdateShowLegendOverlay={setShowLegendOverlay}
+              showLogoAndLegendOnMap={showLogoAndLegendOnMap}
+              onUpdateShowLogoAndLegendOnMap={setShowLogoAndLegendOnMap}
               legendOverlayText={legendOverlayText}
               onUpdateLegendOverlayText={setLegendOverlayText}
               showRadarOverlay={showRadarOverlay}

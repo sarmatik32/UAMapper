@@ -51,6 +51,7 @@ export interface TileLayerConfig {
   overlayUrl?: string;
   tms: boolean;
   subdomains?: string;
+  minZoom?: number;
   maxZoom: number;
   attribution: string;
   requiresKey: boolean;

@@ -98,10 +98,13 @@ const httpsKeepAliveAgent = new https.Agent({
   timeout: 15000,
 });
 
-function scrapeMasterTokenFromApple(): Promise<string> {
+function scrapeMasterTokenFromApple(url = "https://maps.apple.com/", depth = 0): Promise<string> {
+  if (depth > 3) {
+    return Promise.reject(new Error("Too many redirects scraping Apple token"));
+  }
   return new Promise((resolve, reject) => {
     const req = https.get(
-      "https://maps.apple.com/",
+      url,
       {
         agent: httpsKeepAliveAgent,
         headers: {
@@ -113,12 +116,28 @@ function scrapeMasterTokenFromApple(): Promise<string> {
         timeout: 8000,
       },
       (res) => {
+        if (
+          (res.statusCode === 301 ||
+            res.statusCode === 302 ||
+            res.statusCode === 307 ||
+            res.statusCode === 308) &&
+          res.headers.location
+        ) {
+          const redirectUrl = res.headers.location.startsWith("http")
+            ? res.headers.location
+            : new URL(res.headers.location, url).toString();
+          return resolve(scrapeMasterTokenFromApple(redirectUrl, depth + 1));
+        }
+
         let html = "";
         res.on("data", (d) => (html += d));
         res.on("end", () => {
           const match = html.match(/data-token="([^"]+)"/);
           if (match && match[1]) {
             resolve(match[1]);
+          } else if (url !== "https://beta.maps.apple.com/") {
+            // Try beta fallback
+            resolve(scrapeMasterTokenFromApple("https://beta.maps.apple.com/", depth + 1));
           } else {
             reject(
               new Error(
@@ -370,6 +389,12 @@ async function startServer() {
     }
   });
 
+  // 1x1 transparent PNG fallback buffer
+  const TRANSPARENT_1PX_PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64"
+  );
+
   // Helper to build tile url for a given layer
   const getAppleTileUrl = (
     cfg: AppleMapKitConfig,
@@ -382,12 +407,17 @@ async function startServer() {
     const tileSizeIndex = isRetina ? 2 : 1;
     // Apple satellite CDN exclusively supports resolution scale=1
     const resolution = layerType === "satellite" ? 1 : isRetina ? 2 : 1;
+    const cdnIndex = (Math.abs(x + y) % 4) + 1; // Round-robin across Apple CDN edge shards 1-4
+
     if (layerType === "satellite") {
       const template =
         cfg.satelliteTemplate ||
         "/tile?style=7&size={{tileSizeIndex}}&scale={{resolution}}&z={{z}}&x={{x}}&y={{y}}&v=10441&accessKey=" +
           encodeURIComponent(cfg.accessKey);
-      const domain = cfg.satelliteDomain || "sat-cdn.apple-mapkit.com";
+      const defaultDomain = `sat-cdn${cdnIndex}.apple-mapkit.com`;
+      const domain = cfg.satelliteDomain
+        ? cfg.satelliteDomain.replace("sat-cdn.", `sat-cdn${cdnIndex}.`)
+        : defaultDomain;
       const path = template
         .replace("{{tileSizeIndex}}", String(tileSizeIndex))
         .replace("{{resolution}}", String(resolution))
@@ -406,7 +436,7 @@ async function startServer() {
         .replace("{{z}}", String(z))
         .replace("{{x}}", String(x))
         .replace("{{y}}", String(y));
-      return `https://cdn.apple-mapkit.com${path}`;
+      return `https://cdn${cdnIndex}.apple-mapkit.com${path}`;
     }
     // standard light
     const path = cfg.template
@@ -416,7 +446,7 @@ async function startServer() {
       .replace("{{z}}", String(z))
       .replace("{{x}}", String(x))
       .replace("{{y}}", String(y));
-    return `https://cdn.apple-mapkit.com${path}`;
+    return `https://cdn${cdnIndex}.apple-mapkit.com${path}`;
   };
 
   async function handleAppleTileRequest(
@@ -434,9 +464,22 @@ async function startServer() {
       .replace(/\.(png|jpg|jpeg|webp)$/i, "");
     const y = parseInt(cleanYStr, 10);
 
+    // Standard cross-origin headers for full device and canvas compatibility
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+
     if (isNaN(z) || isNaN(x) || isNaN(y)) {
-      res.setHeader("Access-Control-Allow-Origin", "*");
       return res.status(400).send("Invalid tile coordinates");
+    }
+
+    // Guard against out-of-range tiles
+    const maxCoord = Math.pow(2, z);
+    if (z < 1 || z > 22 || x < 0 || x >= maxCoord || y < 0 || y >= maxCoord) {
+      if (layerType === "hybrid") {
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return res.send(TRANSPARENT_1PX_PNG);
+      }
     }
 
     const cacheKey = `${layerType}/${z}/${x}/${y}${isRetina ? "@2x" : ""}`;
@@ -447,7 +490,6 @@ async function startServer() {
         "Cache-Control",
         "public, max-age=86400, stale-while-revalidate=604800"
       );
-      res.setHeader("Access-Control-Allow-Origin", "*");
       return res.send(cached.buffer);
     }
 
@@ -488,11 +530,47 @@ async function startServer() {
         "Cache-Control",
         "public, max-age=86400, stale-while-revalidate=604800"
       );
-      res.setHeader("Access-Control-Allow-Origin", "*");
       return res.send(tileData.buffer);
     } catch (err: any) {
       console.error(`[Apple Maps ${layerType} Error]:`, err?.message || err);
-      // Fallback to reliable, clean Esri basemaps (zero watermarks, no API key)
+      
+      // If hybrid overlay fails, return transparent 1x1 tile or transparent Esri boundaries
+      if (layerType === "hybrid") {
+        const fallbackUrl = `https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/${z}/${y}/${x}`;
+        const fbReq = https.get(
+          fallbackUrl,
+          {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+              Accept: "image/webp,image/png,image/*;q=0.8,*/*;q=0.5",
+            },
+            timeout: 6000,
+          },
+          (fbRes) => {
+            if (fbRes.statusCode === 200) {
+              res.setHeader(
+                "Content-Type",
+                fbRes.headers["content-type"] || "image/png"
+              );
+              res.setHeader("Cache-Control", "public, max-age=86400");
+              fbRes.pipe(res);
+            } else {
+              res.setHeader("Content-Type", "image/png");
+              res.setHeader("Cache-Control", "public, max-age=86400");
+              res.send(TRANSPARENT_1PX_PNG);
+            }
+          }
+        );
+        fbReq.on("error", () => {
+          res.setHeader("Content-Type", "image/png");
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          res.send(TRANSPARENT_1PX_PNG);
+        });
+        return;
+      }
+
+      // Fallback for standard or satellite
       let fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${y}/${x}`;
       if (layerType === "satellite") {
         fallbackUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
@@ -514,16 +592,13 @@ async function startServer() {
               fbRes.headers["content-type"] || "image/png"
             );
             res.setHeader("Cache-Control", "public, max-age=3600");
-            res.setHeader("Access-Control-Allow-Origin", "*");
             fbRes.pipe(res);
           } else {
-            res.setHeader("Access-Control-Allow-Origin", "*");
             res.status(502).send("Failed to load map tile");
           }
         }
       );
       fbReq.on("error", () => {
-        res.setHeader("Access-Control-Allow-Origin", "*");
         res.status(502).send("Failed to load map tile");
       });
     }

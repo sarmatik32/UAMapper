@@ -88,6 +88,8 @@ interface SidebarProps {
   onUpdateWatermarkRotation?: (rotation: number) => void;
   showLegendOverlay?: boolean;
   onUpdateShowLegendOverlay?: (show: boolean) => void;
+  showLogoAndLegendOnMap?: boolean;
+  onUpdateShowLogoAndLegendOnMap?: (show: boolean) => void;
   legendOverlayText?: string;
   onUpdateLegendOverlayText?: (text: string) => void;
   showRadarOverlay?: boolean;
@@ -228,6 +230,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateWatermarkRotation = (_rotation) => {},
   showLegendOverlay = true,
   onUpdateShowLegendOverlay = (_show) => {},
+  showLogoAndLegendOnMap = true,
+  onUpdateShowLogoAndLegendOnMap = (_show) => {},
   legendOverlayText = '',
   onUpdateLegendOverlayText = (_text) => {},
   showRadarOverlay = true,
@@ -3268,6 +3272,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                   </div>
                 )}
+              </div>
+
+              {/* Show Logo & Legend on Live Map toggle */}
+              <div className="flex items-center justify-between py-1.5 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col pr-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Лого та легенда на карті' : 'Logo & Legend on Map'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Приховує на екрані; при копіюванні та експорті завжди відображаються' : 'Hides on screen; always visible in buffer & export'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none flex-shrink-0">
+                  <input 
+                    type="checkbox" 
+                    checked={showLogoAndLegendOnMap} 
+                    onChange={(e) => onUpdateShowLogoAndLegendOnMap(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
               </div>
 
               {/* Show Legend toggle */}

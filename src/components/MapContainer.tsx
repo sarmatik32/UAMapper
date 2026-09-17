@@ -130,6 +130,7 @@ interface MapContainerProps {
   watermarkOpacity?: number;
   watermarkRotation?: number;
   showLegendOverlay?: boolean;
+  showLogoAndLegendOnMap?: boolean;
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
   blurMapOnExport?: boolean;
@@ -210,6 +211,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   watermarkOpacity,
   watermarkRotation,
   showLegendOverlay = true,
+  showLogoAndLegendOnMap = true,
   legendOverlayText = '',
   showRadarOverlay = true,
   blurMapOnExport = false,
@@ -4400,7 +4402,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   return (
     <div className="relative w-full h-full" style={{ '--map-font-family': fontCssValue } as React.CSSProperties}>
-      <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`} style={{ fontFamily: fontCssValue }}>
+      <div 
+        id="map-stage-wrapper" 
+        className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'} ${!showLogoAndLegendOnMap ? 'hide-map-branding' : ''}`} 
+        style={{ fontFamily: fontCssValue }}
+      >
         {/* Actual Map Container */}
         <div 
           id="visicom-leaflet-map"
@@ -4723,7 +4729,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         )}
 
         {/* Tactical Legend Box - captured in PNG */}
-        {showLegendOverlay && (
+        {(showLegendOverlay || isExporting || isCopying) && (
           <div 
             className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
               (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
@@ -5375,6 +5381,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             justify-content: center !important;
             line-height: 1 !important;
           }
+          /* Live map font rules for logo, legend, and conventional signs widget */
+          .tactical-logo-title,
+          .tactical-logo-author,
+          .tactical-legend-text,
+          .tactical-legend-wrapper,
+          #map-legend-widget-container,
+          #map-legend-widget-container * {
+            font-family: ${fontCssValue} !important;
+          }
+
+          /* Hide logo and legend on live map when toggle is switched off */
+          .hide-map-branding .tactical-logo-container-outer,
+          .hide-map-branding .tactical-legend-container {
+            display: none !important;
+          }
+
+          /* In export / clipboard copy, ALWAYS show logo and legend */
+          .exporting-map .tactical-logo-container-outer,
+          .exporting-map .tactical-legend-container,
+          .exporting-map #map-legend-widget-container {
+            display: flex !important;
+          }
+
           /* Custom overrides during image export on all screen sizes to keep layout pristine */
           .exporting-map .tactical-logo-container-outer {
             top: 20px !important;

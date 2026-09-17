@@ -1,8 +1,9 @@
-import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language, MapLegendConfig, MapLegendItem } from '../types';
+import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language, MapLegendConfig, MapLegendItem, MapFontFamily } from '../types';
 import { Settlement, getSettlementCategory, SettlementCategory, SETTLEMENTS } from '../data/settlements';
 import { smoothPolylinePoints } from './smoothing';
 import { getIconSvgContent } from '../components/IconLibrary';
 import { matchAlertToFeature, getAlertVisuals, normalizeLocationName } from './alertsService';
+import { getMapFontFamilyCss } from './mapFonts';
 
 export type ExportResolutionPreset = 'native' | '2k' | '4k' | '8k' | '16k';
 
@@ -72,6 +73,7 @@ export interface HighResExportOptions {
   showLegendOverlay?: boolean;
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
+  mapFont?: MapFontFamily;
   language?: Language;
   mapLegendConfig?: MapLegendConfig;
 
@@ -335,6 +337,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     showLegendOverlay = true,
     legendOverlayText = '',
     showRadarOverlay = true,
+    mapFont = 'inter',
     language = 'uk',
     mapLegendConfig,
     activeAlerts = [],
@@ -346,6 +349,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
   onProgress?.({ phase: 'init', percent: 5, message: 'Ініціалізація високої роздільності...' });
 
   // 1. Calculate Viewport & Canvas Dimensions
+  const fontCssFamily = getMapFontFamilyCss(mapFont);
   const screenWidth = Math.max(mapContainer.clientWidth, 320);
   const screenHeight = Math.max(mapContainer.clientHeight, 240);
   const aspect = screenHeight / screenWidth;
@@ -1141,10 +1145,10 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     const authorFontSize = Math.round(9 * visualScale);
     const tgIconSize = Math.round(16 * visualScale);
 
-    ctx.font = `bold ${titleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${titleFontSize}px ${fontCssFamily}`;
     const titleWidth = ctx.measureText(logoTitle).width;
 
-    ctx.font = `bold ${authorFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${authorFontSize}px ${fontCssFamily}`;
     const authorWidth = ctx.measureText(logoAuthor).width;
 
     const padX = Math.round(16 * visualScale);
@@ -1173,7 +1177,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     // Draw Title
     let curX = capsuleX + padX;
     const midY = capsuleY + capsuleH / 2;
-    ctx.font = `bold ${titleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${titleFontSize}px ${fontCssFamily}`;
     ctx.fillStyle = logoTitleColor;
     ctx.textBaseline = 'middle';
     ctx.fillText(logoTitle, curX, midY);
@@ -1185,7 +1189,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     curX += dividerW + gap;
 
     // Author
-    ctx.font = `bold ${authorFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${authorFontSize}px ${fontCssFamily}`;
     ctx.fillStyle = logoAuthorColor;
     ctx.fillText(logoAuthor, curX, midY);
     curX += authorWidth + gap;
@@ -1210,7 +1214,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     const textToDisplay = legendOverlayText && legendOverlayText.trim().length > 0 ? legendOverlayText.trim() : defaultLegend;
 
     const legFontSize = Math.max(9, Math.round(9.5 * visualScale));
-    ctx.font = `bold ${legFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${legFontSize}px ${fontCssFamily}`;
 
     const padX = Math.round(20 * visualScale);
     const padY = Math.round(8 * visualScale);
@@ -1290,7 +1294,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         const headerH = titleFontSize + Math.round(16 * visualScale);
 
         // Measure max widths for items
-        ctx.font = `bold ${textFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.font = `bold ${textFontSize}px ${fontCssFamily}`;
         let maxItemWidth = 0;
         for (const item of visibleItems) {
           const nameW = ctx.measureText(item.name || '').width;
@@ -1299,7 +1303,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
           if (totalW > maxItemWidth) maxItemWidth = totalW;
         }
 
-        ctx.font = `900 ${titleFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        ctx.font = `900 ${titleFontSize}px ${fontCssFamily}`;
         const titleW = ctx.measureText(legendTitle).width;
         const minBoxW = Math.max(titleW + padX * 2, maxItemWidth + padX * 2, Math.round(270 * visualScale));
         const boxW = Math.min(targetWidth * 0.45, minBoxW);
@@ -1373,7 +1377,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
 
         // Draw title
         ctx.fillStyle = isLight ? '#0f172a' : '#fcd34d';
-        ctx.font = `900 ${titleFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif`;
+        ctx.font = `900 ${titleFontSize}px ${fontCssFamily}`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(legendTitle, boxX + padX, boxY + padY);
@@ -1463,7 +1467,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
 
           // Render Name
           ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
-          ctx.font = `bold ${textFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif`;
+          ctx.font = `bold ${textFontSize}px ${fontCssFamily}`;
           ctx.textAlign = 'left';
           ctx.textBaseline = 'middle';
           const nameX = iconBoxX + iconBoxSize + Math.round(10 * visualScale);
@@ -1471,7 +1475,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
 
           // Render Count (Apple Pill Capsule)
           const countStr = item.countText || item.count || '1 шт';
-          ctx.font = `900 ${textFontSize}px -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif`;
+          ctx.font = `900 ${textFontSize}px ${fontCssFamily}`;
           const countW = ctx.measureText(countStr).width;
           const countBadgePadX = Math.round(10 * visualScale);
           const countBadgeH = Math.round(textFontSize * 1.6);
