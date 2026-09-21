@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import https from "https";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
@@ -385,6 +386,125 @@ async function startServer() {
         alerts: [],
         disclaimer: "No alerts available at this moment",
         warning: error?.message || "Failed to fetch active alerts",
+      });
+    }
+  });
+
+  // DeepStateMap Occupied Territories API Proxy
+  interface CachedDeepStateData {
+    data: any;
+    timestamp: number;
+  }
+  let cachedDeepState: CachedDeepStateData | null = null;
+  const DEEPSTATE_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
+
+  app.get("/api/deepstatemap/occupied", async (_req, res) => {
+    const now = Date.now();
+    if (cachedDeepState && now - cachedDeepState.timestamp < DEEPSTATE_CACHE_TTL_MS) {
+      return res.json({
+        ...cachedDeepState.data,
+        cached: true,
+        cache_age_ms: now - cachedDeepState.timestamp,
+      });
+    }
+
+    try {
+      // 1. Fetch latest history record from deepstatemap.live
+      const pubRes = await fetch("https://deepstatemap.live/api/history/public", {
+        headers: { "User-Agent": "Mozilla/5.0 UAMapper/1.0" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!pubRes.ok) throw new Error(`History API responded with ${pubRes.status}`);
+      const historyList = (await pubRes.json()) as any[];
+      const last = historyList[historyList.length - 1];
+      if (!last || !last.id) throw new Error("No history record found");
+
+      // 2. Fetch GeoJSON for that history snapshot
+      const geoRes = await fetch(`https://deepstatemap.live/api/history/${last.id}/geojson`, {
+        headers: { "User-Agent": "Mozilla/5.0 UAMapper/1.0" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!geoRes.ok) throw new Error(`GeoJSON API responded with ${geoRes.status}`);
+      const rawGeo = await geoRes.json();
+
+      const foreignKeywords = [
+        'петсамо', 'салла', 'естоні', 'латві', 'курильськ', 'пруссія',
+        'карелі', 'ічкерія', 'абхазі', 'цхінваль', 'придністров'
+      ];
+
+      const filteredFeatures = (rawGeo.features || []).filter((f: any) => {
+        if (!f.geometry || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon')) return false;
+        const n = (f.properties?.name || '').toLowerCase();
+        const isForeign = foreignKeywords.some((kw) => n.includes(kw));
+        if (isForeign) return false;
+
+        const isOccupied = n.includes('окупован') || n.includes('ордло') || n.includes('крим') || n.includes('тузла') || n.includes('occupied') || f.properties?.fill === '#a52714';
+        const isGray = n.includes('невідомий') || n.includes('unknown') || f.properties?.fill === '#bdbdbd';
+        return isOccupied || isGray;
+      }).map((f: any) => {
+        const n = (f.properties?.name || '').toLowerCase();
+        const isGray = n.includes('невідомий') || n.includes('unknown') || f.properties?.fill === '#bdbdbd';
+        const rawName = f.properties?.name || '';
+        const parts = rawName.split('///');
+        return {
+          type: 'Feature',
+          properties: {
+            name: parts[0]?.trim() || (isGray ? 'Сіра зона' : 'Окупована територія'),
+            nameEn: parts[1]?.trim() || (isGray ? 'Gray zone' : 'Occupied territory'),
+            zoneType: isGray ? 'gray' : 'occupied',
+            description: f.properties?.description || '',
+            originalFill: f.properties?.fill || (isGray ? '#bdbdbd' : '#a52714'),
+            originalStroke: f.properties?.stroke || (isGray ? '#757575' : '#7f1d1d'),
+          },
+          geometry: f.geometry,
+        };
+      });
+
+      const processedData = {
+        type: 'FeatureCollection',
+        updatedAt: last.updatedAt || new Date().toISOString(),
+        datetime: last.datetime || '',
+        historyId: last.id,
+        features: filteredFeatures,
+      };
+
+      cachedDeepState = {
+        data: processedData,
+        timestamp: now,
+      };
+
+      return res.json({
+        ...processedData,
+        cached: false,
+      });
+    } catch (error: any) {
+      console.warn("[DeepState API Warning]:", error?.message || error);
+      if (cachedDeepState) {
+        return res.json({
+          ...cachedDeepState.data,
+          cached: true,
+          stale: true,
+          warning: "Using cached data due to upstream network issue",
+        });
+      }
+
+      // Try local fallback snapshot file
+      try {
+        const fallbackPath = path.join(process.cwd(), "public/data/deepstatemap_occupied_fallback.json");
+        if (fs.existsSync(fallbackPath)) {
+          const fallbackData = JSON.parse(fs.readFileSync(fallbackPath, "utf8"));
+          return res.json({
+            ...fallbackData,
+            cached: true,
+            fallback: true,
+          });
+        }
+      } catch (fbErr) {}
+
+      return res.status(200).json({
+        type: "FeatureCollection",
+        features: [],
+        error: error?.message || "Failed to load DeepState data",
       });
     }
   });

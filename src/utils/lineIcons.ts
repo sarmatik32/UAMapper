@@ -151,15 +151,19 @@ export function calculateBearing(
   let lng2Num = 0;
 
   if (Array.isArray(p1OrLat1) && Array.isArray(p2OrLng1)) {
-    lat1Num = p1OrLat1[0];
-    lng1Num = p1OrLat1[1];
-    lat2Num = p2OrLng1[0];
-    lng2Num = p2OrLng1[1];
+    lat1Num = Number(p1OrLat1[0]);
+    lng1Num = Number(p1OrLat1[1]);
+    lat2Num = Number(p2OrLng1[0]);
+    lng2Num = Number(p2OrLng1[1]);
   } else {
-    lat1Num = p1OrLat1 as number;
-    lng1Num = p2OrLng1 as number;
-    lat2Num = lat2 || 0;
-    lng2Num = lng2 || 0;
+    lat1Num = Number(p1OrLat1) || 0;
+    lng1Num = Number(p2OrLng1) || 0;
+    lat2Num = Number(lat2) || 0;
+    lng2Num = Number(lng2) || 0;
+  }
+
+  if (isNaN(lat1Num) || isNaN(lng1Num) || isNaN(lat2Num) || isNaN(lng2Num)) {
+    return 0;
   }
 
   const rad = Math.PI / 180;
@@ -171,5 +175,7 @@ export function calculateBearing(
   const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
 
   const theta = Math.atan2(y, x);
-  return ((theta * 180) / Math.PI + 360) % 360;
+  if (isNaN(theta)) return 0;
+  const result = ((theta * 180) / Math.PI + 360) % 360;
+  return isNaN(result) ? 0 : result;
 }

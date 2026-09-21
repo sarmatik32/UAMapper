@@ -179,3 +179,66 @@ export interface TelegramChannelConfig {
   description?: string;
   isDefault?: boolean;
 }
+
+export type DeepStatePatternType = 
+  | 'solid'             // Суцільна заливка
+  | 'diagonal-right'    // Діагональний штрих (///)
+  | 'diagonal-left'     // Зворотний діагональний штрих (\\\)
+  | 'cross-hatch'       // Сітка / Клітинка (#)
+  | 'dots'              // Крапкова сітка (:::)
+  | 'horizontal'        // Горизонтальні смуги (===)
+  | 'vertical';         // Вертикальні смуги (|||)
+
+export type DeepStateStrokeStyle = 
+  | 'solid'             // Суцільна лінія
+  | 'dashed'            // Пунктир
+  | 'dotted'            // Крапкова
+  | 'dash-dot';         // Штрих-пунктир
+
+export type UkraineBoundaryStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot';
+export type BoundaryStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot';
+
+export interface UkraineBoundaryConfig {
+  enabled: boolean;
+  color?: string;
+  weight?: number;
+  opacity?: number;
+  strokeStyle?: UkraineBoundaryStrokeStyle;
+}
+
+export interface BoundaryStyleConfig {
+  enabled: boolean;
+  color?: string;
+  weight?: number;
+  opacity?: number;
+  strokeStyle?: BoundaryStrokeStyle;
+}
+
+export interface DeepStateOccupiedConfig {
+  enabled: boolean;
+  
+  // Fill settings
+  fillColor: string;
+  fillOpacity: number;
+  fillPattern?: DeepStatePatternType;
+  patternDensity?: number;        // Spacing in px (6-24px, default 10)
+  patternStrokeWidth?: number;    // Pattern line width in px (1-3px, default 1.5)
+  patternBgOpacity?: number;      // Subtle background tint behind hatch/pattern (0-0.4, default 0.1)
+
+  // Stroke / Border settings
+  showStroke?: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+  strokeOpacity?: number;
+  strokeStyle?: DeepStateStrokeStyle;
+
+  // Gray zone / Contested settings
+  includeGrayZone: boolean;
+  grayZoneFillColor: string;
+  grayZoneOpacity: number;
+  grayZonePattern?: DeepStatePatternType;
+  grayZoneStrokeColor?: string;
+  grayZoneStrokeWidth?: number;
+  grayZoneStrokeStyle?: DeepStateStrokeStyle;
+}
+

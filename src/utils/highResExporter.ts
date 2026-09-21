@@ -1,4 +1,4 @@
-import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language, MapLegendConfig, MapLegendItem, MapFontFamily } from '../types';
+import { CustomMarker, DrawnLine, TileLayerConfig, WatermarkType, AirAlert, Language, MapLegendConfig, MapLegendItem, MapFontFamily, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig } from '../types';
 import { Settlement, getSettlementCategory, SettlementCategory, SETTLEMENTS } from '../data/settlements';
 import { smoothPolylinePoints } from './smoothing';
 import { getIconSvgContent } from '../components/IconLibrary';
@@ -54,8 +54,16 @@ export interface HighResExportOptions {
   kryvyiRihCityGeojson?: any;
   hromadasGeojsonList?: Array<{ id: string; name: string; geojson: any }>;
   showDistrictBoundary?: boolean;
+  districtBoundaryConfig?: BoundaryStyleConfig;
   showCityBoundary?: boolean;
+  cityBoundaryConfig?: BoundaryStyleConfig;
+  showUkraineBoundary?: boolean;
+  ukraineBoundaryConfig?: UkraineBoundaryConfig;
+  ukraineBoundaryGeojson?: any;
   showHromadaBoundaries?: boolean;
+  hromadaBoundariesConfig?: BoundaryStyleConfig;
+  deepStateOccupiedConfig?: DeepStateOccupiedConfig;
+  deepStateGeoJson?: any;
 
   // Settlements
   showSettlementLabels?: boolean;
@@ -134,9 +142,17 @@ export function buildTileUrl(
   z: number,
   x: number,
   y: number,
-  visicomKey?: string
+  visicomKey?: string,
+  language?: Language,
+  theme?: 'dark' | 'light'
 ): string {
   let url = layer.url;
+
+  if (layer.id === 'deepstatemap') {
+    const langSuffix = language === 'en' ? 'En' : 'Uk';
+    const themeSuffix = theme === 'dark' ? 'Dark' : '';
+    url = `https://st1.deepstatemap.live/styles/DSUkraine${langSuffix}${themeSuffix}/{z}/{x}/{y}{r}.webp`;
+  }
 
   // Subdomain selection
   if (layer.subdomains && layer.subdomains.length > 0) {
@@ -322,8 +338,16 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     kryvyiRihCityGeojson,
     hromadasGeojsonList,
     showDistrictBoundary = true,
+    districtBoundaryConfig,
     showCityBoundary = true,
+    cityBoundaryConfig,
+    showUkraineBoundary = true,
+    ukraineBoundaryConfig,
+    ukraineBoundaryGeojson,
     showHromadaBoundaries = true,
+    hromadaBoundariesConfig,
+    deepStateOccupiedConfig,
+    deepStateGeoJson,
     showSettlementLabels = true,
     settlementLabelMode = 'all',
     customSettlements = [],
@@ -434,7 +458,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         h: pBottomRight.y - pTopLeft.y,
       };
 
-      const url = buildTileUrl(activeTileLayer, targetTileZoom, tx, ty, visicomKey);
+      const url = buildTileUrl(activeTileLayer, targetTileZoom, tx, ty, visicomKey, language, theme);
       tileJobs.push({ tx, ty, url, rect });
     }
   }
@@ -444,7 +468,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
   const totalTiles = tileJobs.length;
 
   // Filter if theme is dark but tile layer is light
-  const needsDarkInversion = theme === 'dark' && !activeTileLayer.isDark;
+  const needsDarkInversion = theme === 'dark' && !activeTileLayer.isDark && activeTileLayer.id !== 'deepstatemap';
 
   ctx.save();
   if (needsDarkInversion) {
@@ -486,7 +510,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     };
     const overlayJobs: TileJob[] = tileJobs.map((job) => ({
       ...job,
-      url: buildTileUrl(overlayConfig, targetTileZoom, job.tx, job.ty, visicomKey),
+      url: buildTileUrl(overlayConfig, targetTileZoom, job.tx, job.ty, visicomKey, language, theme),
     }));
 
     await asyncPool(12, overlayJobs, async (job) => {
@@ -519,16 +543,84 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
     message: 'Рендеринг зон безпеки, меж районів та громад...',
   });
 
+  // Helper to create repeating pattern on export canvas
+  const createExportPattern = (
+    patternType: DeepStatePatternType,
+    color: string,
+    opacity: number,
+    density = 10,
+    strokeWidth = 1.5
+  ): CanvasPattern | null => {
+    if (patternType === 'solid') return null;
+
+    const s = Math.max(6, Math.round(density * visualScale));
+    const sw = Math.max(1, Math.round(strokeWidth * visualScale));
+    const pCanvas = document.createElement('canvas');
+    pCanvas.width = s;
+    pCanvas.height = s;
+    const pCtx = pCanvas.getContext('2d');
+    if (!pCtx) return null;
+
+    pCtx.strokeStyle = hexToRgba(color, opacity);
+    pCtx.fillStyle = hexToRgba(color, opacity);
+    pCtx.lineWidth = sw;
+    pCtx.lineCap = 'square';
+
+    if (patternType === 'diagonal-right') {
+      pCtx.beginPath();
+      pCtx.moveTo(-s, 0); pCtx.lineTo(0, s);
+      pCtx.moveTo(0, 0); pCtx.lineTo(s, s);
+      pCtx.moveTo(0, -s); pCtx.lineTo(s, 0);
+      pCtx.moveTo(s, 0); pCtx.lineTo(2 * s, s);
+      pCtx.stroke();
+    } else if (patternType === 'diagonal-left') {
+      pCtx.beginPath();
+      pCtx.moveTo(0, 0); pCtx.lineTo(s, -s);
+      pCtx.moveTo(0, s); pCtx.lineTo(s, 0);
+      pCtx.moveTo(0, 2 * s); pCtx.lineTo(s, s);
+      pCtx.moveTo(-s, s); pCtx.lineTo(0, 0);
+      pCtx.stroke();
+    } else if (patternType === 'cross-hatch') {
+      pCtx.beginPath();
+      pCtx.moveTo(0, s / 2); pCtx.lineTo(s, s / 2);
+      pCtx.moveTo(s / 2, 0); pCtx.lineTo(s / 2, s);
+      pCtx.stroke();
+    } else if (patternType === 'dots') {
+      const r = Math.max(1.2, sw * 0.9);
+      pCtx.beginPath();
+      pCtx.arc(s / 2, s / 2, r, 0, Math.PI * 2);
+      pCtx.fill();
+    } else if (patternType === 'horizontal') {
+      pCtx.beginPath();
+      pCtx.moveTo(0, s / 2); pCtx.lineTo(s, s / 2);
+      pCtx.stroke();
+    } else if (patternType === 'vertical') {
+      pCtx.beginPath();
+      pCtx.moveTo(s / 2, 0); pCtx.lineTo(s / 2, s);
+      pCtx.stroke();
+    }
+
+    return ctx.createPattern(pCanvas, 'repeat');
+  };
+
   // 4. Render GeoJSON Boundaries & Danger Zones
-  const drawGeoJsonGeometry = (geometry: any, fillColor?: string, strokeColor?: string, lineWidth = 2, dashArray?: number[]) => {
+  const drawGeoJsonGeometry = (
+    geometry: any,
+    fillColor?: string | CanvasPattern,
+    strokeColor?: string,
+    lineWidth = 2,
+    dashArray?: number[],
+    baseFillColor?: string,
+    outerRingOnly = false
+  ) => {
     if (!geometry) return;
 
     ctx.save();
-    if (fillColor) ctx.fillStyle = fillColor;
-    if (strokeColor) {
+    if (strokeColor && lineWidth > 0) {
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = lineWidth;
       if (dashArray) ctx.setLineDash(dashArray);
+      else ctx.setLineDash([]);
     }
 
     const drawRing = (coordinates: [number, number][]) => {
@@ -539,54 +631,139 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         else ctx.lineTo(pt.x, pt.y);
       });
       ctx.closePath();
-      if (fillColor) ctx.fill('evenodd');
-      if (strokeColor) ctx.stroke();
+      if (baseFillColor) {
+        ctx.fillStyle = baseFillColor;
+        ctx.fill('evenodd');
+      }
+      if (fillColor) {
+        ctx.fillStyle = fillColor;
+        ctx.fill('evenodd');
+      }
+      if (strokeColor && lineWidth > 0) ctx.stroke();
     };
 
     if (geometry.type === 'Polygon') {
-      geometry.coordinates.forEach((ring: [number, number][]) => drawRing(ring));
+      if (outerRingOnly && geometry.coordinates && geometry.coordinates.length > 0) {
+        drawRing(geometry.coordinates[0]);
+      } else {
+        geometry.coordinates.forEach((ring: [number, number][]) => drawRing(ring));
+      }
     } else if (geometry.type === 'MultiPolygon') {
       geometry.coordinates.forEach((poly: [number, number][][]) => {
-        poly.forEach((ring: [number, number][]) => drawRing(ring));
+        if (outerRingOnly && poly && poly.length > 0) {
+          drawRing(poly[0]);
+        } else {
+          poly.forEach((ring: [number, number][]) => drawRing(ring));
+        }
       });
     }
 
     ctx.restore();
   };
 
-  // 4a. Hromada Boundaries (Dark Gray Lines)
-  if (showHromadaBoundaries && hromadasGeojsonList) {
+  // 4a. Hromada Boundaries (Межі громад та н/п)
+  const isHromadaBoundariesEnabled = showHromadaBoundaries && (hromadaBoundariesConfig?.enabled ?? true);
+  if (isHromadaBoundariesEnabled && hromadasGeojsonList) {
+    const strokeColor = hromadaBoundariesConfig?.color || '#475569';
+    const strokeWidth = (hromadaBoundariesConfig?.weight ?? 1.4) * visualScale;
+    const strokeStyle = hromadaBoundariesConfig?.strokeStyle || 'dashed';
+    const strokeOpacity = hromadaBoundariesConfig?.opacity ?? 0.85;
+
+    let dashArray: number[] | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = [4 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dotted') dashArray = [3 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dash-dot') dashArray = [8 * visualScale, 4 * visualScale, 2 * visualScale, 4 * visualScale];
+
+    const finalStroke = hexToRgba(strokeColor, strokeOpacity);
+
     hromadasGeojsonList.forEach((hromada) => {
       if (hromada.geojson) {
         drawGeoJsonGeometry(
           hromada.geojson.geometry || hromada.geojson,
           undefined,
-          '#64748b',
-          Math.max(1.5, 1.8 * visualScale),
-          [4 * visualScale, 4 * visualScale]
+          finalStroke,
+          Math.max(1.2, strokeWidth),
+          dashArray
         );
       }
     });
   }
 
-  // 4b. Kryvyi Rih Raion Boundary (Clean Green Outline)
-  if (showDistrictBoundary && kryvyiRihRaionGeojson) {
+  // 4a-2. Ukraine State Border (Державний кордон України 1991 - виключно зовнішній контур)
+  const isUkraineBoundaryEnabled = showUkraineBoundary && (ukraineBoundaryConfig?.enabled ?? true);
+  if (isUkraineBoundaryEnabled && ukraineBoundaryGeojson) {
+    const strokeColor = ukraineBoundaryConfig?.color || '#f59e0b';
+    const strokeWidth = (ukraineBoundaryConfig?.weight ?? 2.8) * visualScale;
+    const strokeStyle = ukraineBoundaryConfig?.strokeStyle || 'solid';
+    const strokeOpacity = ukraineBoundaryConfig?.opacity ?? 0.95;
+
+    let dashArray: number[] | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = [8 * visualScale, 5 * visualScale];
+    else if (strokeStyle === 'dotted') dashArray = [3 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dash-dot') dashArray = [10 * visualScale, 4 * visualScale, 2 * visualScale, 4 * visualScale];
+
+    const finalStroke = hexToRgba(strokeColor, strokeOpacity);
+
+    const geom = ukraineBoundaryGeojson.features ? ukraineBoundaryGeojson.features[0]?.geometry : (ukraineBoundaryGeojson.geometry || ukraineBoundaryGeojson);
+    if (geom) {
+      drawGeoJsonGeometry(
+        geom,
+        undefined,
+        finalStroke,
+        Math.max(2.0, strokeWidth),
+        dashArray,
+        undefined,
+        true // outerRingOnly: strictly no internal lines or holes
+      );
+    }
+  }
+
+  // 4b. Kryvyi Rih Raion Boundary (Обводка району)
+  const isDistrictBoundaryEnabled = showDistrictBoundary && (districtBoundaryConfig?.enabled ?? true);
+  if (isDistrictBoundaryEnabled && kryvyiRihRaionGeojson) {
+    const strokeColor = districtBoundaryConfig?.color || '#10b981';
+    const strokeWidth = (districtBoundaryConfig?.weight ?? 2.2) * visualScale;
+    const strokeStyle = districtBoundaryConfig?.strokeStyle || 'solid';
+    const strokeOpacity = districtBoundaryConfig?.opacity ?? 0.95;
+
+    let dashArray: number[] | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = [6 * visualScale, 5 * visualScale];
+    else if (strokeStyle === 'dotted') dashArray = [3 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dash-dot') dashArray = [8 * visualScale, 4 * visualScale, 2 * visualScale, 4 * visualScale];
+
+    const finalStroke = hexToRgba(strokeColor, strokeOpacity);
+
     drawGeoJsonGeometry(
       kryvyiRihRaionGeojson.geometry || kryvyiRihRaionGeojson,
       undefined,
-      '#10b981',
-      Math.max(2.2, 2.5 * visualScale)
+      finalStroke,
+      Math.max(1.8, strokeWidth),
+      dashArray
     );
   }
 
-  // 4c. Kryvyi Rih City Boundary (Sky Blue Dashed Line)
-  if (showCityBoundary && kryvyiRihCityGeojson) {
+  // 4c. Kryvyi Rih City Boundary (Обводка міста)
+  const isCityBoundaryEnabled = showCityBoundary && (cityBoundaryConfig?.enabled ?? true);
+  if (isCityBoundaryEnabled && kryvyiRihCityGeojson) {
+    const strokeColor = cityBoundaryConfig?.color || '#38bdf8';
+    const strokeWidth = (cityBoundaryConfig?.weight ?? 2.0) * visualScale;
+    const strokeStyle = cityBoundaryConfig?.strokeStyle || 'dashed';
+    const strokeOpacity = cityBoundaryConfig?.opacity ?? 0.95;
+
+    let dashArray: number[] | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = [4 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dotted') dashArray = [3 * visualScale, 4 * visualScale];
+    else if (strokeStyle === 'dash-dot') dashArray = [8 * visualScale, 4 * visualScale, 2 * visualScale, 4 * visualScale];
+
+    const finalStroke = hexToRgba(strokeColor, strokeOpacity);
+    const finalFill = hexToRgba(strokeColor, 0.05);
+
     drawGeoJsonGeometry(
       kryvyiRihCityGeojson.geometry || kryvyiRihCityGeojson,
-      'rgba(56, 189, 248, 0.05)',
-      '#38bdf8',
-      Math.max(2.0, 2.2 * visualScale),
-      [6 * visualScale, 6 * visualScale]
+      finalFill,
+      finalStroke,
+      Math.max(1.5, strokeWidth),
+      dashArray
     );
   }
 
@@ -601,6 +778,75 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       );
     }
   });
+
+  // 4d-2. DeepStateMap Occupied Territories and Gray Zones
+  if (deepStateOccupiedConfig?.enabled && deepStateGeoJson?.features?.length) {
+    const occPatternType = deepStateOccupiedConfig.fillPattern || 'solid';
+    const occPattern = occPatternType !== 'solid'
+      ? createExportPattern(
+          occPatternType,
+          deepStateOccupiedConfig.fillColor || '#b91c1c',
+          deepStateOccupiedConfig.fillOpacity ?? 0.35,
+          deepStateOccupiedConfig.patternDensity || 10,
+          deepStateOccupiedConfig.patternStrokeWidth || 1.5
+        )
+      : null;
+
+    const grayPatternType = deepStateOccupiedConfig.grayZonePattern || 'diagonal-right';
+    const grayPattern = grayPatternType !== 'solid'
+      ? createExportPattern(
+          grayPatternType,
+          deepStateOccupiedConfig.grayZoneFillColor || '#6b7280',
+          deepStateOccupiedConfig.grayZoneOpacity ?? 0.25,
+          10,
+          1.2
+        )
+      : null;
+
+    deepStateGeoJson.features.forEach((feature: any) => {
+      const isGray = feature?.properties?.zoneType === 'gray';
+      if (isGray && !deepStateOccupiedConfig.includeGrayZone) return;
+
+      if (isGray) {
+        const fill = grayPattern || hexToRgba(deepStateOccupiedConfig.grayZoneFillColor || '#6b7280', deepStateOccupiedConfig.grayZoneOpacity ?? 0.25);
+        const baseFill = grayPattern ? hexToRgba(deepStateOccupiedConfig.grayZoneFillColor || '#6b7280', 0.08) : undefined;
+        const strokeColor = deepStateOccupiedConfig.grayZoneStrokeColor || '#4b5563';
+        const strokeWidth = Math.max(1, (deepStateOccupiedConfig.grayZoneStrokeWidth ?? 1.2) * visualScale);
+        const style = deepStateOccupiedConfig.grayZoneStrokeStyle || 'dashed';
+        let dash: number[] | undefined = undefined;
+        if (style === 'dashed') dash = [4 * visualScale, 4 * visualScale];
+        else if (style === 'dotted') dash = [2 * visualScale, 3 * visualScale];
+        else if (style === 'dash-dot') dash = [7 * visualScale, 3 * visualScale, 2 * visualScale, 3 * visualScale];
+
+        drawGeoJsonGeometry(feature.geometry, fill, strokeColor, strokeWidth, dash, baseFill);
+      } else {
+        const fill = occPattern || hexToRgba(deepStateOccupiedConfig.fillColor || '#b91c1c', deepStateOccupiedConfig.fillOpacity ?? 0.35);
+        const baseFill = occPattern && (deepStateOccupiedConfig.patternBgOpacity ?? 0.1) > 0
+          ? hexToRgba(deepStateOccupiedConfig.fillColor || '#b91c1c', deepStateOccupiedConfig.patternBgOpacity ?? 0.1)
+          : undefined;
+
+        let strokeColor: string | undefined = deepStateOccupiedConfig.strokeColor || '#7f1d1d';
+        let strokeWidth = Math.max(0.5, (deepStateOccupiedConfig.strokeWidth ?? 1.5) * visualScale);
+        let dash: number[] | undefined = undefined;
+
+        if (deepStateOccupiedConfig.showStroke === false || deepStateOccupiedConfig.strokeWidth <= 0) {
+          strokeColor = undefined;
+          strokeWidth = 0;
+        } else {
+          const style = deepStateOccupiedConfig.strokeStyle || 'solid';
+          if (style === 'dashed') dash = [6 * visualScale, 4 * visualScale];
+          else if (style === 'dotted') dash = [2 * visualScale, 3 * visualScale];
+          else if (style === 'dash-dot') dash = [8 * visualScale, 3 * visualScale, 2 * visualScale, 3 * visualScale];
+
+          if (deepStateOccupiedConfig.strokeOpacity !== undefined && deepStateOccupiedConfig.strokeOpacity < 1) {
+            strokeColor = hexToRgba(strokeColor, deepStateOccupiedConfig.strokeOpacity);
+          }
+        }
+
+        drawGeoJsonGeometry(feature.geometry, fill, strokeColor, strokeWidth, dash, baseFill);
+      }
+    });
+  }
 
   // 4e. Air Alerts Polygons & Sirens ("3. шар тривог")
   if (showAlerts && showAlertPolygons && activeAlerts.length > 0) {

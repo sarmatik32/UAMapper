@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, us
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 import { CityRulerPreset, MAJOR_CITIES_RULER, MEASURE_TRACK_COLORS, INTER_CITY_MEASURE_PRESETS } from '../data/cityRulerPresets';
@@ -141,11 +141,20 @@ interface MapContainerProps {
   onToggleSettlementLabels?: (show: boolean) => void;
   onSetSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
   showCityBoundary?: boolean;
+  cityBoundaryConfig?: BoundaryStyleConfig;
   showDistrictBoundary?: boolean;
+  districtBoundaryConfig?: BoundaryStyleConfig;
+  showUkraineBoundary?: boolean;
+  ukraineBoundaryConfig?: UkraineBoundaryConfig;
   showHromadaBoundaries?: boolean;
+  hromadaBoundariesConfig?: BoundaryStyleConfig;
   onToggleHromadaBoundaries?: (show: boolean) => void;
   showQuickSettlements?: boolean;
   onToggleQuickSettlements?: (show: boolean) => void;
+  deepStateOccupiedConfig?: DeepStateOccupiedConfig;
+  onToggleDeepStateOccupied?: (enabled: boolean) => void;
+  deepStateGeoJson?: any;
+  isLoadingDeepState?: boolean;
   customSettlements?: Settlement[];
   onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
   onEditSettlement?: (settlement: Settlement) => void;
@@ -222,11 +231,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onToggleSettlementLabels,
   onSetSettlementLabelMode,
   showCityBoundary = true,
+  cityBoundaryConfig,
   showDistrictBoundary = true,
+  districtBoundaryConfig,
+  showUkraineBoundary = true,
+  ukraineBoundaryConfig,
   showHromadaBoundaries = true,
+  hromadaBoundariesConfig,
   onToggleHromadaBoundaries,
   showQuickSettlements: propShowQuickSettlements,
   onToggleQuickSettlements,
+  deepStateOccupiedConfig,
+  onToggleDeepStateOccupied,
+  deepStateGeoJson,
+  isLoadingDeepState = false,
   customSettlements = [],
   onAddCustomSettlementPoint,
   onEditSettlement,
@@ -278,7 +296,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
   const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
+  const ukraineBoundaryLayerRef = useRef<L.GeoJSON | null>(null);
+  const ukraineBoundaryGeojsonRef = useRef<any | null>(null);
   const hromadasLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const deepStateOccupiedLayerRef = useRef<L.GeoJSON | null>(null);
   
   // Measurement Tool State & Refs (Multi-Track & Multi-City Support)
   const [measureTracks, setMeasureTracks] = useState<MeasureTrack[]>([
@@ -806,8 +827,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   // Handle Auto-highlight Zone creation at coordinates (highlights the hromada/district polygon where the point is located)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
     if (!autoHighlightZoneRef.current) return;
+    if (lat === undefined || lng === undefined || isNaN(Number(lat)) || isNaN(Number(lng))) return;
 
-    const cacheKey = `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+    const cacheKey = `${Number(lat).toFixed(3)}_${Number(lng).toFixed(3)}`;
 
     // 1. Check if cached result exists
     if (nominatimCacheRef.current.has(cacheKey)) {
@@ -1493,20 +1515,30 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         return [...prev, newArea];
       });
 
+      const parsedLat = parseFloat(item.lat);
+      const parsedLon = parseFloat(item.lon);
+      const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLon);
+
       try {
         const tempLayer = L.geoJSON(item.geojson);
         const bounds = tempLayer.getBounds();
         if (bounds.isValid()) {
           map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-        } else {
-          map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+        } else if (hasValidCoords) {
+          map.setView([parsedLat, parsedLon], 12);
         }
       } catch (e) {
-        map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+        if (hasValidCoords) {
+          map.setView([parsedLat, parsedLon], 12);
+        }
       }
     } else {
-      await handleAutoHighlightZoneAt(parseFloat(item.lat), parseFloat(item.lon));
-      map.setView([parseFloat(item.lat), parseFloat(item.lon)], 13, { animate: true });
+      const parsedLat = parseFloat(item.lat);
+      const parsedLon = parseFloat(item.lon);
+      if (!isNaN(parsedLat) && !isNaN(parsedLon)) {
+        await handleAutoHighlightZoneAt(parsedLat, parsedLon);
+        map.setView([parsedLat, parsedLon], 13, { animate: true });
+      }
     }
 
     setSearchQuery('');
@@ -1708,6 +1740,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const allSettlements = customSettlements.filter(s => !(s as any).isDeleted);
 
     allSettlements.forEach((item) => {
+      if (!item || isNaN(Number(item.lat)) || isNaN(Number(item.lng))) {
+        return;
+      }
       const category = getSettlementCategory(item);
       if (disabledSettlementCategories.includes(category)) {
         return;
@@ -1886,17 +1921,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const map = L.map(mapContainerRef.current, {
         center: defaultCenter,
         zoom: defaultZoom,
+        minZoom: 2,
+        maxZoom: 19,
         zoomControl: false, // We'll add our own styled zoom control or position it beautifully
         zoomSnap: 1, // Integer zoom levels guarantee 1:1 crisp raster tiles without CSS scale blur
         zoomDelta: 1,
         wheelPxPerZoomLevel: 60,
+        inertia: false, // Prevents sudden unpredictable acceleration and jumping across the globe
+        worldCopyJump: false,
       });
 
       // Add a styled zoom control at top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       // Create custom Leaflet panes to control z-index layer ordering:
-      // Air alerts background (230) < Air alert ambient markers (240) < Red danger zones (320) < Boundaries & raions (340) < Settlements (380) < Drawn lines (480) < User markers/tactical icons (600)
+      // Air alerts background (230) < Air alert ambient markers (240) < DeepState occupied zones (310) < Red danger zones (320) < Boundaries & raions (340) < Settlements (380) < Drawn lines (480) < User markers/tactical icons (600)
       if (!map.getPane('airAlertsPolygonsPane')) {
         const p = map.createPane('airAlertsPolygonsPane');
         p.style.zIndex = '230';
@@ -1905,6 +1944,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (!map.getPane('airAlertsMarkersPane')) {
         const p = map.createPane('airAlertsMarkersPane');
         p.style.zIndex = '240';
+      }
+      if (!map.getPane('deepStatePane')) {
+        const p = map.createPane('deepStatePane');
+        p.style.zIndex = '310';
       }
       if (!map.getPane('redZonePane')) {
         const p = map.createPane('redZonePane');
@@ -1930,63 +1973,78 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Handle map clicks based on active interaction mode
       map.on('click', (e: L.LeafletMouseEvent) => {
         const originalEvent = e.originalEvent;
-        let target = originalEvent.target as HTMLElement;
-        let clickedMarker = false;
+        let target = originalEvent?.target as HTMLElement;
+        let clickedInteractive = false;
 
         if (
-          target.classList.contains('leaflet-marker-icon') ||
-          target.classList.contains('measure-node-icon') ||
-          target.classList.contains('measure-badge-icon') ||
-          Boolean(target.closest?.('.leaflet-popup')) ||
-          Boolean(target.closest?.('.leaflet-popup-content')) ||
-          Boolean(target.closest?.('.measure-node-icon')) ||
-          Boolean(target.closest?.('.measure-badge-icon')) ||
-          Boolean(target.closest?.('.measure-point-popup'))
+          target?.classList?.contains('leaflet-marker-icon') ||
+          target?.classList?.contains('measure-node-icon') ||
+          target?.classList?.contains('measure-badge-icon') ||
+          target?.classList?.contains('drawn-polyline-interactive') ||
+          target?.classList?.contains('leaflet-interactive') ||
+          Boolean(target?.closest?.('.leaflet-marker-icon')) ||
+          Boolean(target?.closest?.('.custom-marker-wrapper')) ||
+          Boolean(target?.closest?.('.user-marker-container')) ||
+          Boolean(target?.closest?.('.line-vertex-edit-handle')) ||
+          Boolean(target?.closest?.('.custom-end-handle')) ||
+          Boolean(target?.closest?.('.custom-end-explosion')) ||
+          Boolean(target?.closest?.('.drawn-polyline-interactive')) ||
+          Boolean(target?.closest?.('path.leaflet-interactive')) ||
+          Boolean(target?.closest?.('.leaflet-popup')) ||
+          Boolean(target?.closest?.('.leaflet-popup-content')) ||
+          Boolean(target?.closest?.('.measure-node-icon')) ||
+          Boolean(target?.closest?.('.measure-badge-icon')) ||
+          Boolean(target?.closest?.('.measure-point-popup'))
         ) {
-          clickedMarker = true;
+          clickedInteractive = true;
         } else {
-          while (target && target !== mapContainerRef.current) {
+          let curr: HTMLElement | null = target;
+          while (curr && curr !== mapContainerRef.current) {
             if (
-              target.classList.contains('leaflet-marker-icon') ||
-              target.classList.contains('measure-node-icon') ||
-              target.classList.contains('measure-badge-icon')
+              curr.classList?.contains('leaflet-marker-icon') ||
+              curr.classList?.contains('measure-node-icon') ||
+              curr.classList?.contains('measure-badge-icon') ||
+              curr.classList?.contains('drawn-polyline-interactive') ||
+              curr.classList?.contains('leaflet-interactive')
             ) {
-              clickedMarker = true;
+              clickedInteractive = true;
               break;
             }
-            target = target.parentElement as HTMLElement;
+            curr = curr.parentElement;
           }
         }
 
-        if (!clickedMarker) {
-          const mode = interactionModeRef.current;
-          if (mode === 'line') {
-            if (lineDrawMethodRef.current === 'points') {
-              setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
-            }
-          } else if (mode === 'measure') {
-            setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
-          } else if (mode === 'redzone') {
-            handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
-          } else if (mode === 'settlement') {
-            onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
-          } else if (mode === 'draw') {
-            onSelectMarkerRef.current(null);
-            onSelectLineRef.current(null);
-            const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
-            if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
-              handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
+        if (clickedInteractive) {
+          return;
+        }
 
-              // Auto-highlight direction end point for the new marker
-              const angleRad = 0; // default initial rotation is 0deg
-              const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
-              const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
-              handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
-            }
-          } else {
-            onSelectMarkerRef.current(null);
-            onSelectLineRef.current(null);
+        const mode = interactionModeRef.current;
+        if (mode === 'line') {
+          if (lineDrawMethodRef.current === 'points') {
+            setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
           }
+        } else if (mode === 'measure') {
+          setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
+        } else if (mode === 'redzone') {
+          handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
+        } else if (mode === 'settlement') {
+          onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
+        } else if (mode === 'draw') {
+          onSelectMarkerRef.current(null);
+          onSelectLineRef.current(null);
+          const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
+          if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
+            handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
+
+            // Auto-highlight direction end point for the new marker
+            const angleRad = 0; // default initial rotation is 0deg
+            const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
+            const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
+            handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
+          }
+        } else {
+          onSelectMarkerRef.current(null);
+          onSelectLineRef.current(null);
         }
       });
 
@@ -2011,16 +2069,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Attach ResizeObserver to map container element to automatically handle sidebar/theme layout changes
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimer: any = null;
     if (mapContainerRef.current) {
       resizeObserver = new ResizeObserver(() => {
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize();
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize({ debounceMoveend: true });
+            }
+          }, 60);
         }
       });
       resizeObserver.observe(mapContainerRef.current);
     }
 
     return () => {
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -2034,6 +2101,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   // Helper to keep Kryvyi Rih Raion & City outlines always on top of Hromada boundaries
   const bringDistrictAndCityToFront = () => {
+    if (ukraineBoundaryLayerRef.current) {
+      ukraineBoundaryLayerRef.current.bringToFront();
+    }
     if (kryvyiRihRaionLayerRef.current) {
       kryvyiRihRaionLayerRef.current.bringToFront();
     }
@@ -2041,6 +2111,138 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       kryvyiRihCityLayerRef.current.bringToFront();
     }
   };
+
+  // State Border of Ukraine (Державний кордон України 1991 - виключно зовнішній контур)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    let isMounted = true;
+
+    // Purge legacy obsolete cache from older versions that might contain separate oblasts
+    try {
+      localStorage.removeItem('uamapper_ukraine_boundary');
+    } catch (e) {}
+
+    const loadUkraineBoundary = async () => {
+      const isEnabled = showUkraineBoundary && (ukraineBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
+        if (ukraineBoundaryLayerRef.current) {
+          ukraineBoundaryLayerRef.current.remove();
+          ukraineBoundaryLayerRef.current = null;
+        }
+        return;
+      }
+
+      // Sanitize GeoJSON so it STRICTLY contains only exterior perimeter rings (no internal lines or holes)
+      const sanitizeToOuterPerimeterOnly = (data: any) => {
+        if (!data) return data;
+        const features = data.features ? data.features : [data];
+        const cleanFeatures = features.map((feat: any) => {
+          if (!feat || !feat.geometry) return feat;
+          const geom = feat.geometry;
+          if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates.length > 0) {
+            return {
+              ...feat,
+              geometry: {
+                type: 'Polygon',
+                coordinates: [geom.coordinates[0]], // ONLY outer ring
+              },
+            };
+          }
+          if (geom.type === 'MultiPolygon' && geom.coordinates && geom.coordinates.length > 0) {
+            return {
+              ...feat,
+              geometry: {
+                type: 'MultiPolygon',
+                coordinates: geom.coordinates.map((poly: any[]) => [poly[0]]), // ONLY outer ring of each polygon part
+              },
+            };
+          }
+          return feat;
+        });
+        return {
+          type: 'FeatureCollection',
+          features: cleanFeatures,
+        };
+      };
+
+      try {
+        let geojson = ukraineBoundaryGeojsonRef.current;
+        if (!geojson) {
+          const cached = localStorage.getItem('uamapper_ukraine_boundary_clean_v3');
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              // Ensure cached data is valid single country boundary, not obsolete 27 oblasts
+              if (parsed && parsed.features && parsed.features.length === 1) {
+                geojson = sanitizeToOuterPerimeterOnly(parsed);
+                ukraineBoundaryGeojsonRef.current = geojson;
+              } else {
+                localStorage.removeItem('uamapper_ukraine_boundary_clean_v3');
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (!geojson) {
+          const res = await fetch('/data/ukraine_boundary.geojson?v=3');
+          if (res.ok) {
+            const rawData = await res.json();
+            geojson = sanitizeToOuterPerimeterOnly(rawData);
+            ukraineBoundaryGeojsonRef.current = geojson;
+            try {
+              localStorage.setItem('uamapper_ukraine_boundary_clean_v3', JSON.stringify(geojson));
+            } catch (e) {}
+          }
+        }
+
+        if (geojson && isMounted && mapInstanceRef.current && (showUkraineBoundary && (ukraineBoundaryConfig?.enabled ?? true))) {
+          if (ukraineBoundaryLayerRef.current) {
+            ukraineBoundaryLayerRef.current.remove();
+          }
+
+          const strokeColor = ukraineBoundaryConfig?.color || '#f59e0b';
+          const strokeWidth = ukraineBoundaryConfig?.weight ?? 2.8;
+          const strokeOpacity = ukraineBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = ukraineBoundaryConfig?.strokeStyle || 'solid';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '8, 5';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '10, 4, 2, 4';
+
+          ukraineBoundaryLayerRef.current = L.geoJSON(geojson, {
+            pane: 'boundariesPane',
+            style: {
+              className: 'clean-ukraine-outline',
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
+              fill: false,
+              fillOpacity: 0,
+              interactive: false,
+            } as L.PathOptions
+          }).addTo(mapInstanceRef.current);
+
+          bringDistrictAndCityToFront();
+        }
+      } catch (err) {
+        console.error('Error loading Ukraine border boundary:', err);
+      }
+    };
+
+    loadUkraineBoundary();
+
+    return () => {
+      isMounted = false;
+      if (ukraineBoundaryLayerRef.current) {
+        ukraineBoundaryLayerRef.current.remove();
+        ukraineBoundaryLayerRef.current = null;
+      }
+    };
+  }, [isMapReady, showUkraineBoundary, ukraineBoundaryConfig]);
 
   // Permanent boundary layers for Kryvyi Rih Raion (thin line, no neon) & Kryvyi Rih City
   useEffect(() => {
@@ -2051,7 +2253,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Load Kryvyi Rih Raion boundary (thin line without neon effect)
     const loadKryvyiRihRaionBoundary = async () => {
-      if (!showDistrictBoundary) {
+      const isEnabled = showDistrictBoundary && (districtBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
         if (kryvyiRihRaionLayerRef.current) {
           kryvyiRihRaionLayerRef.current.remove();
           kryvyiRihRaionLayerRef.current = null;
@@ -2085,16 +2288,27 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             kryvyiRihRaionLayerRef.current.remove();
           }
 
+          const strokeColor = districtBoundaryConfig?.color || '#10b981';
+          const strokeWidth = districtBoundaryConfig?.weight ?? 2.2;
+          const strokeOpacity = districtBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = districtBoundaryConfig?.strokeStyle || 'solid';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '6, 5';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
+
           kryvyiRihRaionLayerRef.current = L.geoJSON(geojson, {
             pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
-              color: '#10b981',      // Clean green stroke
-              weight: 2.2,           // Clean visible district line
-              opacity: 0.95,         // High visibility above alert highlights
-              fill: false,           // No fill
-              fillOpacity: 0,        // Completely transparent inside
-              interactive: false,    // Clicks pass through to map
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
+              fill: false,
+              fillOpacity: 0,
+              interactive: false,
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
 
@@ -2107,7 +2321,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Load Kryvyi Rih City (місто Кривий Ріг) boundary
     const loadKryvyiRihCityBoundary = async () => {
-      if (!showCityBoundary) {
+      const isEnabled = showCityBoundary && (cityBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
         if (kryvyiRihCityLayerRef.current) {
           kryvyiRihCityLayerRef.current.remove();
           kryvyiRihCityLayerRef.current = null;
@@ -2141,18 +2356,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             kryvyiRihCityLayerRef.current.remove();
           }
 
+          const strokeColor = cityBoundaryConfig?.color || '#38bdf8';
+          const strokeWidth = cityBoundaryConfig?.weight ?? 2.0;
+          const strokeOpacity = cityBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = cityBoundaryConfig?.strokeStyle || 'dashed';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '4, 4';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
+
           kryvyiRihCityLayerRef.current = L.geoJSON(geojson, {
             pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
-              color: '#38bdf8',      // Sky blue thin outline for Kryvyi Rih City
-              weight: 2.0,           // Slightly thicker crisp line
-              dashArray: '4, 4',     // Dotted/dashed border
-              opacity: 0.95,
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
               fill: true,
-              fillColor: '#38bdf8',
-              fillOpacity: 0.06,     // Subtle light fill for city bounds
-              interactive: false,    // Clicks pass through to map
+              fillColor: strokeColor,
+              fillOpacity: 0.05,
+              interactive: false,
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
 
@@ -2177,7 +2402,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         kryvyiRihCityLayerRef.current = null;
       }
     };
-  }, [isMapReady, showCityBoundary, showDistrictBoundary]);
+  }, [isMapReady, showCityBoundary, cityBoundaryConfig, showDistrictBoundary, districtBoundaryConfig]);
 
   // Permanent & Toggleable Dark Gray Boundary Lines for Hromadas (Межі громад - темно-сірі)
   useEffect(() => {
@@ -2190,7 +2415,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       hromadasLayerGroupRef.current.clearLayers();
     }
 
-    if (!showHromadaBoundaries) return;
+    const isEnabled = showHromadaBoundaries && (hromadaBoundariesConfig?.enabled ?? true);
+    if (!isEnabled) return;
 
     let isMounted = true;
 
@@ -2208,6 +2434,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       { id: 'hromada_karpivka', name: 'Карпівська ОТГ', query: 'Карпівська сільська громада, Дніпропетровська область' },
       { id: 'hromada_nyvatrudivska', name: 'Нива Трудівська ОТГ', query: 'Нива Трудівська сільська громада, Дніпропетровська область' },
     ];
+
+    const strokeColor = hromadaBoundariesConfig?.color || '#475569';
+    const strokeWidth = hromadaBoundariesConfig?.weight ?? 1.4;
+    const strokeOpacity = hromadaBoundariesConfig?.opacity ?? 0.85;
+    const strokeStyle = hromadaBoundariesConfig?.strokeStyle || 'dashed';
+
+    let dashArray: string | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = '4, 4';
+    else if (strokeStyle === 'dotted') dashArray = '3, 4';
+    else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
 
     const loadHromadaBoundaries = async () => {
       for (const item of HROMADAS_LIST) {
@@ -2235,14 +2471,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               pane: 'boundariesPane',
               style: {
                 className: 'clean-hromada-outline',
-                color: '#374151',        // Dark gray demarcation line (Slate 700)
-                weight: 1.4,             // Crisp thin boundary stroke
-                dashArray: '4, 4',       // Dashed border line for communities
-                opacity: 0.85,           // Clear dark gray visibility
+                color: strokeColor,
+                weight: strokeWidth,
+                dashArray,
+                opacity: strokeOpacity,
                 fill: true,
-                fillColor: '#4b5563',    // Dark gray tint
-                fillOpacity: 0.02,       // Very faint transparent fill
-                interactive: false,      // Clicks pass through to map
+                fillColor: strokeColor,
+                fillOpacity: 0.02,
+                interactive: false,
               } as L.PathOptions
             });
             layer.addTo(hromadasLayerGroupRef.current);
@@ -2266,7 +2502,211 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         hromadasLayerGroupRef.current.clearLayers();
       }
     };
-  }, [showHromadaBoundaries, isMapReady]);
+  }, [showHromadaBoundaries, hromadaBoundariesConfig, isMapReady]);
+
+  // Synchronize DeepStateMap Occupied Territories & Gray Zones Layer
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    if (deepStateOccupiedLayerRef.current) {
+      map.removeLayer(deepStateOccupiedLayerRef.current);
+      deepStateOccupiedLayerRef.current = null;
+    }
+
+    if (!deepStateOccupiedConfig?.enabled || !deepStateGeoJson?.features?.length) {
+      return;
+    }
+
+    // Helper to generate SVG patterns for Leaflet SVG renderer
+    const generateSvgPatternsHtml = (config: DeepStateOccupiedConfig) => {
+      const occPattern = config.fillPattern || 'solid';
+      const occColor = config.fillColor || '#b91c1c';
+      const occOpacity = config.fillOpacity ?? 0.35;
+      const occDensity = config.patternDensity || 10;
+      const occStrokeWidth = config.patternStrokeWidth || 1.5;
+      const occBgOpacity = config.patternBgOpacity ?? 0.1;
+
+      const grayPattern = config.grayZonePattern || 'diagonal-right';
+      const grayColor = config.grayZoneFillColor || '#6b7280';
+      const grayOpacity = config.grayZoneOpacity ?? 0.25;
+
+      const renderSinglePattern = (
+        id: string,
+        type: DeepStatePatternType,
+        color: string,
+        opacity: number,
+        density: number,
+        strokeWidth: number,
+        bgOpacity: number
+      ) => {
+        if (type === 'solid') return '';
+        const s = Math.max(6, Math.min(36, density));
+        const sw = Math.max(0.75, Math.min(4, strokeWidth));
+        const bg = bgOpacity > 0 ? `<rect width="${s}" height="${s}" fill="${color}" fill-opacity="${bgOpacity}" />` : '';
+
+        if (type === 'diagonal-right') {
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(45 0 0)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+        }
+        if (type === 'diagonal-left') {
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(-45 0 0)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+        }
+        if (type === 'cross-hatch') {
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /><line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'dots') {
+          const r = Math.max(1, sw * 0.9);
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<circle cx="${s / 2}" cy="${s / 2}" r="${r}" fill="${color}" fill-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'horizontal') {
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'vertical') {
+          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        return '';
+      };
+
+      return [
+        renderSinglePattern('ds-pattern-occ', occPattern, occColor, occOpacity, occDensity, occStrokeWidth, occBgOpacity),
+        renderSinglePattern('ds-pattern-gray', grayPattern, grayColor, grayOpacity, 10, 1.2, 0.08)
+      ].filter(Boolean).join('\n');
+    };
+
+    const syncDefsToDom = (patternsHtml: string) => {
+      // 1. In global document SVG
+      let globalSvg = document.getElementById('ds-svg-defs-global') as unknown as SVGSVGElement | null;
+      if (!globalSvg) {
+        globalSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        globalSvg.id = 'ds-svg-defs-global';
+        globalSvg.setAttribute('style', 'position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;');
+        document.body.appendChild(globalSvg);
+      }
+      globalSvg.innerHTML = `<defs>${patternsHtml}</defs>`;
+
+      // 2. Directly inside Leaflet pane's SVG (ensures local scoped resolution across all browsers)
+      const pane = map.getPane('deepStatePane');
+      const paneSvg = pane?.querySelector('svg');
+      if (paneSvg) {
+        let paneDefs = paneSvg.querySelector('defs#ds-pane-defs');
+        if (!paneDefs) {
+          paneDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          paneDefs.id = 'ds-pane-defs';
+          paneSvg.insertBefore(paneDefs, paneSvg.firstChild);
+        }
+        paneDefs.innerHTML = patternsHtml;
+      }
+    };
+
+    const patternsHtml = generateSvgPatternsHtml(deepStateOccupiedConfig);
+    syncDefsToDom(patternsHtml);
+
+    try {
+      const geoLayer = L.geoJSON(deepStateGeoJson, {
+        pane: 'deepStatePane',
+        filter: (feature: any) => {
+          if (feature?.properties?.zoneType === 'gray') {
+            return Boolean(deepStateOccupiedConfig.includeGrayZone);
+          }
+          return true;
+        },
+        style: (feature: any) => {
+          const isGray = feature?.properties?.zoneType === 'gray';
+          if (isGray) {
+            const pattern = deepStateOccupiedConfig.grayZonePattern || 'diagonal-right';
+            const isPat = pattern !== 'solid';
+
+            const strokeColor = deepStateOccupiedConfig.grayZoneStrokeColor || '#4b5563';
+            const strokeWidth = deepStateOccupiedConfig.grayZoneStrokeWidth ?? 1.2;
+            const style = deepStateOccupiedConfig.grayZoneStrokeStyle || 'dashed';
+            let dash: string | undefined = undefined;
+            if (style === 'dashed') dash = '4, 4';
+            else if (style === 'dotted') dash = '2, 3';
+            else if (style === 'dash-dot') dash = '7, 3, 2, 3';
+
+            return {
+              fillColor: isPat ? 'url(#ds-pattern-gray)' : (deepStateOccupiedConfig.grayZoneFillColor || '#6b7280'),
+              fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.grayZoneOpacity ?? 0.25),
+              color: strokeColor,
+              weight: strokeWidth,
+              opacity: 0.85,
+              dashArray: dash,
+              lineCap: 'round',
+              lineJoin: 'round',
+            } as L.PathOptions;
+          }
+
+          const pattern = deepStateOccupiedConfig.fillPattern || 'solid';
+          const isPat = pattern !== 'solid';
+
+          let strokeColor = deepStateOccupiedConfig.strokeColor || '#7f1d1d';
+          let strokeWidth = deepStateOccupiedConfig.strokeWidth ?? 1.5;
+          let strokeOpacity = deepStateOccupiedConfig.strokeOpacity ?? 0.9;
+          let dash: string | undefined = undefined;
+
+          if (deepStateOccupiedConfig.showStroke === false || strokeWidth <= 0) {
+            strokeWidth = 0;
+            strokeOpacity = 0;
+          } else {
+            const style = deepStateOccupiedConfig.strokeStyle || 'solid';
+            if (style === 'dashed') dash = '6, 4';
+            else if (style === 'dotted') dash = '2, 3';
+            else if (style === 'dash-dot') dash = '8, 3, 2, 3';
+          }
+
+          return {
+            fillColor: isPat ? 'url(#ds-pattern-occ)' : (deepStateOccupiedConfig.fillColor || '#b91c1c'),
+            fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.fillOpacity ?? 0.35),
+            color: strokeColor,
+            weight: strokeWidth,
+            opacity: strokeOpacity,
+            dashArray: dash,
+            lineCap: 'round',
+            lineJoin: 'round',
+          } as L.PathOptions;
+        },
+        onEachFeature: (feature: any, layer: any) => {
+          const isGray = feature?.properties?.zoneType === 'gray';
+          const name = language === 'en' ? (feature?.properties?.nameEn || feature?.properties?.name) : feature?.properties?.name;
+          const statusLabel = isGray
+            ? (language === 'en' ? 'Contested / Gray Zone' : 'Сіра зона (статус невідомий)')
+            : (language === 'en' ? 'Temporarily Occupied Territory' : 'Тимчасово окупована територія');
+          
+          const tooltipContent = `
+            <div style="font-family: inherit;" class="p-1 min-w-[140px]">
+              <div class="text-[12px] font-black ${isGray ? 'text-slate-200' : 'text-rose-400'} leading-tight">${name || statusLabel}</div>
+              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${statusLabel}</div>
+              <div class="text-[9px] text-slate-400 mt-1 flex items-center gap-1 border-t border-slate-700/60 pt-1">
+                <span>🇺🇦 DeepStateMap Live</span>
+              </div>
+            </div>
+          `;
+          layer.bindTooltip(tooltipContent, {
+            sticky: true,
+            className: 'deepstate-tactical-tooltip bg-slate-900/95 text-white border border-slate-700/80 shadow-2xl rounded-lg backdrop-blur-md',
+          });
+        },
+      });
+
+      geoLayer.addTo(map);
+      syncDefsToDom(patternsHtml);
+      deepStateOccupiedLayerRef.current = geoLayer;
+    } catch (err) {
+      console.warn('Error rendering DeepState occupied GeoJSON layer:', err);
+    }
+
+    return () => {
+      if (deepStateOccupiedLayerRef.current && mapInstanceRef.current) {
+        mapInstanceRef.current.removeLayer(deepStateOccupiedLayerRef.current);
+        deepStateOccupiedLayerRef.current = null;
+      }
+    };
+  }, [
+    isMapReady,
+    deepStateOccupiedConfig,
+    deepStateGeoJson,
+    language,
+  ]);
 
   // Synchronize Measurement Tool Graphics on Map (Multi-Track & Multi-City Support)
   useEffect(() => {
@@ -2545,6 +2985,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Format tile URL and retina parameters
     let url = activeTileLayer.url;
+    if (activeTileLayer.id === 'deepstatemap') {
+      const langSuffix = language === 'en' ? 'En' : 'Uk';
+      const themeSuffix = theme === 'dark' ? 'Dark' : '';
+      url = `https://st1.deepstatemap.live/styles/DSUkraine${langSuffix}${themeSuffix}/{z}/{x}/{y}{r}.webp`;
+    }
     if (activeTileLayer.requiresKey) {
       url = url.replace('{key}', visicomKey || '');
     }
@@ -2555,16 +3000,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Create Leaflet TileLayer with crisp 1:1 pixel rendering
     const tileLayer = L.tileLayer(url, {
       tms: activeTileLayer.tms,
+      minZoom: activeTileLayer.minZoom || 2,
       maxZoom: activeTileLayer.maxZoom,
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      crossOrigin: 'anonymous',
+      crossOrigin: activeTileLayer.id.startsWith('apple_maps') ? false : 'anonymous',
       detectRetina: false, // Prevent artificial 200% scale stretching that blurs non-retina raster tiles
       tileSize: 256,
       keepBuffer: 6,
       updateWhenIdle: false,
-      updateWhenZooming: false,
+      updateWhenZooming: true,
     });
 
     tileLayer.addTo(map);
@@ -2577,6 +3023,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         overlayUrl = overlayUrl.replace('{r}', L.Browser.retina ? '@2x' : '');
       }
       const overlayLayer = L.tileLayer(overlayUrl, {
+        minZoom: activeTileLayer.minZoom || 2,
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
@@ -2584,6 +3031,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         detectRetina: false,
         tileSize: 256,
         keepBuffer: 6,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -2593,7 +3042,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Force tile layer redraw and map size update immediately
     map.invalidateSize();
     tileLayer.redraw();
-  }, [activeTileLayer, visicomKey, isMapReady]);
+  }, [activeTileLayer, visicomKey, isMapReady, language, theme]);
 
   // Handle Theme changes & recalculate map layout
   useEffect(() => {
@@ -2657,11 +3106,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // 2. Add or update current markers
     markers.forEach((markerData) => {
+      if (!markerData || isNaN(Number(markerData.lat)) || isNaN(Number(markerData.lng))) {
+        return;
+      }
       const { 
-        id, lat, lng, title, color, borderColor, endPointStyle, size, rotation, 
+        id, title, color, borderColor, endPointStyle, size, 
         iconType, draggable, labelVisible, customIconUrl, hasZone, zoneColor, zoneSize,
-        endLat, endLng, labelFontSize, labelOrientation
+        labelFontSize, labelOrientation
       } = markerData;
+      const lat = Number(markerData.lat);
+      const lng = Number(markerData.lng);
+      const rotation = isNaN(Number(markerData.rotation)) ? 0 : Number(markerData.rotation);
+      let endLat = markerData.endLat !== undefined && !isNaN(Number(markerData.endLat)) ? Number(markerData.endLat) : undefined;
+      let endLng = markerData.endLng !== undefined && !isNaN(Number(markerData.endLng)) ? Number(markerData.endLng) : undefined;
+
       const isSelected = id === selectedMarkerId;
 
       // Generate the custom HTML/SVG string
@@ -2719,11 +3177,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           zIndexOffset: isSelected ? 1000 : 0,
         }).addTo(map);
 
-        newMarker.on('click', (e) => {
-          L.DomEvent.stopPropagation(e);
-          onSelectMarker(id);
-        });
-
         markersRef.current[id] = newMarker;
         markerInstance = newMarker;
 
@@ -2732,7 +3185,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
           let effectiveTargetEndLat = endLat;
           let effectiveTargetEndLng = endLng;
-          if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
+          if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
             const angleRad = (((rotation || 0)) * Math.PI) / 180;
             effectiveTargetEndLat = lat + Math.cos(angleRad) * 0.003;
             effectiveTargetEndLng = lng + Math.sin(angleRad) * 0.005;
@@ -2740,6 +3193,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
         }
       }
+
+      // Re-bind click event on marker dynamically so clicking on the map marker always selects it
+      markerInstance.off('click');
+      markerInstance.on('click', (e) => {
+        if (e.originalEvent) {
+          L.DomEvent.stopPropagation(e.originalEvent);
+        }
+        L.DomEvent.stopPropagation(e);
+        onSelectMarker(id);
+      });
 
       // Re-bind drag events dynamically to capture correct markerData variables
       markerInstance.off('dragstart drag dragend');
@@ -2752,30 +3215,33 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       markerInstance.on('dragstart', (e) => {
         dragStartLatLng = e.target.getLatLng();
-        originalEndLat = markerData.endLat;
-        originalEndLng = markerData.endLng;
+        originalEndLat = markerData.endLat !== undefined && !isNaN(Number(markerData.endLat)) ? Number(markerData.endLat) : undefined;
+        originalEndLng = markerData.endLng !== undefined && !isNaN(Number(markerData.endLng)) ? Number(markerData.endLng) : undefined;
       });
 
       markerInstance.on('drag', (e) => {
         const currentLatLng = e.target.getLatLng();
+        if (!currentLatLng || isNaN(currentLatLng.lat) || isNaN(currentLatLng.lng)) return;
         if (hasEndPoint || hasEndHandle) {
-          let finalEndLat = originalEndLat;
-          let finalEndLng = originalEndLng;
-          if (finalEndLat === undefined || finalEndLng === undefined) {
+          let curEndLat = originalEndLat;
+          let curEndLng = originalEndLng;
+          if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
             const angleRad = (rotation * Math.PI) / 180;
-            finalEndLat = lat + Math.cos(angleRad) * 0.003;
-            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+            curEndLat = lat + Math.cos(angleRad) * 0.003;
+            curEndLng = lng + Math.sin(angleRad) * 0.005;
           }
-          if (dragStartLatLng) {
+          if (dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
             const dLat = currentLatLng.lat - dragStartLatLng.lat;
             const dLng = currentLatLng.lng - dragStartLatLng.lng;
-            const tempEndLat = finalEndLat + dLat;
-            const tempEndLng = finalEndLng + dLng;
-            if (hasEndPoint && linesRef.current[id]) {
-              linesRef.current[id].setLatLngs([[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]]);
-            }
-            if (endMarkersRef.current[id]) {
-              endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
+            const tempEndLat = curEndLat + dLat;
+            const tempEndLng = curEndLng + dLng;
+            if (!isNaN(tempEndLat) && !isNaN(tempEndLng)) {
+              if (hasEndPoint && linesRef.current[id]) {
+                linesRef.current[id].setLatLngs([[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]]);
+              }
+              if (endMarkersRef.current[id]) {
+                endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
+              }
             }
           }
         }
@@ -2783,21 +3249,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       markerInstance.on('dragend', (e) => {
         const position = e.target.getLatLng();
+        if (!position || isNaN(position.lat) || isNaN(position.lng)) return;
         let updatedEndLat: number | undefined;
         let updatedEndLng: number | undefined;
 
-        if ((hasEndPoint || hasEndHandle) && dragStartLatLng) {
-          let finalEndLat = originalEndLat;
-          let finalEndLng = originalEndLng;
-          if (finalEndLat === undefined || finalEndLng === undefined) {
+        if ((hasEndPoint || hasEndHandle) && dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
+          let curEndLat = originalEndLat;
+          let curEndLng = originalEndLng;
+          if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
             const angleRad = (rotation * Math.PI) / 180;
-            finalEndLat = lat + Math.cos(angleRad) * 0.003;
-            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+            curEndLat = lat + Math.cos(angleRad) * 0.003;
+            curEndLng = lng + Math.sin(angleRad) * 0.005;
           }
           const dLat = position.lat - dragStartLatLng.lat;
           const dLng = position.lng - dragStartLatLng.lng;
-          updatedEndLat = finalEndLat + dLat;
-          updatedEndLng = finalEndLng + dLng;
+          updatedEndLat = curEndLat + dLat;
+          updatedEndLng = curEndLng + dLng;
+
+          if (isNaN(updatedEndLat) || isNaN(updatedEndLng)) {
+            const angleRad = (rotation * Math.PI) / 180;
+            updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
+            updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
+          }
 
           if (onUpdateMarker) {
             onUpdateMarker({
@@ -2816,7 +3289,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (onUpdateMarker) {
             updatedEndLat = originalEndLat;
             updatedEndLng = originalEndLng;
-            if (updatedEndLat !== undefined && updatedEndLng !== undefined && dragStartLatLng) {
+            if (updatedEndLat !== undefined && updatedEndLng !== undefined && !isNaN(updatedEndLat) && !isNaN(updatedEndLng) && dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
               const dLat = position.lat - dragStartLatLng.lat;
               const dLng = position.lng - dragStartLatLng.lng;
               updatedEndLat = updatedEndLat + dLat;
@@ -2841,7 +3314,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         let effectiveTargetEndLat = updatedEndLat;
         let effectiveTargetEndLng = updatedEndLng;
-        if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
+        if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
           const angleRad = (rotation * Math.PI) / 180;
           effectiveTargetEndLat = position.lat + Math.cos(angleRad) * 0.003;
           effectiveTargetEndLng = position.lng + Math.sin(angleRad) * 0.005;
@@ -2869,7 +3342,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLat = endLat;
         let finalEndLng = endLng;
 
-        if (finalEndLat === undefined || finalEndLng === undefined) {
+        if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
           const angleRad = (rotation * Math.PI) / 180;
           finalEndLat = lat + Math.cos(angleRad) * 0.003;
           finalEndLng = lng + Math.sin(angleRad) * 0.005;
@@ -2891,6 +3364,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         } else {
           linesRef.current[id] = L.polyline(lineCoords, lineStyle).addTo(map);
         }
+
+        linesRef.current[id].off('click');
+        linesRef.current[id].on('click', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectMarker(id);
+        });
       } else {
         if (linesRef.current[id]) {
           linesRef.current[id].remove();
@@ -2903,7 +3385,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLat = endLat;
         let finalEndLng = endLng;
 
-        if (finalEndLat === undefined || finalEndLng === undefined) {
+        if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
           const angleRad = (rotation * Math.PI) / 180;
           finalEndLat = lat + Math.cos(angleRad) * 0.003;
           finalEndLng = lng + Math.sin(angleRad) * 0.005;
@@ -2978,13 +3460,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         // Re-bind end marker drag events dynamically on every render
-        endMarkerInstance.off('drag dragend');
+        endMarkerInstance.off('drag dragend click');
+
+        endMarkerInstance.on('click', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectMarker(id);
+        });
 
         endMarkerInstance.on('drag', (e) => {
           const endPosition = e.target.getLatLng();
+          if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const dy = endPosition.lat - lat;
           const dx = endPosition.lng - lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
 
           if (linesRef.current[id]) {
@@ -2996,16 +3488,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (mainMarkerEl) {
             const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]');
             if (rotatingDiv) {
-              (rotatingDiv as HTMLElement).style.transform = `rotate(${angleDeg % 360}deg)`;
+              (rotatingDiv as HTMLElement).style.transform = `rotate(${Math.round(angleDeg % 360)}deg)`;
             }
           }
         });
 
         endMarkerInstance.on('dragend', (e) => {
           const endPosition = e.target.getLatLng();
+          if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const dy = endPosition.lat - lat;
           const dx = endPosition.lng - lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
           angleDeg = Math.round(angleDeg);
 
@@ -3088,13 +3582,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Render each line
     drawnLines.forEach((line) => {
       if (!line.points || line.points.length < 2) return;
+      const validPoints = line.points.filter((pt) => pt && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])));
+      if (validPoints.length < 2) return;
 
       const isSelected = selectedLineId === line.id;
 
       // Smooth points if line.smoothed is true
-      const displayPoints: [number, number][] = line.smoothed
-        ? smoothPolylinePoints(line.points, 4)
-        : line.points;
+      const rawPoints: [number, number][] = line.smoothed
+        ? smoothPolylinePoints(validPoints, 4)
+        : validPoints;
+      const displayPoints = rawPoints.filter((pt) => pt && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])));
+      if (displayPoints.length < 2) return;
 
       // Dash style
       let dashArray: string | undefined = undefined;
@@ -3111,6 +3609,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (isSelected) {
         if (!existing.halo) {
           existing.halo = L.polyline(displayPoints, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: '#3b82f6',
             weight: line.weight + 8,
             opacity: 0.5,
@@ -3122,6 +3621,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           existing.halo.setLatLngs(displayPoints);
           existing.halo.setStyle({ weight: line.weight + 8 });
         }
+
+        existing.halo.off('click');
+        existing.halo.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.halo) {
         existing.halo.remove();
         existing.halo = undefined;
@@ -3151,6 +3659,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         existing.fadingPolylines = fadingSegments.map((seg) => {
           const poly = L.polyline(seg.points, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: line.color,
             weight: line.weight,
             opacity: seg.opacity,
@@ -3160,7 +3669,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
           }).addTo(map);
 
+          poly.off('click');
           poly.on('click', (e: L.LeafletMouseEvent) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+            }
             L.DomEvent.stopPropagation(e);
             onSelectLine(line.id);
           });
@@ -3175,6 +3688,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (!existing.polyline) {
           existing.polyline = L.polyline(displayPoints, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: line.color,
             weight: line.weight,
             opacity: 0.9,
@@ -3183,11 +3697,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             lineJoin: 'round',
             pane: 'drawnLinesPane',
           }).addTo(map);
-
-          existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.polyline.setLatLngs(displayPoints);
           existing.polyline.setStyle({
@@ -3197,6 +3706,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             dashArray: dashArray,
           });
         }
+
+        existing.polyline.off('click');
+        existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       }
 
       // 3. Endpoint markers
@@ -3250,14 +3768,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
-          existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.startMarker.setLatLng(startCoord);
           existing.startMarker.setIcon(startIcon);
         }
+        existing.startMarker.off('click');
+        existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.startMarker) {
         existing.startMarker.remove();
         existing.startMarker = undefined;
@@ -3280,14 +3802,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
-          existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.endMarker.setLatLng(endCoord);
           existing.endMarker.setIcon(endIcon);
         }
+        existing.endMarker.off('click');
+        existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.endMarker) {
         existing.endMarker.remove();
         existing.endMarker = undefined;
@@ -3861,7 +4387,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Only auto-pan to marker if the selectedMarkerId actually changed
     if (selectedMarkerId !== lastSelectedIdRef.current) {
       const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
-      if (selectedMarker) {
+      if (
+        selectedMarker &&
+        typeof selectedMarker.lat === 'number' &&
+        typeof selectedMarker.lng === 'number' &&
+        !isNaN(selectedMarker.lat) &&
+        !isNaN(selectedMarker.lng)
+      ) {
         map.panTo([selectedMarker.lat, selectedMarker.lng], { animate: true });
       }
       lastSelectedIdRef.current = selectedMarkerId;
@@ -4176,7 +4708,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = document.getElementById('map-stage-wrapper');
     if (!mapElement) return null;
     mapElement.classList.add('exporting-map');
-    if (theme === 'dark' && !activeTileLayer.isDark) mapElement.classList.add('exporting-dark-map');
+    if (theme === 'dark' && !activeTileLayer.isDark && activeTileLayer.id !== 'deepstatemap') mapElement.classList.add('exporting-dark-map');
     if (blurMapOnExport) mapElement.classList.add('exporting-map-blur');
     return mapElement;
   };
@@ -4411,7 +4943,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         <div 
           id="visicom-leaflet-map"
           ref={mapContainerRef} 
-          className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark ? 'dark-map' : ''}`}
+          className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark && activeTileLayer.id !== 'deepstatemap' ? 'dark-map' : ''}`}
           style={{ fontFamily: fontCssValue }}
         />
 
@@ -4532,6 +5064,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               {/* Other Boundaries, Settlements & Custom Saved Quick Zones */}
               {showQuickSettlements && (
                 <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {/* Toggle for DeepStateMap Occupied Territories */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleDeepStateOccupied?.(!deepStateOccupiedConfig?.enabled);
+                    }}
+                    title={language === 'uk' ? 'Окуповані території та сірі зони (DeepStateMap)' : 'Occupied territories and gray zones (DeepStateMap)'}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 ${
+                      deepStateOccupiedConfig?.enabled
+                        ? 'bg-rose-950/90 hover:bg-rose-900 border-rose-500 text-rose-100 shadow-md ring-1 ring-rose-400 font-black'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                    }`}
+                  >
+                    {isLoadingDeepState ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-rose-400" />
+                    ) : (
+                      <span className={`w-1.5 h-1.5 rounded-full border ${deepStateOccupiedConfig?.enabled ? 'bg-rose-500 border-rose-200 animate-pulse' : 'bg-slate-400 border-transparent'}`}></span>
+                    )}
+                    <span>{language === 'uk' ? 'Окуповані території (DeepState)' : 'Occupied (DeepState)'}</span>
+                  </button>
+
                   {/* Toggle for Dark Gray Hromada Demarcation Lines */}
                   <button
                     type="button"

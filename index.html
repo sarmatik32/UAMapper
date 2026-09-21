@@ -18,6 +18,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Montserrat:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Ubuntu:wght@400;500;700&display=swap&subset=cyrillic,cyrillic-ext" rel="stylesheet" />
+    <script>
+      (function() {
+        var suppress = function(e) {
+          var msg = (e && (e.message || (e.reason && e.reason.message) || '')) + '';
+          if (
+            msg.indexOf('_leaflet_pos') !== -1 ||
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('[vite]') !== -1 ||
+            msg.indexOf('Invalid LatLng object') !== -1
+          ) {
+            if (e.preventDefault) e.preventDefault();
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+            return true;
+          }
+        };
+        window.addEventListener('error', suppress, true);
+        window.addEventListener('unhandledrejection', suppress, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

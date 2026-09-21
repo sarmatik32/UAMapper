@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import JSZip from 'jszip';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -53,14 +53,15 @@ const TILE_LAYERS: TileLayerConfig[] = [
     isDark: false,
   },
   {
-    id: 'esri_topo',
-    nameEn: 'Esri World Topo Map',
-    nameUa: 'Esri Топографічна рельєфна',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    id: 'deepstatemap',
+    nameEn: 'DeepStateMap.live (Tactical)',
+    nameUa: 'DeepStateMap.live (Тактична карта)',
+    url: 'https://st1.deepstatemap.live/styles/DSUkraineUk/{z}/{x}/{y}{r}.webp',
     tms: false,
     subdomains: '',
+    minZoom: 2,
     maxZoom: 19,
-    attribution: '© Esri, HERE, Garmin, Intermap, USGS',
+    attribution: '© DeepStateMap.live, OpenStreetMap contributors',
     requiresKey: false,
     isDark: false,
   },
@@ -358,10 +359,17 @@ export default function App() {
     try {
       const saved = localStorage.getItem('visicom_custom_markers');
       const loaded = saved ? JSON.parse(saved) : DEFAULT_MARKERS;
-      return loaded.map((m: any) => ({
-        ...m,
-        endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
-      }));
+      return (Array.isArray(loaded) ? loaded : DEFAULT_MARKERS)
+        .filter((m: any) => m && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)))
+        .map((m: any) => ({
+          ...m,
+          lat: Number(m.lat),
+          lng: Number(m.lng),
+          rotation: isNaN(Number(m.rotation)) ? 0 : Number(m.rotation),
+          endLat: m.endLat !== undefined && !isNaN(Number(m.endLat)) ? Number(m.endLat) : undefined,
+          endLng: m.endLng !== undefined && !isNaN(Number(m.endLng)) ? Number(m.endLng) : undefined,
+          endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
+        }));
     } catch (e) {
       return DEFAULT_MARKERS;
     }
@@ -376,11 +384,16 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map((l: any) => ({
-            ...l,
-            startPointStyle: l.startPointStyle === 'arrow' || l.startPointStyle === 'explosion' || l.startPointStyle === 'custom_icon' ? l.startPointStyle : 'none',
-            endPointStyle: l.endPointStyle === 'arrow' || l.endPointStyle === 'explosion' || l.endPointStyle === 'custom_icon' ? l.endPointStyle : 'none',
-          }));
+          return parsed
+            .map((l: any) => ({
+              ...l,
+              points: (l.points || [])
+                .filter((pt: any) => Array.isArray(pt) && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])))
+                .map((pt: any) => [Number(pt[0]), Number(pt[1])]),
+              startPointStyle: l.startPointStyle === 'arrow' || l.startPointStyle === 'explosion' || l.startPointStyle === 'custom_icon' ? l.startPointStyle : 'none',
+              endPointStyle: l.endPointStyle === 'arrow' || l.endPointStyle === 'explosion' || l.endPointStyle === 'custom_icon' ? l.endPointStyle : 'none',
+            }))
+            .filter((l: any) => l.points.length >= 2);
         }
       }
       return [];
@@ -505,6 +518,10 @@ export default function App() {
       const dark = TILE_LAYERS.find((l) => l.id === 'carto_dark');
       if (dark) return dark;
     }
+    if (savedId === 'esri_topo') {
+      const deepstate = TILE_LAYERS.find((l) => l.id === 'deepstatemap');
+      if (deepstate) return deepstate;
+    }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
     return matched || TILE_LAYERS.find((l) => l.id === 'apple_maps') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
   });
@@ -573,6 +590,112 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
+  const [cityBoundaryConfig, setCityBoundaryConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_city_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#38bdf8',
+      weight: 2.0,
+      opacity: 0.95,
+      strokeStyle: 'dashed',
+    };
+  });
+
+  const handleUpdateCityBoundaryConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setCityBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_city_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [districtBoundaryConfig, setDistrictBoundaryConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_district_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#10b981',
+      weight: 2.2,
+      opacity: 0.95,
+      strokeStyle: 'solid',
+    };
+  });
+
+  const handleUpdateDistrictBoundaryConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setDistrictBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_district_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [hromadaBoundariesConfig, setHromadaBoundariesConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_hromada_boundaries_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#475569',
+      weight: 1.4,
+      opacity: 0.85,
+      strokeStyle: 'dashed',
+    };
+  });
+
+  const handleUpdateHromadaBoundariesConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setHromadaBoundariesConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_hromada_boundaries_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [showUkraineBoundary, setShowUkraineBoundary] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_ukraine_boundary');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [ukraineBoundaryConfig, setUkraineBoundaryConfig] = useState<UkraineBoundaryConfig>(() => {
+    const saved = localStorage.getItem('uamapper_ukraine_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#f59e0b',
+      weight: 2.8,
+      opacity: 0.95,
+      strokeStyle: 'solid',
+    };
+  });
+
+  const handleToggleUkraineBoundary = (val: boolean) => {
+    setShowUkraineBoundary(val);
+    localStorage.setItem('uamapper_show_ukraine_boundary', String(val));
+  };
+
+  const handleUpdateUkraineBoundaryConfig = (updates: Partial<UkraineBoundaryConfig>) => {
+    setUkraineBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_ukraine_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const [showHromadaBoundaries, setShowHromadaBoundaries] = useState<boolean>(() => {
     const saved = localStorage.getItem('uamapper_show_hromada_boundaries');
     return saved !== null ? saved === 'true' : true;
@@ -587,6 +710,79 @@ export default function App() {
     setShowQuickSettlements(val);
     localStorage.setItem('uamapper_show_quick_settlements', String(val));
   };
+
+  const [deepStateOccupiedConfig, setDeepStateOccupiedConfig] = useState<DeepStateOccupiedConfig>(() => {
+    const defaultCfg: DeepStateOccupiedConfig = {
+      enabled: false,
+      fillColor: '#b91c1c',
+      fillOpacity: 0.35,
+      fillPattern: 'solid',
+      patternDensity: 10,
+      patternStrokeWidth: 1.5,
+      patternBgOpacity: 0.1,
+      showStroke: true,
+      strokeColor: '#7f1d1d',
+      strokeWidth: 1.5,
+      strokeOpacity: 0.9,
+      strokeStyle: 'solid',
+      includeGrayZone: true,
+      grayZoneFillColor: '#6b7280',
+      grayZoneOpacity: 0.25,
+      grayZonePattern: 'diagonal-right',
+      grayZoneStrokeColor: '#4b5563',
+      grayZoneStrokeWidth: 1.2,
+      grayZoneStrokeStyle: 'dashed',
+    };
+    const saved = localStorage.getItem('uamapper_deepstate_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...defaultCfg, ...parsed };
+      } catch {}
+    }
+    return defaultCfg;
+  });
+
+  const [deepStateGeoJson, setDeepStateGeoJson] = useState<any>(null);
+  const [isLoadingDeepState, setIsLoadingDeepState] = useState<boolean>(false);
+  const [deepStateLastSync, setDeepStateLastSync] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('uamapper_deepstate_config', JSON.stringify(deepStateOccupiedConfig));
+    } catch {}
+  }, [deepStateOccupiedConfig]);
+
+  const handleUpdateDeepStateConfig = useCallback((updates: Partial<DeepStateOccupiedConfig>) => {
+    setDeepStateOccupiedConfig((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const handleToggleDeepStateOccupied = useCallback((enabled: boolean) => {
+    setDeepStateOccupiedConfig((prev) => ({ ...prev, enabled }));
+  }, []);
+
+  const fetchDeepStateData = useCallback(async () => {
+    setIsLoadingDeepState(true);
+    try {
+      const res = await fetch('/api/deepstatemap/occupied');
+      if (res.ok) {
+        const data = await res.json();
+        setDeepStateGeoJson(data);
+        const timeStr = data.datetime || (data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        setDeepStateLastSync(timeStr);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch DeepState data:', e);
+    } finally {
+      setIsLoadingDeepState(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (deepStateOccupiedConfig.enabled && !deepStateGeoJson && !isLoadingDeepState) {
+      fetchDeepStateData();
+    }
+  }, [deepStateOccupiedConfig.enabled, deepStateGeoJson, isLoadingDeepState, fetchDeepStateData]);
 
   const [mapFont, setMapFont] = useState<MapFontFamily>(() => {
     const saved = localStorage.getItem('uamapper_map_font');
@@ -1187,6 +1383,10 @@ export default function App() {
   }, [showDistrictBoundary]);
 
   useEffect(() => {
+    localStorage.setItem('uamapper_show_ukraine_boundary', String(showUkraineBoundary));
+  }, [showUkraineBoundary]);
+
+  useEffect(() => {
     localStorage.setItem('uamapper_show_hromada_boundaries', String(showHromadaBoundaries));
   }, [showHromadaBoundaries]);
 
@@ -1199,8 +1399,13 @@ export default function App() {
   const handleSelectMarker = (id: string | null) => {
     setSelectedMarkerId(id);
     
-    // When a marker is selected, sync its style choices as active styles so they stay "active" per user intent!
+    // When a marker is selected, sync its style choices as active styles and activate marker draw mode so they stay active per user intent!
     if (id) {
+      setSelectedLineId(null);
+      setInteractionMode('draw');
+      if (!isSidebarOpen && window.innerWidth >= 768) {
+        setIsSidebarOpen(true);
+      }
       const selectedMarker = markers.find((m) => m.id === id);
       if (selectedMarker) {
         setActiveStyle({
@@ -1219,6 +1424,33 @@ export default function App() {
           zoneRadiusKm: selectedMarker.zoneRadiusKm !== undefined ? selectedMarker.zoneRadiusKm : (selectedMarker.zoneSize && selectedMarker.zoneSize <= 200 ? selectedMarker.zoneSize : 5),
           zoneSize: selectedMarker.zoneSize || 5,
         });
+      }
+    }
+  };
+
+  // Handler: Select a drawn line (auto-activates line mode and syncs active line properties)
+  const handleSelectLine = (id: string | null) => {
+    setSelectedLineId(id);
+    if (id) {
+      setSelectedMarkerId(null);
+      setInteractionMode('line');
+      if (!isSidebarOpen && window.innerWidth >= 768) {
+        setIsSidebarOpen(true);
+      }
+      const foundLine = drawnLines.find((l) => l.id === id);
+      if (foundLine) {
+        setLineColor(foundLine.color);
+        setLineWeight(foundLine.weight);
+        setLineSmoothed(!!foundLine.smoothed);
+        if (foundLine.dashStyle) setLineDashStyle(foundLine.dashStyle);
+        if (foundLine.startPointStyle) setLineStartStyle(foundLine.startPointStyle);
+        if (foundLine.startCustomIconUrl) setLineStartCustomIcon(foundLine.startCustomIconUrl);
+        if (foundLine.startIconRotation !== undefined) setLineStartIconRotation(foundLine.startIconRotation);
+        if (foundLine.startIconSize !== undefined) setLineStartIconSize(foundLine.startIconSize);
+        if (foundLine.endPointStyle) setLineEndStyle(foundLine.endPointStyle);
+        if (foundLine.endCustomIconUrl) setLineEndCustomIcon(foundLine.endCustomIconUrl);
+        if (foundLine.endIconRotation !== undefined) setLineEndIconRotation(foundLine.endIconRotation);
+        if (foundLine.endIconSize !== undefined) setLineEndIconSize(foundLine.endIconSize);
       }
     }
   };
@@ -1396,8 +1628,13 @@ export default function App() {
           blurMapOnExport,
           mapFont,
           showCityBoundary,
+          cityBoundaryConfig,
           showDistrictBoundary,
+          districtBoundaryConfig,
+          showUkraineBoundary,
+          ukraineBoundaryConfig,
           showHromadaBoundaries,
+          hromadaBoundariesConfig,
           showQuickSettlements,
           showSettlementLabels,
           settlementLabelMode,
@@ -1690,13 +1927,33 @@ export default function App() {
           setShowCityBoundary(settings.showCityBoundary);
           localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
         }
+        if (settings.cityBoundaryConfig) {
+          setCityBoundaryConfig(settings.cityBoundaryConfig);
+          localStorage.setItem('uamapper_city_boundary_config', JSON.stringify(settings.cityBoundaryConfig));
+        }
         if (settings.showDistrictBoundary !== undefined) {
           setShowDistrictBoundary(settings.showDistrictBoundary);
           localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
         }
+        if (settings.districtBoundaryConfig) {
+          setDistrictBoundaryConfig(settings.districtBoundaryConfig);
+          localStorage.setItem('uamapper_district_boundary_config', JSON.stringify(settings.districtBoundaryConfig));
+        }
+        if (settings.showUkraineBoundary !== undefined) {
+          setShowUkraineBoundary(settings.showUkraineBoundary);
+          localStorage.setItem('uamapper_show_ukraine_boundary', String(settings.showUkraineBoundary));
+        }
+        if (settings.ukraineBoundaryConfig) {
+          setUkraineBoundaryConfig(settings.ukraineBoundaryConfig);
+          localStorage.setItem('uamapper_ukraine_boundary_config', JSON.stringify(settings.ukraineBoundaryConfig));
+        }
         if (settings.showHromadaBoundaries !== undefined) {
           setShowHromadaBoundaries(settings.showHromadaBoundaries);
           localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
+        }
+        if (settings.hromadaBoundariesConfig) {
+          setHromadaBoundariesConfig(settings.hromadaBoundariesConfig);
+          localStorage.setItem('uamapper_hromada_boundaries_config', JSON.stringify(settings.hromadaBoundariesConfig));
         }
         if (settings.showQuickSettlements !== undefined) {
           setShowQuickSettlements(settings.showQuickSettlements);
@@ -1865,11 +2122,21 @@ export default function App() {
             blurMapOnExport={blurMapOnExport}
             mapFont={mapFont}
             showCityBoundary={showCityBoundary}
+            cityBoundaryConfig={cityBoundaryConfig}
             showDistrictBoundary={showDistrictBoundary}
+            districtBoundaryConfig={districtBoundaryConfig}
+            showUkraineBoundary={showUkraineBoundary}
+            ukraineBoundaryConfig={ukraineBoundaryConfig}
+            onToggleUkraineBoundary={handleToggleUkraineBoundary}
             showHromadaBoundaries={showHromadaBoundaries}
+            hromadaBoundariesConfig={hromadaBoundariesConfig}
             onToggleHromadaBoundaries={setShowHromadaBoundaries}
             showQuickSettlements={showQuickSettlements}
             onToggleQuickSettlements={handleUpdateShowQuickSettlements}
+            deepStateOccupiedConfig={deepStateOccupiedConfig}
+            onToggleDeepStateOccupied={handleToggleDeepStateOccupied}
+            deepStateGeoJson={deepStateGeoJson}
+            isLoadingDeepState={isLoadingDeepState}
             showSettlementLabels={showSettlementLabels}
             settlementLabelMode={settlementLabelMode}
             disabledSettlementCategories={disabledSettlementCategories}
@@ -1881,7 +2148,7 @@ export default function App() {
             onDeleteCustomSettlement={handleDeleteCustomSettlement}
             drawnLines={drawnLines}
             selectedLineId={selectedLineId}
-            onSelectLine={setSelectedLineId}
+            onSelectLine={handleSelectLine}
             onAddDrawnLine={handleAddDrawnLine}
             onUpdateDrawnLine={handleUpdateDrawnLine}
             onDeleteDrawnLine={handleDeleteDrawnLine}
@@ -2350,12 +2617,27 @@ export default function App() {
               onUpdateMapFont={handleUpdateMapFont}
               showCityBoundary={showCityBoundary}
               onUpdateShowCityBoundary={setShowCityBoundary}
+              cityBoundaryConfig={cityBoundaryConfig}
+              onUpdateCityBoundaryConfig={handleUpdateCityBoundaryConfig}
               showDistrictBoundary={showDistrictBoundary}
               onUpdateShowDistrictBoundary={setShowDistrictBoundary}
+              districtBoundaryConfig={districtBoundaryConfig}
+              onUpdateDistrictBoundaryConfig={handleUpdateDistrictBoundaryConfig}
+              showUkraineBoundary={showUkraineBoundary}
+              onUpdateShowUkraineBoundary={handleToggleUkraineBoundary}
+              ukraineBoundaryConfig={ukraineBoundaryConfig}
+              onUpdateUkraineBoundaryConfig={handleUpdateUkraineBoundaryConfig}
               showHromadaBoundaries={showHromadaBoundaries}
               onUpdateShowHromadaBoundaries={setShowHromadaBoundaries}
+              hromadaBoundariesConfig={hromadaBoundariesConfig}
+              onUpdateHromadaBoundariesConfig={handleUpdateHromadaBoundariesConfig}
               showQuickSettlements={showQuickSettlements}
               onToggleQuickSettlements={handleUpdateShowQuickSettlements}
+              deepStateOccupiedConfig={deepStateOccupiedConfig}
+              onUpdateDeepStateOccupiedConfig={handleUpdateDeepStateConfig}
+              isLoadingDeepState={isLoadingDeepState}
+              deepStateLastSync={deepStateLastSync}
+              onRefreshDeepState={fetchDeepStateData}
               showSettlementLabels={showSettlementLabels}
               onUpdateShowSettlementLabels={handleToggleSettlementLabels}
               autoHighlightZone={autoHighlightZone}
@@ -2379,7 +2661,7 @@ export default function App() {
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
               drawnLines={drawnLines}
               selectedLineId={selectedLineId}
-              onSelectLine={setSelectedLineId}
+              onSelectLine={handleSelectLine}
               onUpdateLine={handleUpdateDrawnLine}
               onDeleteLine={handleDeleteDrawnLine}
               onClearDrawnLines={handleClearDrawnLines}
