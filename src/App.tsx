@@ -743,9 +743,26 @@ export default function App() {
     return defaultCfg;
   });
 
-  const [deepStateGeoJson, setDeepStateGeoJson] = useState<any>(null);
+  const [deepStateGeoJson, setDeepStateGeoJson] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('uamapper_deepstate_geojson_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.features?.length) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
   const [isLoadingDeepState, setIsLoadingDeepState] = useState<boolean>(false);
-  const [deepStateLastSync, setDeepStateLastSync] = useState<string | null>(null);
+  const [deepStateLastSync, setDeepStateLastSync] = useState<string | null>(() => {
+    try {
+      const cachedTime = localStorage.getItem('uamapper_deepstate_last_sync');
+      if (cachedTime) return cachedTime;
+    } catch {}
+    return null;
+  });
 
   useEffect(() => {
     try {
@@ -761,21 +778,125 @@ export default function App() {
     setDeepStateOccupiedConfig((prev) => ({ ...prev, enabled }));
   }, []);
 
-  const fetchDeepStateData = useCallback(async () => {
+  const fetchDeepStateData = useCallback(async (isUserTriggered = false) => {
     setIsLoadingDeepState(true);
+    let loadedData: any = null;
+
+    const isValidGeoJson = (d: any) => Boolean(d && Array.isArray(d.features) && d.features.length > 0);
+
+    // Tier 1: Fetch from /api/deepstatemap/occupied
     try {
-      const res = await fetch('/api/deepstatemap/occupied');
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7500);
+      const res = await fetch('/api/deepstatemap/occupied', {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
-        const data = await res.json();
-        setDeepStateGeoJson(data);
-        const timeStr = data.datetime || (data.updatedAt ? new Date(data.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        setDeepStateLastSync(timeStr);
+        const text = await res.text();
+        if (text && (text.trim().startsWith('{') || text.trim().startsWith('['))) {
+          const parsed = JSON.parse(text);
+          if (isValidGeoJson(parsed)) {
+            loadedData = parsed;
+          }
+        }
       }
     } catch (e) {
-      console.warn('Failed to fetch DeepState data:', e);
-    } finally {
-      setIsLoadingDeepState(false);
+      console.warn('Primary DeepState API endpoint unreachable or timed out. Falling back to static data...', e);
     }
+
+    // Tier 2: Resilient static fallback snapshot (works on all devices, offline/poor connection)
+    if (!loadedData) {
+      try {
+        const fbRes = await fetch('/data/deepstatemap_occupied_fallback.json');
+        if (fbRes.ok) {
+          const fbData = await fbRes.json();
+          if (isValidGeoJson(fbData)) {
+            loadedData = fbData;
+            console.info('Loaded DeepState occupied territories from local static snapshot fallback.');
+          }
+        }
+      } catch (fbErr) {
+        console.warn('Local static fallback fetch failed:', fbErr);
+      }
+    }
+
+    // Tier 3: Direct upstream DeepState API if client has direct internet access
+    if (!loadedData && typeof window !== 'undefined') {
+      try {
+        const pubRes = await fetch('https://deepstatemap.live/api/history/public', {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (pubRes.ok) {
+          const historyList = (await pubRes.json()) as any[];
+          const last = historyList[historyList.length - 1];
+          if (last?.id) {
+            const geoRes = await fetch(`https://deepstatemap.live/api/history/${last.id}/geojson`, {
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (geoRes.ok) {
+              const rawGeo = await geoRes.json();
+              if (isValidGeoJson(rawGeo)) {
+                const foreignKeywords = [
+                  'петсамо', 'салла', 'естоні', 'латві', 'курильськ', 'пруссія',
+                  'карелі', 'ічкерія', 'абхазі', 'цхінваль', 'придністров', 'саатсе', 'печорськ'
+                ];
+                const filtered = rawGeo.features.filter((f: any) => {
+                  if (!f.geometry || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon')) return false;
+                  const n = (f.properties?.name || '').toLowerCase();
+                  if (foreignKeywords.some((kw) => n.includes(kw))) return false;
+                  const isOcc = n.includes('окупован') || n.includes('ордло') || n.includes('крим') || f.properties?.fill === '#a52714';
+                  const isG = n.includes('невідомий') || f.properties?.fill === '#bdbdbd';
+                  return isOcc || isG;
+                }).map((f: any) => {
+                  const n = (f.properties?.name || '').toLowerCase();
+                  const isGray = n.includes('невідомий') || f.properties?.fill === '#bdbdbd';
+                  const rawName = f.properties?.name || '';
+                  const parts = rawName.split('///');
+                  return {
+                    type: 'Feature',
+                    properties: {
+                      name: parts[0]?.trim() || (isGray ? 'Сіра зона' : 'Окупована територія'),
+                      nameEn: parts[1]?.trim() || (isGray ? 'Gray zone' : 'Occupied territory'),
+                      zoneType: isGray ? 'gray' : 'occupied',
+                      originalFill: f.properties?.fill || (isGray ? '#bdbdbd' : '#a52714'),
+                      originalStroke: f.properties?.stroke || (isGray ? '#757575' : '#7f1d1d'),
+                    },
+                    geometry: f.geometry,
+                  };
+                });
+                loadedData = {
+                  type: 'FeatureCollection',
+                  updatedAt: last.updatedAt || new Date().toISOString(),
+                  datetime: last.datetime || '',
+                  features: filtered,
+                };
+              }
+            }
+          }
+        }
+      } catch (directErr) {
+        console.warn('Direct DeepState upstream fetch failed:', directErr);
+      }
+    }
+
+    if (loadedData) {
+      setDeepStateGeoJson(loadedData);
+      const timeStr = loadedData.datetime || (loadedData.updatedAt ? new Date(loadedData.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      setDeepStateLastSync(timeStr);
+      try {
+        safeSetItem('uamapper_deepstate_geojson_cache', JSON.stringify(loadedData));
+        safeSetItem('uamapper_deepstate_last_sync', timeStr);
+      } catch {}
+    } else if (isUserTriggered) {
+      console.warn('Could not refresh DeepState data at this moment; keeping existing snapshot.');
+    }
+
+    setIsLoadingDeepState(false);
   }, []);
 
   useEffect(() => {

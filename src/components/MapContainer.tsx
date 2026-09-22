@@ -300,6 +300,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const ukraineBoundaryGeojsonRef = useRef<any | null>(null);
   const hromadasLayerGroupRef = useRef<L.LayerGroup | null>(null);
   const deepStateOccupiedLayerRef = useRef<L.GeoJSON | null>(null);
+  const deepStateRendererRef = useRef<L.SVG | null>(null);
   
   // Measurement Tool State & Refs (Multi-Track & Multi-City Support)
   const [measureTracks, setMeasureTracks] = useState<MeasureTrack[]>([
@@ -1975,42 +1976,52 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const originalEvent = e.originalEvent;
         let target = originalEvent?.target as HTMLElement;
         let clickedInteractive = false;
+        const isDeepStatePolygon = Boolean(
+          target?.classList?.contains('deepstate-tactical-polygon') ||
+          target?.closest?.('.deepstate-tactical-polygon') ||
+          target?.closest?.('.leaflet-deepStatePane-pane')
+        );
 
-        if (
-          target?.classList?.contains('leaflet-marker-icon') ||
-          target?.classList?.contains('measure-node-icon') ||
-          target?.classList?.contains('measure-badge-icon') ||
-          target?.classList?.contains('drawn-polyline-interactive') ||
-          target?.classList?.contains('leaflet-interactive') ||
-          Boolean(target?.closest?.('.leaflet-marker-icon')) ||
-          Boolean(target?.closest?.('.custom-marker-wrapper')) ||
-          Boolean(target?.closest?.('.user-marker-container')) ||
-          Boolean(target?.closest?.('.line-vertex-edit-handle')) ||
-          Boolean(target?.closest?.('.custom-end-handle')) ||
-          Boolean(target?.closest?.('.custom-end-explosion')) ||
-          Boolean(target?.closest?.('.drawn-polyline-interactive')) ||
-          Boolean(target?.closest?.('path.leaflet-interactive')) ||
-          Boolean(target?.closest?.('.leaflet-popup')) ||
-          Boolean(target?.closest?.('.leaflet-popup-content')) ||
-          Boolean(target?.closest?.('.measure-node-icon')) ||
-          Boolean(target?.closest?.('.measure-badge-icon')) ||
-          Boolean(target?.closest?.('.measure-point-popup'))
-        ) {
-          clickedInteractive = true;
-        } else {
-          let curr: HTMLElement | null = target;
-          while (curr && curr !== mapContainerRef.current) {
-            if (
-              curr.classList?.contains('leaflet-marker-icon') ||
-              curr.classList?.contains('measure-node-icon') ||
-              curr.classList?.contains('measure-badge-icon') ||
-              curr.classList?.contains('drawn-polyline-interactive') ||
-              curr.classList?.contains('leaflet-interactive')
-            ) {
-              clickedInteractive = true;
-              break;
+        if (!isDeepStatePolygon) {
+          if (
+            target?.classList?.contains('leaflet-marker-icon') ||
+            target?.classList?.contains('measure-node-icon') ||
+            target?.classList?.contains('measure-badge-icon') ||
+            target?.classList?.contains('drawn-polyline-interactive') ||
+            target?.classList?.contains('leaflet-interactive') ||
+            Boolean(target?.closest?.('.leaflet-marker-icon')) ||
+            Boolean(target?.closest?.('.custom-marker-wrapper')) ||
+            Boolean(target?.closest?.('.user-marker-container')) ||
+            Boolean(target?.closest?.('.line-vertex-edit-handle')) ||
+            Boolean(target?.closest?.('.custom-end-handle')) ||
+            Boolean(target?.closest?.('.custom-end-explosion')) ||
+            Boolean(target?.closest?.('.drawn-polyline-interactive')) ||
+            Boolean(target?.closest?.('path.leaflet-interactive:not(.deepstate-tactical-polygon)')) ||
+            Boolean(target?.closest?.('.leaflet-popup')) ||
+            Boolean(target?.closest?.('.leaflet-popup-content')) ||
+            Boolean(target?.closest?.('.measure-node-icon')) ||
+            Boolean(target?.closest?.('.measure-badge-icon')) ||
+            Boolean(target?.closest?.('.measure-point-popup'))
+          ) {
+            clickedInteractive = true;
+          } else {
+            let curr: HTMLElement | null = target;
+            while (curr && curr !== mapContainerRef.current) {
+              if (curr.classList?.contains('deepstate-tactical-polygon')) {
+                break;
+              }
+              if (
+                curr.classList?.contains('leaflet-marker-icon') ||
+                curr.classList?.contains('measure-node-icon') ||
+                curr.classList?.contains('measure-badge-icon') ||
+                curr.classList?.contains('drawn-polyline-interactive') ||
+                curr.classList?.contains('leaflet-interactive')
+              ) {
+                clickedInteractive = true;
+                break;
+              }
+              curr = curr.parentElement;
             }
-            curr = curr.parentElement;
           }
         }
 
@@ -2518,7 +2529,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       return;
     }
 
-    // Helper to generate SVG patterns for Leaflet SVG renderer
+    // Ensure pane exists with non-blocking pointer events
+    if (!map.getPane('deepStatePane')) {
+      const p = map.createPane('deepStatePane');
+      p.style.zIndex = '310';
+    }
+
+    // Helper to generate SVG patterns for Leaflet SVG renderer (valid across WebKit, Safari iOS, Chrome, Firefox)
     const generateSvgPatternsHtml = (config: DeepStateOccupiedConfig) => {
       const occPattern = config.fillPattern || 'solid';
       const occColor = config.fillColor || '#b91c1c';
@@ -2546,23 +2563,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const bg = bgOpacity > 0 ? `<rect width="${s}" height="${s}" fill="${color}" fill-opacity="${bgOpacity}" />` : '';
 
         if (type === 'diagonal-right') {
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(45 0 0)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
         }
         if (type === 'diagonal-left') {
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(-45 0 0)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
         }
         if (type === 'cross-hatch') {
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /><line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /><line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
         }
         if (type === 'dots') {
           const r = Math.max(1, sw * 0.9);
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<circle cx="${s / 2}" cy="${s / 2}" r="${r}" fill="${color}" fill-opacity="${opacity}" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<circle cx="${s / 2}" cy="${s / 2}" r="${r}" fill="${color}" fill-opacity="${opacity}" /></pattern>`;
         }
         if (type === 'horizontal') {
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
         }
         if (type === 'vertical') {
-          return `<pattern id="${id}" width="${s}" height="${s}" patternUnits="userSpaceOnUse">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
         }
         return '';
       };
@@ -2573,8 +2590,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       ].filter(Boolean).join('\n');
     };
 
+    // Dedicated SVG renderer ensures all paths are in deepStatePane and share a local SVG container
+    let dsRenderer = deepStateRendererRef.current;
+    if (!dsRenderer) {
+      dsRenderer = L.svg({ pane: 'deepStatePane', padding: 0.5 });
+      deepStateRendererRef.current = dsRenderer;
+    }
+
     const syncDefsToDom = (patternsHtml: string) => {
-      // 1. In global document SVG
+      // 1. Global document SVG defs container
       let globalSvg = document.getElementById('ds-svg-defs-global') as unknown as SVGSVGElement | null;
       if (!globalSvg) {
         globalSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -2584,26 +2608,59 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
       globalSvg.innerHTML = `<defs>${patternsHtml}</defs>`;
 
-      // 2. Directly inside Leaflet pane's SVG (ensures local scoped resolution across all browsers)
+      // 2. Leaflet Pane's SVG container(s) - crucial for WebKit / Safari iOS / iPadOS
       const pane = map.getPane('deepStatePane');
-      const paneSvg = pane?.querySelector('svg');
-      if (paneSvg) {
-        let paneDefs = paneSvg.querySelector('defs#ds-pane-defs');
+      const allSvgs = [
+        pane?.querySelector('svg'),
+        (dsRenderer as any)?._container,
+        map.getContainer()?.querySelector('.leaflet-deepStatePane-pane svg'),
+        map.getContainer()?.querySelector('.leaflet-overlay-pane svg'),
+      ].filter((el): el is SVGSVGElement => Boolean(el));
+
+      const uniqueSvgs = Array.from(new Set(allSvgs));
+
+      uniqueSvgs.forEach((svgEl) => {
+        let paneDefs = svgEl.querySelector('defs#ds-pane-defs') as SVGDefsElement | null;
         if (!paneDefs) {
           paneDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
           paneDefs.id = 'ds-pane-defs';
-          paneSvg.insertBefore(paneDefs, paneSvg.firstChild);
+          svgEl.insertBefore(paneDefs, svgEl.firstChild);
         }
-        paneDefs.innerHTML = patternsHtml;
-      }
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(
+            `<svg xmlns="http://www.w3.org/2000/svg"><defs>${patternsHtml}</defs></svg>`,
+            'image/svg+xml'
+          );
+          const parsedDefs = doc.querySelector('defs');
+          if (parsedDefs) {
+            paneDefs.innerHTML = '';
+            Array.from(parsedDefs.children).forEach((child) => {
+              paneDefs?.appendChild(document.importNode(child, true));
+            });
+          } else {
+            paneDefs.innerHTML = patternsHtml;
+          }
+        } catch {
+          paneDefs.innerHTML = patternsHtml;
+        }
+      });
     };
 
     const patternsHtml = generateSvgPatternsHtml(deepStateOccupiedConfig);
-    syncDefsToDom(patternsHtml);
+
+    // Detect touch / mobile devices for non-blocking gestures
+    const isTouchDevice = typeof window !== 'undefined' && 
+      (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || Boolean((navigator as any).msMaxTouchPoints));
+    
+    // On touch devices or when in drawing/measurement modes, always use interactive: false
+    // On desktop mouse when in pan mode, allow hover tooltips without blocking clicks
+    const isInteractive = !isTouchDevice && interactionMode === 'pan';
 
     try {
       const geoLayer = L.geoJSON(deepStateGeoJson, {
         pane: 'deepStatePane',
+        interactive: isInteractive,
         filter: (feature: any) => {
           if (feature?.properties?.zoneType === 'gray') {
             return Boolean(deepStateOccupiedConfig.includeGrayZone);
@@ -2625,6 +2682,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             else if (style === 'dash-dot') dash = '7, 3, 2, 3';
 
             return {
+              renderer: dsRenderer,
+              className: 'deepstate-tactical-polygon',
               fillColor: isPat ? 'url(#ds-pattern-gray)' : (deepStateOccupiedConfig.grayZoneFillColor || '#6b7280'),
               fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.grayZoneOpacity ?? 0.25),
               color: strokeColor,
@@ -2633,6 +2692,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               dashArray: dash,
               lineCap: 'round',
               lineJoin: 'round',
+              interactive: isInteractive,
             } as L.PathOptions;
           }
 
@@ -2655,6 +2715,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
 
           return {
+            renderer: dsRenderer,
+            className: 'deepstate-tactical-polygon',
             fillColor: isPat ? 'url(#ds-pattern-occ)' : (deepStateOccupiedConfig.fillColor || '#b91c1c'),
             fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.fillOpacity ?? 0.35),
             color: strokeColor,
@@ -2663,9 +2725,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             dashArray: dash,
             lineCap: 'round',
             lineJoin: 'round',
+            interactive: isInteractive,
           } as L.PathOptions;
         },
         onEachFeature: (feature: any, layer: any) => {
+          if (!isInteractive) return;
+
           const isGray = feature?.properties?.zoneType === 'gray';
           const name = language === 'en' ? (feature?.properties?.nameEn || feature?.properties?.name) : feature?.properties?.name;
           const statusLabel = isGray
@@ -2695,7 +2760,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       console.warn('Error rendering DeepState occupied GeoJSON layer:', err);
     }
 
+    const onMapChange = () => {
+      syncDefsToDom(patternsHtml);
+    };
+    map.on('zoomend moveend viewreset', onMapChange);
+
     return () => {
+      map.off('zoomend moveend viewreset', onMapChange);
       if (deepStateOccupiedLayerRef.current && mapInstanceRef.current) {
         mapInstanceRef.current.removeLayer(deepStateOccupiedLayerRef.current);
         deepStateOccupiedLayerRef.current = null;
@@ -2706,6 +2777,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     deepStateOccupiedConfig,
     deepStateGeoJson,
     language,
+    interactionMode,
   ]);
 
   // Synchronize Measurement Tool Graphics on Map (Multi-Track & Multi-City Support)

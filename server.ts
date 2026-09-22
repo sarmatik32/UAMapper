@@ -399,6 +399,8 @@ async function startServer() {
   const DEEPSTATE_CACHE_TTL_MS = 20 * 60 * 1000; // 20 minutes
 
   app.get("/api/deepstatemap/occupied", async (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=300");
     const now = Date.now();
     if (cachedDeepState && now - cachedDeepState.timestamp < DEEPSTATE_CACHE_TTL_MS) {
       return res.json({
@@ -411,7 +413,7 @@ async function startServer() {
     try {
       // 1. Fetch latest history record from deepstatemap.live
       const pubRes = await fetch("https://deepstatemap.live/api/history/public", {
-        headers: { "User-Agent": "Mozilla/5.0 UAMapper/1.0" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; UAMapper/1.0)" },
         signal: AbortSignal.timeout(8000),
       });
       if (!pubRes.ok) throw new Error(`History API responded with ${pubRes.status}`);
@@ -421,7 +423,7 @@ async function startServer() {
 
       // 2. Fetch GeoJSON for that history snapshot
       const geoRes = await fetch(`https://deepstatemap.live/api/history/${last.id}/geojson`, {
-        headers: { "User-Agent": "Mozilla/5.0 UAMapper/1.0" },
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; UAMapper/1.0)" },
         signal: AbortSignal.timeout(10000),
       });
       if (!geoRes.ok) throw new Error(`GeoJSON API responded with ${geoRes.status}`);
@@ -429,7 +431,7 @@ async function startServer() {
 
       const foreignKeywords = [
         'петсамо', 'салла', 'естоні', 'латві', 'курильськ', 'пруссія',
-        'карелі', 'ічкерія', 'абхазі', 'цхінваль', 'придністров'
+        'карелі', 'ічкерія', 'абхазі', 'цхінваль', 'придністров', 'саатсе', 'печорськ'
       ];
 
       const filteredFeatures = (rawGeo.features || []).filter((f: any) => {

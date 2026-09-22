@@ -247,3 +247,25 @@ html, body {
 .leaflet-tooltip.air-alert-tooltip::before {
   border-top-color: rgba(15, 23, 42, 0.94) !important;
 }
+
+/* DeepState Occupied Territories and Gray Zones styling for all devices */
+.deepstate-tactical-polygon {
+  shape-rendering: geometricPrecision;
+  vector-effect: non-scaling-stroke;
+  will-change: transform;
+}
+
+.leaflet-tooltip.deepstate-tactical-tooltip {
+  pointer-events: none !important;
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  border-radius: 8px !important;
+  padding: 6px 10px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  color: #f8fafc !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+.leaflet-tooltip.deepstate-tactical-tooltip::before {
+  border-top-color: rgba(15, 23, 42, 0.94) !important;
+}
