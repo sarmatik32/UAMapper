@@ -526,7 +526,7 @@ export default function App() {
       if (deepstate) return deepstate;
     }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
-    return matched || TILE_LAYERS.find((l) => l.id === 'apple_maps') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
+    return matched || TILE_LAYERS.find((l) => l.id === 'deepstatemap') || TILE_LAYERS[0];
   });
 
   const [watermarkType, setWatermarkType] = useState<WatermarkType>(() => {
@@ -716,7 +716,7 @@ export default function App() {
 
   const [deepStateOccupiedConfig, setDeepStateOccupiedConfig] = useState<DeepStateOccupiedConfig>(() => {
     const defaultCfg: DeepStateOccupiedConfig = {
-      enabled: false,
+      enabled: true,
       fillColor: '#b91c1c',
       fillOpacity: 0.35,
       fillPattern: 'solid',
@@ -1161,7 +1161,7 @@ export default function App() {
   });
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('visicom_theme') as 'dark' | 'light') || 'dark';
+    return (localStorage.getItem('visicom_theme') as 'dark' | 'light') || 'light';
   });
 
   const [showAlert, setShowAlert] = useState<boolean>(true);
@@ -1221,7 +1221,8 @@ export default function App() {
 
   // --- Real-Time Live Threats & Messages (neptun.in.ua) State ---
   const [isLiveMode, setIsLiveMode] = useState<boolean>(() => {
-    return localStorage.getItem('uamapper_live_mode') === 'true';
+    const saved = localStorage.getItem('uamapper_live_mode');
+    return saved !== null ? saved === 'true' : true;
   });
   const [liveThreats, setLiveThreats] = useState<NeptunThreat[]>([]);
   const [liveMessages, setLiveMessages] = useState<NeptunMessage[]>([]);

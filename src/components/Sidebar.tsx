@@ -236,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   interactionMode = 'draw',
   onSetInteractionMode = (_mode) => {},
   onUndo = () => {},
-  theme = 'dark',
+  theme = 'light',
   onToggleTheme = () => {},
   onExportPNG = () => {},
   onExportTelegram = () => {},

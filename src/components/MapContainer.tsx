@@ -217,7 +217,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onSelectInteractionMode,
   autoHighlightZone = false,
   onToggleAutoHighlightZone,
-  theme = 'dark',
+  theme = 'light',
   onUpdateMarker,
   watermarkType = 'text',
   watermarkText = 'UA Mapper',
