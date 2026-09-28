@@ -147,75 +147,8 @@ const TILE_LAYERS: TileLayerConfig[] = [
   },
 ];
 
-// Default Ukraine Air Threat Tactical Markers in Kryvyi Rih region
-const DEFAULT_MARKERS: CustomMarker[] = [
-  {
-    id: 'threat_krr_center',
-    lat: 47.90,
-    lng: 33.34,
-    title: 'Кривий Ріг (Центр)',
-    description: 'Розвідувальний БпЛА здійснює збір даних',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 220,
-    iconType: 'uav-recon',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.83,
-    endLng: 33.22,
-  },
-  {
-    id: 'threat_krr_saksahan',
-    lat: 47.95,
-    lng: 33.41,
-    title: 'Саксаганський р-н',
-    description: 'Керована авіаційна бомба в напрямку міста',
-    color: '#f97316',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 200,
-    iconType: 'bomb-air',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.91,
-    endLng: 33.39,
-  },
-  {
-    id: 'threat_krr_radushna',
-    lat: 47.82,
-    lng: 33.51,
-    title: 'Радушна',
-    description: 'Ударний БпЛА типу "Шахед" вздовж траси',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 215,
-    iconType: 'uav-kamikaze',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.75,
-    endLng: 33.42,
-  },
-  {
-    id: 'threat_krr_pokrovsky',
-    lat: 48.06,
-    lng: 33.46,
-    title: 'Покровський р-н',
-    description: 'Швидкісна ракета повз район',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 32,
-    rotation: 180,
-    iconType: 'missile-cruise',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-  },
-];
+// Default markers (empty on first launch)
+const DEFAULT_MARKERS: CustomMarker[] = [];
 
 export function getDefaultIconName(iconType: string, language: Language): string {
   const found = ICON_TYPES.find((t) => t.id === iconType);
@@ -361,20 +294,32 @@ export default function App() {
   const [markers, setMarkers] = useState<CustomMarker[]>(() => {
     try {
       const saved = localStorage.getItem('visicom_custom_markers');
-      const loaded = saved ? JSON.parse(saved) : DEFAULT_MARKERS;
-      return (Array.isArray(loaded) ? loaded : DEFAULT_MARKERS)
-        .filter((m: any) => m && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)))
-        .map((m: any) => ({
-          ...m,
-          lat: Number(m.lat),
-          lng: Number(m.lng),
-          rotation: isNaN(Number(m.rotation)) ? 0 : Number(m.rotation),
-          endLat: m.endLat !== undefined && !isNaN(Number(m.endLat)) ? Number(m.endLat) : undefined,
-          endLng: m.endLng !== undefined && !isNaN(Number(m.endLng)) ? Number(m.endLng) : undefined,
-          endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
-        }));
+      if (saved) {
+        const loaded = JSON.parse(saved);
+        if (Array.isArray(loaded)) {
+          // If the saved markers are the old demo markers (threat_krr_*), clear them out
+          const isOldDefaultMarkers = loaded.length > 0 && 
+            loaded.every((m: any) => m?.id && typeof m.id === 'string' && m.id.startsWith('threat_krr_'));
+          if (isOldDefaultMarkers) {
+            localStorage.setItem('visicom_custom_markers', JSON.stringify([]));
+            return [];
+          }
+          return loaded
+            .filter((m: any) => m && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)))
+            .map((m: any) => ({
+              ...m,
+              lat: Number(m.lat),
+              lng: Number(m.lng),
+              rotation: isNaN(Number(m.rotation)) ? 0 : Number(m.rotation),
+              endLat: m.endLat !== undefined && !isNaN(Number(m.endLat)) ? Number(m.endLat) : undefined,
+              endLng: m.endLng !== undefined && !isNaN(Number(m.endLng)) ? Number(m.endLng) : undefined,
+              endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
+            }));
+        }
+      }
+      return [];
     } catch (e) {
-      return DEFAULT_MARKERS;
+      return [];
     }
   });
 
