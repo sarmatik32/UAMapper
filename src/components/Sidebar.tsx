@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
@@ -201,6 +201,18 @@ interface SidebarProps {
   onChangeAlertsStrokeWidth?: (width: number) => void;
   onRefreshAlerts?: () => void;
   isLoadingAlerts?: boolean;
+
+  // Live Mode (Neptun) Props
+  isLiveMode?: boolean;
+  onToggleLiveMode?: () => void;
+  liveThreats?: NeptunThreat[];
+  isLoadingLive?: boolean;
+  onRefreshLive?: () => void;
+  showLiveTrails?: boolean;
+  onToggleShowLiveTrails?: () => void;
+  showLiveMessagesFeed?: boolean;
+  onToggleShowLiveMessagesFeed?: () => void;
+  liveMessagesCount?: number;
 }
 
 
@@ -320,6 +332,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeAlertsStrokeWidth,
   onRefreshAlerts,
   isLoadingAlerts = false,
+  isLiveMode = false,
+  onToggleLiveMode,
+  liveThreats = [],
+  isLoadingLive = false,
+  onRefreshLive,
+  showLiveTrails = true,
+  onToggleShowLiveTrails,
+  showLiveMessagesFeed = true,
+  onToggleShowLiveMessagesFeed,
+  liveMessagesCount = 0,
   onSelectLine = (_id) => {},
   onUpdateLine = (_line) => {},
   onDeleteLine = (_id) => {},
@@ -2973,6 +2995,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {expandedSections.overlays && (
             <div className="p-3 space-y-3.5">
+              {/* Live Mode (neptun.in.ua) Block */}
+              <div className="p-3 rounded-xl bg-red-600/10 border border-red-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      {isLiveMode && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isLiveMode ? 'bg-red-500' : 'bg-slate-400'}`}></span>
+                    </span>
+                    <span className="text-[10px] font-extrabold text-red-400 uppercase tracking-wider flex items-center gap-1">
+                      <span>{isUa ? 'Режим Live' : 'Live Mode'}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {isLiveMode && onRefreshLive && (
+                      <button
+                        type="button"
+                        onClick={onRefreshLive}
+                        disabled={isLoadingLive}
+                        className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                        title={isUa ? 'Оновити дані Live' : 'Refresh live data'}
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingLive ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={isLiveMode} 
+                        onChange={() => onToggleLiveMode?.()}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-8 h-4 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-red-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                  <span>{isUa ? 'Виявлено цілей у реальному часі:' : 'Live threats detected:'}</span>
+                  <span className="font-mono font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded-md">
+                    {liveThreats.length}
+                  </span>
+                </div>
+
+                {isLiveMode && (
+                  <div className="space-y-2 pt-2 border-t border-red-500/20 animate-fade-in">
+                    {/* Trails Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Траєкторії польоту (треки)' : 'Flight Trails'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveTrails} 
+                          onChange={() => onToggleShowLiveTrails?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Side Messages Feed Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Оперативна стрічка збоку' : 'Side Radar Feed'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveMessagesFeed} 
+                          onChange={() => onToggleShowLiveMessagesFeed?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-cyan-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Air Raid Alerts (alerts.in.ua) Block */}
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
                 <div className="flex items-center justify-between">
@@ -5262,7 +5367,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             type="button"
             onClick={onExportTelegram}
             className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-sm shadow-[#24A1DE]/25 active:scale-95"
-            title={isUa ? 'Поділитися / надіслати в Telegram' : 'Export / Share to Telegram'}
+            title={isUa ? 'Опублікувати ботом у Telegram' : 'Publish with Bot to Telegram'}
             aria-label={t.btnExportTelegram}
           >
             <Send className="w-5 h-5 text-white fill-current" />

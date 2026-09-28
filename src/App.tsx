@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import JSZip from 'jszip';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat, NeptunMessage } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
 import { TelegramExportModal } from './components/TelegramExportModal';
 import { AirAlertsPanel } from './components/AirAlertsPanel';
+import { LiveModeToggle } from './components/LiveModeToggle';
+import { LiveMessagesFeed } from './components/LiveMessagesFeed';
 import { fetchActiveAlerts } from './utils/alertsService';
+import { fetchNeptunThreats, fetchNeptunMessages } from './utils/neptunService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
 import { preloadFontEmbedCSS } from './utils/mapFonts';
@@ -1216,6 +1219,69 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshAlerts]);
 
+  // --- Real-Time Live Threats & Messages (neptun.in.ua) State ---
+  const [isLiveMode, setIsLiveMode] = useState<boolean>(() => {
+    return localStorage.getItem('uamapper_live_mode') === 'true';
+  });
+  const [liveThreats, setLiveThreats] = useState<NeptunThreat[]>([]);
+  const [liveMessages, setLiveMessages] = useState<NeptunMessage[]>([]);
+  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+  const [showLiveTrails, setShowLiveTrails] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_live_trails');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [showLiveMessagesFeed, setShowLiveMessagesFeed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_live_messages');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const refreshLiveThreats = useCallback(async () => {
+    try {
+      const threats = await fetchNeptunThreats();
+      setLiveThreats(threats);
+    } catch (err) {
+      console.warn('Live threats fetch error:', err);
+    }
+  }, []);
+
+  const refreshLiveMessages = useCallback(async () => {
+    try {
+      const messages = await fetchNeptunMessages();
+      setLiveMessages(messages);
+    } catch (err) {
+      console.warn('Live messages fetch error:', err);
+    }
+  }, []);
+
+  const refreshLiveData = useCallback(async () => {
+    setIsLoadingLive(true);
+    await Promise.all([refreshLiveThreats(), refreshLiveMessages()]);
+    setIsLoadingLive(false);
+  }, [refreshLiveThreats, refreshLiveMessages]);
+
+  const handleToggleLiveMode = useCallback(() => {
+    setIsLiveMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('uamapper_live_mode', String(next));
+      return next;
+    });
+  }, []);
+
+  // Poll live data when Live mode is enabled
+  useEffect(() => {
+    if (!isLiveMode) return;
+    refreshLiveData();
+
+    // Poll threats every 10 seconds, messages every 15 seconds
+    const threatsInterval = setInterval(refreshLiveThreats, 10000);
+    const messagesInterval = setInterval(refreshLiveMessages, 15000);
+
+    return () => {
+      clearInterval(threatsInterval);
+      clearInterval(messagesInterval);
+    };
+  }, [isLiveMode, refreshLiveData, refreshLiveThreats, refreshLiveMessages]);
+
   const handleSelectAlert = useCallback((alert: AirAlert, customLat?: number, customLng?: number) => {
     if (customLat !== undefined && customLng !== undefined) {
       mapRef.current?.centerOnLocation(customLat, customLng);
@@ -2299,6 +2365,9 @@ export default function App() {
             alertsStrokeWidth={alertsStrokeWidth}
             onAlertClick={handleSelectAlert}
             clearAllTrigger={clearAllTrigger}
+            isLiveMode={isLiveMode}
+            liveThreats={liveThreats}
+            showLiveTrails={showLiveTrails}
           />
 
           {/* Floating Air Alerts Widget Panel */}
@@ -2355,8 +2424,18 @@ export default function App() {
             />
           )}
 
-          {/* Floating Top-Right Quick Air Alerts Badge / Button on Map (Desktop & Tablet) - Shifted left to right-16 to avoid Leaflet zoom controls */}
-          <div className="hidden sm:flex absolute top-3.5 right-16 z-30 items-center gap-2">
+          {/* Floating Top-Right Quick Live Mode & Air Alerts Badges / Buttons on Map */}
+          <div className="absolute top-3.5 right-14 sm:right-16 z-30 flex items-center gap-2">
+            <LiveModeToggle
+              isLiveMode={isLiveMode}
+              onToggle={handleToggleLiveMode}
+              threatsCount={liveThreats.length}
+              isLoading={isLoadingLive}
+              language={language}
+              theme={theme}
+              onRefresh={refreshLiveData}
+            />
+
             <button
               onClick={() => {
                 setShowAirAlertsPanel((prev) => {
@@ -2365,7 +2444,7 @@ export default function App() {
                   return next;
                 });
               }}
-              className={`px-3.5 py-1.5 rounded-full border shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] backdrop-blur-2xl backdrop-saturate-150 flex items-center gap-2 text-xs font-bold transition-all cursor-pointer active:scale-95 ${
+              className={`hidden sm:flex px-3.5 py-1.5 rounded-full border shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] backdrop-blur-2xl backdrop-saturate-150 items-center gap-2 text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                 showAirAlertsPanel
                   ? 'bg-red-600/90 text-white border-red-400/80 shadow-red-500/30'
                   : activeAlerts.length > 0
@@ -2394,6 +2473,16 @@ export default function App() {
               </span>
             </button>
           </div>
+
+          {/* Floating Live Side Messages Feed ("з боку локанічно майже не замітно") */}
+          <LiveMessagesFeed
+            messages={liveMessages}
+            isLoading={isLoadingLive}
+            onRefresh={refreshLiveMessages}
+            language={language}
+            theme={theme}
+            isLiveMode={isLiveMode && showLiveMessagesFeed}
+          />
 
 
           {/* Floating Action Bar (When no marker is selected, Mobile Only) */}
@@ -2859,6 +2948,28 @@ export default function App() {
               }}
               onRefreshAlerts={refreshAlerts}
               isLoadingAlerts={isLoadingAlerts}
+              isLiveMode={isLiveMode}
+              onToggleLiveMode={handleToggleLiveMode}
+              liveThreats={liveThreats}
+              isLoadingLive={isLoadingLive}
+              onRefreshLive={refreshLiveData}
+              showLiveTrails={showLiveTrails}
+              onToggleShowLiveTrails={() => {
+                setShowLiveTrails((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_live_trails', String(next));
+                  return next;
+                });
+              }}
+              showLiveMessagesFeed={showLiveMessagesFeed}
+              onToggleShowLiveMessagesFeed={() => {
+                setShowLiveMessagesFeed((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_live_messages', String(next));
+                  return next;
+                });
+              }}
+              liveMessagesCount={liveMessages.length}
             />
           </div>
           {/* Mobile Back-to-Map Sticky bottom bar */}

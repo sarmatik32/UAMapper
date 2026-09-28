@@ -242,3 +242,12 @@ export interface DeepStateOccupiedConfig {
   grayZoneStrokeStyle?: DeepStateStrokeStyle;
 }
 
+export type {
+  NeptunVelocity,
+  NeptunTrailPoint,
+  NeptunThreat,
+  NeptunMessage,
+  NeptunThreatsResponse,
+  NeptunMessagesResponse,
+} from './utils/neptunService';
+

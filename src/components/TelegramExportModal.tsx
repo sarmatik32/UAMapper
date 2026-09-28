@@ -101,15 +101,26 @@ export const TelegramExportModal: React.FC<TelegramExportModalProps> = ({
 
   // Caption state
   const generateInitialCaption = (): string => {
-    const timeStr = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
-    const selectedChan = channels.find(c => c.id === selectedChannelId);
-    const signature = selectedChan?.usernameOrId ? `\n\n📍 ${selectedChan.usernameOrId}` : '\n\n📍 @krrig_alerts';
-    return `⚠️ Оперативна обстановка станом на ${timeStr}${signature}`;
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+    const dateStr = now.toLocaleDateString('uk-UA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    if (!isUa) {
+      return `📡Status as of now ${timeStr}, ${dateStr}`;
+    }
+    return `📡Станом на зараз ${timeStr}, ${dateStr}`;
   };
 
   const [caption, setCaption] = useState<string>(generateInitialCaption);
   const [copiedStatus, setCopiedStatus] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  // Re-generate fresh caption with current time & date when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setCaption(generateInitialCaption());
+      setBotStatusMessage(null);
+    }
+  }, [isOpen]);
 
   // Update object URL when imageBlob changes
   useEffect(() => {
@@ -603,13 +614,23 @@ export const TelegramExportModal: React.FC<TelegramExportModalProps> = ({
                 <Sparkles className="w-3.5 h-3.5 text-[#24A1DE]" />
                 {isUa ? 'Підпис до зображення:' : 'Caption & Message:'}
               </label>
-              <button
-                type="button"
-                onClick={() => setCaption('')}
-                className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
-              >
-                {isUa ? 'Очистити' : 'Clear'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCaption(generateInitialCaption())}
+                  className="text-[10px] text-[#24A1DE] hover:underline cursor-pointer"
+                  title={isUa ? 'Скинути до стандартного напису' : 'Reset to default caption'}
+                >
+                  {isUa ? 'Стандартний' : 'Default'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCaption('')}
+                  className="text-[10px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  {isUa ? 'Очистити' : 'Clear'}
+                </button>
+              </div>
             </div>
 
             <textarea
@@ -805,15 +826,24 @@ export const TelegramExportModal: React.FC<TelegramExportModalProps> = ({
             </button>
           </div>
 
-          {/* Primary Action Button: Share to Telegram */}
+          {/* Primary Action Button: Publish with Bot */}
           <button
             type="button"
-            onClick={handleNativeShare}
-            disabled={isCapturing || !imageBlob}
+            onClick={handleSendViaBot}
+            disabled={isCapturing || !imageBlob || isBotSending}
             className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#24A1DE] hover:bg-[#208fca] active:scale-[0.98] text-white font-extrabold text-xs sm:text-sm shadow-lg shadow-[#24A1DE]/25 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
           >
-            <Send className="w-4 h-4 fill-current -translate-x-0.5 translate-y-0.5" />
-            <span>{isUa ? 'Поділитися в Telegram' : 'Share to Telegram'}</span>
+            {isBotSending ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>{isUa ? 'Відправка...' : 'Publishing...'}</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4 fill-current -translate-x-0.5 translate-y-0.5" />
+                <span>{isUa ? 'Опублікувати ботом' : 'Publish with Bot'}</span>
+              </>
+            )}
           </button>
 
         </div>

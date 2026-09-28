@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, us
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig } from '../types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
 import { CityRulerPreset, MAJOR_CITIES_RULER, MEASURE_TRACK_COLORS, INTER_CITY_MEASURE_PRESETS } from '../data/cityRulerPresets';
@@ -16,6 +16,7 @@ import {
 } from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
+import { LiveThreatsLayer } from './LiveThreatsLayer';
 import { getMapFontFamilyCss, getFontEmbedCSS } from '../utils/mapFonts';
 import { MapLegendWidget } from './MapLegendWidget';
 
@@ -196,6 +197,11 @@ interface MapContainerProps {
   alertsStrokeWidth?: number;
   onAlertClick?: (alert: AirAlert, lat?: number, lng?: number) => void;
   clearAllTrigger?: number;
+
+  // Live Mode (Neptun) Props
+  isLiveMode?: boolean;
+  liveThreats?: NeptunThreat[];
+  showLiveTrails?: boolean;
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -285,6 +291,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   alertsStrokeWidth = 2.5,
   onAlertClick,
   clearAllTrigger,
+
+  // Live Mode (Neptun)
+  isLiveMode = false,
+  liveThreats = [],
+  showLiveTrails = true,
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -1969,6 +1980,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (!map.getPane('userMarkersPane')) {
         const p = map.createPane('userMarkersPane');
         p.style.zIndex = '600';
+      }
+      if (!map.getPane('liveThreatsTrailsPane')) {
+        const p = map.createPane('liveThreatsTrailsPane');
+        p.style.zIndex = '620';
+        p.style.pointerEvents = 'none';
+      }
+      if (!map.getPane('liveThreatsMarkersPane')) {
+        const p = map.createPane('liveThreatsMarkersPane');
+        p.style.zIndex = '650';
       }
 
       // Handle map clicks based on active interaction mode
@@ -6133,6 +6153,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         alertsStrokeWidth={alertsStrokeWidth}
         language={language}
         onAlertClick={onAlertClick}
+      />
+
+      {/* Real-time Live Neptun Threats Layer */}
+      <LiveThreatsLayer
+        map={mapInstanceRef.current}
+        isLiveMode={isLiveMode}
+        threats={liveThreats}
+        showTrails={showLiveTrails}
+        language={language}
       />
 
       {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}
