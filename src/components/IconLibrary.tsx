@@ -39,9 +39,12 @@ export const PRESET_COLORS = [
   { nameUa: 'Білий', nameEn: 'White', hex: '#ffffff' },
 ];
 
-const svgCache = new Map<string, string>();
+export function getIconSvgContent(type: string, fillColor: string = 'currentColor', strokeColor: string = 'white'): string {
+  const isTransparent = fillColor === 'transparent' || fillColor === 'none';
+  const fill = isTransparent ? 'none' : fillColor;
+  const stroke = strokeColor;
+  const strokeWidth = isTransparent ? '2.5' : '1.5';
 
-function buildIconSvgContent(type: string, fill: string, stroke: string, strokeWidth: string): string {
   switch (type) {
     case 'standard-aircraft':
       return `
@@ -208,21 +211,6 @@ function buildIconSvgContent(type: string, fill: string, stroke: string, strokeW
   }
 }
 
-export function getIconSvgContent(type: string, fillColor: string = 'currentColor', strokeColor: string = 'white'): string {
-  const cacheKey = `${type}_${fillColor}_${strokeColor}`;
-  const cached = svgCache.get(cacheKey);
-  if (cached) return cached;
-
-  const isTransparent = fillColor === 'transparent' || fillColor === 'none';
-  const fill = isTransparent ? 'none' : fillColor;
-  const stroke = strokeColor;
-  const strokeWidth = isTransparent ? '2.5' : '1.5';
-
-  const res = buildIconSvgContent(type, fill, stroke, strokeWidth);
-  svgCache.set(cacheKey, res);
-  return res;
-}
-
 export function hexToRgba(hex: string, alpha: number): string {
   if (!hex || hex === 'transparent' || hex === 'none') return 'transparent';
   let cleanHex = hex.replace('#', '');
@@ -249,9 +237,7 @@ export function createMarkerHtml(
   endPointStyle: string = 'none',
   hasZone?: boolean,
   zoneColor?: string,
-  zoneSize?: number,
-  labelFontSize: number = 11,
-  labelOrientation: 'horizontal' | 'rotate' = 'horizontal'
+  zoneSize?: number
 ): string {
   let innerContent = '';
   const standardAssetUrl = iconType === 'standard-aircraft'
@@ -319,49 +305,24 @@ export function createMarkerHtml(
     `;
   }
 
-  // Label styling: ensure text is always readable (never inverted / upside-down)
-  let labelHtml = '';
-  if (labelVisible) {
-    const fSize = Math.max(8, Math.min(26, labelFontSize || 11));
-    const padY = Math.max(2, Math.round(fSize * 0.22));
-    const padX = Math.max(5, Math.round(fSize * 0.55));
-    const bColor = borderColor || color || '#38bdf8';
-
-    if (labelOrientation === 'rotate') {
-      // Rotate with icon, but automatically flip 180° when angle is between 90° and 270° so letters are NEVER inverted
-      const normAngle = ((rotation % 360) + 360) % 360;
-      const effectiveAngle = (normAngle > 90 && normAngle < 270) ? normAngle - 180 : normAngle;
-      labelHtml = `
-        <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%) rotate(${effectiveAngle}deg); margin-top: 6px; z-index: 1000;">
-          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em; font-family: inherit;">
-            ${title || 'Маркер'}
-          </div>
-        </div>
-      `;
-    } else {
-      // Default: Always upright & strictly horizontal (0deg) regardless of icon heading, guaranteed 100% readable
-      labelHtml = `
-        <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%); margin-top: 6px; z-index: 1000;">
-          <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${bColor}; border-radius: 5px; padding: ${padY}px ${padX}px; font-size: ${fSize}px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em; font-family: inherit;">
-            ${title || 'Маркер'}
-          </div>
-        </div>
-      `;
-    }
-  }
-
   return `
     <div class="relative flex items-center justify-center ${isSelected ? 'selected-marker-highlight' : ''}" style="width: ${size}px; height: ${size}px; ${borderStyle} transition: all 0.2s ease;">
       <!-- Circular tactical zone (rendered behind the main icon) -->
       ${zoneHtml}
 
-      <!-- Main rotating icon container (rotates ONLY the icon visual) -->
+      <!-- Main rotating icon container (rotates icon and label together) -->
       <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); transition: transform 0.1s ease; z-index: 2; position: relative;">
         ${innerContent}
-      </div>
 
-      <!-- Label placed outside rotation container so letters are always upright, readable, and never upside down -->
-      ${labelHtml}
+        <!-- Label directly below icon, rotating at the exact same angle -->
+        ${labelVisible ? `
+          <div class="absolute select-none pointer-events-none" style="top: 100%; left: 50%; transform: translateX(-50%); margin-top: 5px; z-index: 1000;">
+            <div style="background-color: rgba(15, 23, 42, 0.95); color: #ffffff; border: 1.5px solid ${borderColor}; border-radius: 5px; padding: 2px 7px; font-size: 11px; font-weight: 700; white-space: nowrap; box-shadow: 0 3px 10px rgba(0,0,0,0.6); letter-spacing: 0.01em;">
+              ${title || 'Маркер'}
+            </div>
+          </div>
+        ` : ''}
+      </div>
       
       ${decoratorHtml}
     </div>

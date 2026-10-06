@@ -6,8 +6,6 @@ export interface IconPreset {
   rotation?: number;
   draggable?: boolean;
   labelVisible?: boolean;
-  labelFontSize?: number;
-  labelOrientation?: 'horizontal' | 'rotate';
   endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
   lineWidth?: number;
   hasZone?: boolean;
@@ -15,12 +13,6 @@ export interface IconPreset {
   zoneRadiusKm?: number;
   zoneSize?: number;
   customIconUrl?: string;
-  movementSpeedKmh?: number;
-  movementEnabled?: boolean;
-  movementTrailEnabled?: boolean;
-  movementTrailColor?: string;
-  movementTrailWidth?: number;
-  movementTrailDashStyle?: 'solid' | 'dashed' | 'dotted';
 }
 
 export interface CustomMarker {
@@ -38,22 +30,14 @@ export interface CustomMarker {
   iconType: string; // 'arrow' | 'car' | 'truck' | 'plane' | 'boat' | 'person' | 'pin' | 'circle' | 'star' | 'tank' | 'soldier' | 'drone' | 'explosion'
   draggable: boolean;
   labelVisible: boolean;
-  labelFontSize?: number; // font size in px, e.g. 8 - 24, default 11
-  labelOrientation?: 'horizontal' | 'rotate'; // 'horizontal' = always upright & readable (default)
   customIconUrl?: string; // base64 PNG data url
   hasZone?: boolean;
   zoneColor?: string;
   zoneRadiusKm?: number;
   zoneSize?: number;
-  movementSpeedKmh?: number;
-  movementEnabled?: boolean;
-  movementTrailEnabled?: boolean;
-  movementTrailColor?: string;
-  movementTrailWidth?: number;
-  movementTrailDashStyle?: 'solid' | 'dashed' | 'dotted';
-  movementTrail?: [number, number][];
   endLat?: number;
   endLng?: number;
+  routeGradient?: boolean;
 }
 
 export interface TileLayerConfig {
@@ -64,7 +48,6 @@ export interface TileLayerConfig {
   overlayUrl?: string;
   tms: boolean;
   subdomains?: string;
-  minZoom?: number;
   maxZoom: number;
   attribution: string;
   requiresKey: boolean;
@@ -77,33 +60,9 @@ export type WatermarkType = 'text' | 'image';
 
 export type InteractionMode = 'draw' | 'pan' | 'redzone' | 'measure' | 'settlement' | 'line';
 
-export interface MeasureTrack {
-  id: string;
-  name: string;
-  color: string;
-  points: { lat: number; lng: number }[];
-}
-
-export type LineDrawMethod = 'freehand' | 'points';
-
 export type LineEndpointType = 'none' | 'arrow' | 'dot' | 'fade' | 'explosion' | 'custom_icon';
 
-export type AlertType =
-  | 'air_raid'
-  | 'artillery_shelling'
-  | 'urban_fights'
-  | 'chemical'
-  | 'nuclear'
-  | 'nuclear_threat'
-  | 'drones'
-  | string;
-
-export interface ThreatItem {
-  threat_type?: string;
-  level?: 'yellow' | 'red' | string;
-  started_at?: string;
-  source_message?: string;
-}
+export type AlertType = 'air_raid' | 'artillery_shelling' | 'urban_fights' | 'chemical' | 'nuclear_threat' | string;
 
 export interface AirAlert {
   id: number | string;
@@ -113,15 +72,10 @@ export interface AirAlert {
   finished_at?: string | null;
   updated_at?: string;
   alert_type: AlertType;
-  alert_level?: 'red' | 'yellow' | string;
-  threats?: ThreatItem[];
   location_oblast?: string;
   location_raion?: string;
   location_uid?: string | number;
   notes?: string | null;
-  country?: string | null;
-  location_title_en?: string;
-  location_oblast_uid?: number;
   calculated_duration?: string;
 }
 
@@ -144,34 +98,12 @@ export interface DrawnLine {
   startPointStyle: LineEndpointType;
   startCustomIconUrl?: string;
   startIconRotation?: number;
-  startIconSize?: number; // size in px, e.g. 16 - 80, default 32
   
   endPointStyle: LineEndpointType;
   endCustomIconUrl?: string;
   endIconRotation?: number;
-  endIconSize?: number; // size in px, e.g. 16 - 80, default 32
   
   label?: string;
-  labelSize?: number;
-}
-
-export interface MapLegendItem {
-  id: string;
-  iconType: string; // e.g. 'custom_icon' | 'plane' | 'drone' | 'explosion' | 'arrow' | 'pin' | 'star' | etc.
-  customIconUrl?: string;
-  color: string;
-  name: string; // "назва" об'єкта
-  countText: string; // кількість ("3 шт", "12", тощо)
-  title?: string; // alias for name
-  count?: string; // alias for countText
-  visible: boolean;
-}
-
-export interface MapLegendConfig {
-  enabled: boolean;
-  title: string; // "УМОВНІ ПОЗНАЧЕННЯ:"
-  items: MapLegendItem[];
-  position: 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
 }
 
 export type MapFontFamily = 'inter' | 'plus-jakarta' | 'montserrat' | 'ubuntu' | 'jetbrains-mono' | 'system';
@@ -192,75 +124,3 @@ export interface TelegramChannelConfig {
   description?: string;
   isDefault?: boolean;
 }
-
-export type DeepStatePatternType = 
-  | 'solid'             // Суцільна заливка
-  | 'diagonal-right'    // Діагональний штрих (///)
-  | 'diagonal-left'     // Зворотний діагональний штрих (\\\)
-  | 'cross-hatch'       // Сітка / Клітинка (#)
-  | 'dots'              // Крапкова сітка (:::)
-  | 'horizontal'        // Горизонтальні смуги (===)
-  | 'vertical';         // Вертикальні смуги (|||)
-
-export type DeepStateStrokeStyle = 
-  | 'solid'             // Суцільна лінія
-  | 'dashed'            // Пунктир
-  | 'dotted'            // Крапкова
-  | 'dash-dot';         // Штрих-пунктир
-
-export type UkraineBoundaryStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot';
-export type BoundaryStrokeStyle = 'solid' | 'dashed' | 'dotted' | 'dash-dot';
-
-export interface UkraineBoundaryConfig {
-  enabled: boolean;
-  color?: string;
-  weight?: number;
-  opacity?: number;
-  strokeStyle?: UkraineBoundaryStrokeStyle;
-}
-
-export interface BoundaryStyleConfig {
-  enabled: boolean;
-  color?: string;
-  weight?: number;
-  opacity?: number;
-  strokeStyle?: BoundaryStrokeStyle;
-}
-
-export interface DeepStateOccupiedConfig {
-  enabled: boolean;
-  
-  // Fill settings
-  fillColor: string;
-  fillOpacity: number;
-  fillPattern?: DeepStatePatternType;
-  patternDensity?: number;        // Spacing in px (6-24px, default 10)
-  patternStrokeWidth?: number;    // Pattern line width in px (1-3px, default 1.5)
-  patternBgOpacity?: number;      // Subtle background tint behind hatch/pattern (0-0.4, default 0.1)
-
-  // Stroke / Border settings
-  showStroke?: boolean;
-  strokeColor: string;
-  strokeWidth: number;
-  strokeOpacity?: number;
-  strokeStyle?: DeepStateStrokeStyle;
-
-  // Gray zone / Contested settings
-  includeGrayZone: boolean;
-  grayZoneFillColor: string;
-  grayZoneOpacity: number;
-  grayZonePattern?: DeepStatePatternType;
-  grayZoneStrokeColor?: string;
-  grayZoneStrokeWidth?: number;
-  grayZoneStrokeStyle?: DeepStateStrokeStyle;
-}
-
-export type {
-  NeptunVelocity,
-  NeptunTrailPoint,
-  NeptunThreat,
-  NeptunMessage,
-  NeptunThreatsResponse,
-  NeptunMessagesResponse,
-} from './utils/neptunService';
-
