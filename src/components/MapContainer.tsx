@@ -312,6 +312,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useEffect(() => { movementMarkersRef.current = markers; }, [markers]);
   useEffect(() => { onUpdateMarkerMovementRef.current = onUpdateMarker; }, [onUpdateMarker]);
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const endEtaMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const completedMovementTargetsRef = useRef<Set<string>>(new Set());
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
   const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
@@ -3289,9 +3291,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let effectiveTargetEndLat = endLat;
           let effectiveTargetEndLng = endLng;
           if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
-            const angleRad = (((rotation || 0)) * Math.PI) / 180;
-            effectiveTargetEndLat = lat + Math.cos(angleRad) * 0.003;
-            effectiveTargetEndLng = lng + Math.sin(angleRad) * 0.005;
+            [effectiveTargetEndLat, effectiveTargetEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
           handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
         }
@@ -3311,7 +3311,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       markerInstance.off('dragstart drag dragend');
 
       const hasEndPoint = endPointStyle && endPointStyle !== 'none';
-      const hasEndHandle = isSelected || endPointStyle === 'explosion' || !!markerData.hasZone;
+      // A moving marker always gets a separate, editable destination handle in front of it.
+      // This keeps the route target visible instead of hiding it under the icon.
+      const hasEndHandle = isSelected || markerData.movementEnabled === true || endPointStyle === 'explosion' || !!markerData.hasZone;
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
@@ -3329,9 +3331,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let curEndLat = originalEndLat;
           let curEndLng = originalEndLng;
           if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
-            const angleRad = (rotation * Math.PI) / 180;
-            curEndLat = lat + Math.cos(angleRad) * 0.003;
-            curEndLng = lng + Math.sin(angleRad) * 0.005;
+            [curEndLat, curEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
           if (dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
             const dLat = currentLatLng.lat - dragStartLatLng.lat;
@@ -3360,9 +3360,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let curEndLat = originalEndLat;
           let curEndLng = originalEndLng;
           if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
-            const angleRad = (rotation * Math.PI) / 180;
-            curEndLat = lat + Math.cos(angleRad) * 0.003;
-            curEndLng = lng + Math.sin(angleRad) * 0.005;
+            [curEndLat, curEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
           const dLat = position.lat - dragStartLatLng.lat;
           const dLng = position.lng - dragStartLatLng.lng;
@@ -3370,9 +3368,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           updatedEndLng = curEndLng + dLng;
 
           if (isNaN(updatedEndLat) || isNaN(updatedEndLng)) {
-            const angleRad = (rotation * Math.PI) / 180;
-            updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
-            updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
+            [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
           }
 
           if (onUpdateMarker) {
@@ -3399,9 +3395,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               updatedEndLng = updatedEndLng + dLng;
             } else {
               // Calculate default offset end position if none exists
-              const angleRad = (rotation * Math.PI) / 180;
-              updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
-              updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
+              [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
             }
             onUpdateMarker({
               ...markerData,
@@ -3418,9 +3412,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let effectiveTargetEndLat = updatedEndLat;
         let effectiveTargetEndLng = updatedEndLng;
         if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
-          const angleRad = (rotation * Math.PI) / 180;
-          effectiveTargetEndLat = position.lat + Math.cos(angleRad) * 0.003;
-          effectiveTargetEndLng = position.lng + Math.sin(angleRad) * 0.005;
+          [effectiveTargetEndLat, effectiveTargetEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
         }
 
         if (autoHighlightZoneRef.current) {
@@ -3446,9 +3438,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLng = endLng;
 
         if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
-          const angleRad = (rotation * Math.PI) / 180;
-          finalEndLat = lat + Math.cos(angleRad) * 0.003;
-          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
         }
 
         const lineCoords: [number, number][] = [[lat, lng], [finalEndLat, finalEndLng]];
@@ -3489,9 +3479,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLng = endLng;
 
         if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
-          const angleRad = (rotation * Math.PI) / 180;
-          finalEndLat = lat + Math.cos(angleRad) * 0.003;
-          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
         }
 
         const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
@@ -3544,7 +3532,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
             endMarkerInstance.setIcon(endMarkerIcon);
           }
-          if (isSelected) {
+          if (isSelected || markerData.movementEnabled === true) {
             endMarkerInstance.dragging?.enable();
           } else {
             endMarkerInstance.dragging?.disable();
@@ -3555,7 +3543,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         } else {
           endMarkerInstance = L.marker([finalEndLat, finalEndLng], {
             icon: endMarkerIcon,
-            draggable: isSelected,
+            draggable: isSelected || markerData.movementEnabled === true,
             pane: 'userMarkersPane',
             zIndexOffset: 1100,
           }).addTo(map);
@@ -3576,14 +3564,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endMarkerInstance.on('drag', (e) => {
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
-          const dy = endPosition.lat - lat;
-          const dx = endPosition.lng - lng;
+          const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          const dy = endPosition.lat - liveAnchor.lat;
+          const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
           if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
 
           if (linesRef.current[id]) {
-            linesRef.current[id].setLatLngs([[lat, lng], [endPosition.lat, endPosition.lng]]);
+            linesRef.current[id].setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           }
 
           // Update rotation real-time inside DOM
@@ -3599,8 +3588,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endMarkerInstance.on('dragend', (e) => {
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
-          const dy = endPosition.lat - lat;
-          const dx = endPosition.lng - lng;
+          const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          const dy = endPosition.lat - liveAnchor.lat;
+          const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
           if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
@@ -3645,6 +3635,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
     });
 
+    Object.keys(endEtaMarkersRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      const shouldShowEta = marker && marker.movementEnabled === true && Number(marker.movementSpeedKmh ?? 0) > 0 && marker.endLat !== undefined && marker.endLng !== undefined;
+      if (!shouldShowEta) {
+        endEtaMarkersRef.current[id]?.remove();
+        delete endEtaMarkersRef.current[id];
+      }
+    });
+
     Object.keys(movementTrailLayersRef.current).forEach((id) => {
       const marker = markers.find((m) => m.id === id);
       if (!marker || marker.movementTrailEnabled !== true) {
@@ -3658,6 +3657,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const isSelected = id === selectedMarkerId;
       const hasEndHandle = marker && (
         isSelected ||
+        marker.movementEnabled === true ||
         (marker.endPointStyle && marker.endPointStyle !== 'none') ||
         !!marker.hasZone
       );
@@ -3670,12 +3670,38 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
   }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady]);
 
+  const getMovementEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+    const earthRadiusKm = 6371.0088;
+    const distanceKm = 1;
+    const angularDistance = distanceKm / earthRadiusKm;
+    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const lat1 = (lat * Math.PI) / 180;
+    const lng1 = (lng * Math.PI) / 180;
+    const sinLat1 = Math.sin(lat1);
+    const cosLat1 = Math.cos(lat1);
+    const sinAngular = Math.sin(angularDistance);
+    const cosAngular = Math.cos(angularDistance);
+    const lat2 = Math.asin(Math.min(1, Math.max(-1,
+      sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)
+    )));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * Math.sin(lat2)
+    );
+    return [
+      (lat2 * 180) / Math.PI,
+      ((lng2 * 180) / Math.PI + 540) % 360 - 180,
+    ];
+  };
+
   const movementConfigKey = markers
     .map((m) => [
       m.id,
       m.movementEnabled === true ? '1' : '0',
       Number(m.movementSpeedKmh ?? 0),
       Number(m.rotation ?? 0),
+      Number.isFinite(Number(m.endLat)) ? Number(m.endLat).toFixed(7) : '',
+      Number.isFinite(Number(m.endLng)) ? Number(m.endLng).toFixed(7) : '',
       m.movementTrailEnabled === true ? '1' : '0',
       m.movementTrailColor || '',
       Number(m.movementTrailWidth ?? 3),
@@ -3690,6 +3716,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map || !isMapReady) return;
 
+    completedMovementTargetsRef.current.clear();
     let frameId = 0;
     let lastFrame = performance.now();
     let lastPersistAt = lastFrame;
@@ -3811,21 +3838,110 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           return;
         }
 
+        if (completedMovementTargetsRef.current.has(marker.id) && Number.isFinite(Number(marker.endLat)) && Number.isFinite(Number(marker.endLng))) {
+          movingMarkerIdsRef.current.delete(marker.id);
+          return;
+        }
+
         hasMovingMarkers = true;
         movingMarkerIdsRef.current.add(marker.id);
 
-        const speedKmPerSecond = Math.max(0, Number(marker.movementSpeedKmh)) / 3600;
+        const speedKmh = Math.max(0, Number(marker.movementSpeedKmh));
+        const speedKmPerSecond = speedKmh / 3600;
         const current = markerInstance.getLatLng();
         if (!current || !Number.isFinite(current.lat) || !Number.isFinite(current.lng)) return;
 
-        const [nextLat, nextLng] = destination(
-          current.lat,
-          current.lng,
-          speedKmPerSecond * dtSeconds,
-          Number(marker.rotation || 0)
-        );
+        let targetLat = Number(marker.endLat);
+        let targetLng = Number(marker.endLng);
+        const hasDestination = Number.isFinite(targetLat) && Number.isFinite(targetLng);
+        if (!hasDestination) {
+          [targetLat, targetLng] = getMovementEndpoint(current.lat, current.lng, Number(marker.rotation || 0));
+        }
+
+        const distanceToTargetKm = map.distance(current, L.latLng(targetLat, targetLng)) / 1000;
+        const stepKm = speedKmPerSecond * dtSeconds;
+        let nextLat = current.lat;
+        let nextLng = current.lng;
+        let movementBearing = Number(marker.rotation || 0);
+
+        if (distanceToTargetKm > 0.001 && stepKm > 0) {
+          const target = L.latLng(targetLat, targetLng);
+          const dy = target.lat - current.lat;
+          const dx = target.lng - current.lng;
+          movementBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+          const travelKm = Math.min(stepKm, distanceToTargetKm);
+          [nextLat, nextLng] = destination(current.lat, current.lng, travelKm, movementBearing);
+        } else if (hasDestination) {
+          nextLat = targetLat;
+          nextLng = targetLng;
+          completedMovementTargetsRef.current.add(marker.id);
+        }
 
         markerInstance.setLatLng([nextLat, nextLng]);
+
+        // Keep the direction of the icon aligned with the actual route to the destination.
+        const mainMarkerEl = markerInstance.getElement();
+        if (mainMarkerEl) {
+          const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]') as HTMLElement | null;
+          if (rotatingDiv) rotatingDiv.style.transform = `rotate(${Math.round(movementBearing % 360)}deg)`;
+        }
+
+        // Update the route line continuously while the icon is moving.
+        if (hasDestination && linesRef.current[marker.id]) {
+          linesRef.current[marker.id].setLatLngs([[nextLat, nextLng], [targetLat, targetLng]]);
+        }
+
+        // Live ETA label at the destination point.
+        if (hasDestination) {
+          const remainingKm = map.distance(L.latLng(nextLat, nextLng), L.latLng(targetLat, targetLng)) / 1000;
+          const totalMinutes = remainingKm > 0 && speedKmh > 0 ? (remainingKm / speedKmh) * 60 : 0;
+          let etaText = '≈ 0 с';
+          if (totalMinutes >= 60) {
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = Math.round(totalMinutes - hours * 60);
+            etaText = minutes > 0 ? `≈ ${hours} год ${minutes} хв` : `≈ ${hours} год`;
+          } else if (totalMinutes >= 1) {
+            etaText = `≈ ${Math.max(1, Math.round(totalMinutes))} хв`;
+          } else {
+            etaText = `≈ ${Math.max(1, Math.round(totalMinutes * 60))} с`;
+          }
+
+          let etaMarker = endEtaMarkersRef.current[marker.id];
+          if (!etaMarker) {
+            const etaIcon = L.divIcon({
+              className: 'movement-eta-label',
+              html: `<div style="
+                transform: translate(0, -24px);
+                white-space: nowrap;
+                background: rgba(15,23,42,.92);
+                color: #fff;
+                border: 1px solid rgba(255,255,255,.35);
+                border-radius: 999px;
+                padding: 3px 7px;
+                font: 700 11px/1.1 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                box-shadow: 0 2px 7px rgba(0,0,0,.35);
+                pointer-events: none;
+              " data-eta="${etaText}">${etaText}</div>`,
+              iconSize: [1, 1],
+              iconAnchor: [0, 0],
+            });
+            etaMarker = L.marker([targetLat, targetLng], {
+              icon: etaIcon,
+              interactive: false,
+              pane: 'userMarkersPane',
+              zIndexOffset: 1250,
+            }).addTo(map);
+            endEtaMarkersRef.current[marker.id] = etaMarker;
+          } else {
+            etaMarker.setLatLng([targetLat, targetLng]);
+            const etaElement = etaMarker.getElement()?.querySelector('[data-eta]') as HTMLElement | null;
+            if (etaElement && etaElement.dataset.eta !== etaText) {
+              etaElement.dataset.eta = etaText;
+              etaElement.textContent = etaText;
+            }
+            if (!map.hasLayer(etaMarker)) etaMarker.addTo(map);
+          }
+        }
 
         if (trailEnabled) {
           const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];

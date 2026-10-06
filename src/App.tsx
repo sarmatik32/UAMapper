@@ -1611,6 +1611,30 @@ export default function App() {
     }
   };
 
+  const getInitialMarkerEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+    const earthRadiusKm = 6371.0088;
+    const distanceKm = 1;
+    const angularDistance = distanceKm / earthRadiusKm;
+    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const lat1 = (lat * Math.PI) / 180;
+    const lng1 = (lng * Math.PI) / 180;
+    const sinLat1 = Math.sin(lat1);
+    const cosLat1 = Math.cos(lat1);
+    const sinAngular = Math.sin(angularDistance);
+    const cosAngular = Math.cos(angularDistance);
+    const lat2 = Math.asin(Math.min(1, Math.max(-1,
+      sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)
+    )));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * Math.sin(lat2)
+    );
+    return [
+      (lat2 * 180) / Math.PI,
+      ((lng2 * 180) / Math.PI + 540) % 360 - 180,
+    ];
+  };
+
   // Handler: Add marker on manual coordinates or click
   const handleAddMarker = (lat?: number, lng?: number) => {
     // If coordinates not supplied, center on Kryvyi Rih center slightly jittered
@@ -1623,6 +1647,8 @@ export default function App() {
     const defaultTitle = customIconTitles[currentIconType] || getDefaultIconName(currentIconType, language);
 
     const newId = 'marker_' + Date.now();
+    const initialRotation = Number.isFinite(Number(baseStyle.rotation)) ? Number(baseStyle.rotation) : 0;
+    const [initialEndLat, initialEndLng] = getInitialMarkerEndpoint(finalLat, finalLng, initialRotation);
     const newMarker: CustomMarker = {
       id: newId,
       lat: finalLat,
@@ -1632,7 +1658,7 @@ export default function App() {
       color: baseStyle.color || '#ef4444',
       borderColor: baseStyle.borderColor || '#ffffff',
       size: baseStyle.size || 32,
-      rotation: baseStyle.rotation || 0,
+      rotation: initialRotation,
       iconType: baseStyle.iconType || 'pin',
       draggable: baseStyle.draggable !== undefined ? baseStyle.draggable : true,
       labelVisible: baseStyle.labelVisible !== undefined ? baseStyle.labelVisible : true,
@@ -1650,6 +1676,8 @@ export default function App() {
       movementTrailWidth: Number.isFinite(Number(baseStyle.movementTrailWidth)) ? Math.max(1, Number(baseStyle.movementTrailWidth)) : 3,
       movementTrailDashStyle: baseStyle.movementTrailDashStyle || 'solid',
       movementTrail: [],
+      endLat: initialEndLat,
+      endLng: initialEndLng,
     };
 
     setMarkers((prev) => [...prev, newMarker]);
