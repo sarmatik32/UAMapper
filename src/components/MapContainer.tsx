@@ -27,6 +27,7 @@ export interface MapContainerRef {
   centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
   highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
   clearSearchedAreas: () => void;
+  getMarkerLiveState: (id: string) => { lat: number; lng: number; trail: [number, number][] } | null;
 }
 
 interface SearchedArea {
@@ -303,6 +304,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
+  const movementTrailLayersRef = useRef<{ [id: string]: L.Polyline }>({});
+  const movingMarkerIdsRef = useRef<Set<string>>(new Set());
+  const movementMarkersRef = useRef<CustomMarker[]>(markers);
+  const movementLiveStateRef = useRef<Record<string, { lat: number; lng: number; trail: [number, number][] }>>({});
+  const onUpdateMarkerMovementRef = useRef(onUpdateMarker);
+  useEffect(() => { movementMarkersRef.current = markers; }, [markers]);
+  useEffect(() => { onUpdateMarkerMovementRef.current = onUpdateMarker; }, [onUpdateMarker]);
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
@@ -3196,6 +3204,228 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       return filtered;
     });
 
+
+  const movementConfigKey = markers
+    .map((m) => [
+      m.id,
+      m.movementEnabled === true ? '1' : '0',
+      Number(m.movementSpeedKmh ?? 0),
+      Number(m.rotation ?? 0),
+      m.movementTrailEnabled === true ? '1' : '0',
+      m.movementTrailColor || '',
+      Number(m.movementTrailWidth ?? 3),
+      m.movementTrailDashStyle || 'solid',
+    ].join(':'))
+    .join('|');
+
+  // Animate moving markers in real geographic distance (km/h), independent of
+  // the current map zoom. Rotation uses the existing marker heading:
+  // 0° = north, 90° = east, 180° = south, 270° = west.
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    let frameId = 0;
+    let lastFrame = performance.now();
+    let lastPersistAt = lastFrame;
+    let cancelled = false;
+
+    const trailByMarker = new Map<string, [number, number][]>();
+
+    const destination = (lat: number, lng: number, distanceKm: number, bearingDeg: number): [number, number] => {
+      const earthRadiusKm = 6371.0088;
+      const angularDistance = distanceKm / earthRadiusKm;
+      const bearing = bearingDeg * Math.PI / 180;
+      const lat1 = lat * Math.PI / 180;
+      const lng1 = lng * Math.PI / 180;
+
+      const sinLat1 = Math.sin(lat1);
+      const cosLat1 = Math.cos(lat1);
+      const sinAngular = Math.sin(angularDistance);
+      const cosAngular = Math.cos(angularDistance);
+
+      const lat2 = Math.asin(
+        Math.min(1, Math.max(-1, sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)))
+      );
+      const lng2 = lng1 + Math.atan2(
+        Math.sin(bearing) * sinAngular * cosLat1,
+        cosAngular - sinLat1 * Math.sin(lat2)
+      );
+
+      const normalizedLng = ((lng2 * 180 / Math.PI + 540) % 360) - 180;
+      return [lat2 * 180 / Math.PI, normalizedLng];
+    };
+
+    const updateTrailStyle = (polyline: L.Polyline, marker: CustomMarker) => {
+      let dashArray: string | undefined;
+      if (marker.movementTrailDashStyle === 'dashed') dashArray = '12, 8';
+      if (marker.movementTrailDashStyle === 'dotted') dashArray = '3, 6';
+
+      polyline.setStyle({
+        color: marker.movementTrailColor || marker.color || '#ef4444',
+        weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+        dashArray,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+        pane: 'drawnLinesPane',
+      });
+    };
+
+    const removeTrail = (id: string) => {
+      const layer = movementTrailLayersRef.current[id];
+      if (layer) {
+        layer.remove();
+        delete movementTrailLayersRef.current[id];
+      }
+      trailByMarker.delete(id);
+    };
+
+    const persistMarker = (marker: CustomMarker, lat: number, lng: number, trail: [number, number][]) => {
+      if (cancelled || !onUpdateMarker) return;
+      onUpdateMarkerMovementRef.current({
+        ...marker,
+        lat,
+        lng,
+        movementTrail: marker.movementTrailEnabled ? trail.slice(-5000) : marker.movementTrail,
+      });
+    };
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+
+      const dtSeconds = Math.min(0.25, Math.max(0, (now - lastFrame) / 1000));
+      lastFrame = now;
+      let hasMovingMarkers = false;
+
+      const currentMarkers = movementMarkersRef.current;
+      const currentIds = new Set(currentMarkers.map((m) => m.id));
+
+      Object.keys(movementTrailLayersRef.current).forEach((id) => {
+        if (!currentIds.has(id)) removeTrail(id);
+      });
+
+      movementMarkersRef.current.forEach((marker) => {
+        const markerInstance = markersRef.current[marker.id];
+        if (!markerInstance) return;
+
+        const trailEnabled = marker.movementTrailEnabled === true;
+
+        if (trailEnabled) {
+          const stored = Array.isArray(marker.movementTrail)
+            ? marker.movementTrail.filter((pt) => Array.isArray(pt) && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])))
+                .map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number])
+            : [];
+          const localTrail = trailByMarker.get(marker.id);
+          if (!localTrail) {
+            trailByMarker.set(marker.id, stored.length ? stored.slice(-5000) : [[marker.lat, marker.lng]]);
+          }
+        } else {
+          removeTrail(marker.id);
+        }
+
+        if (marker.movementEnabled !== true || Number(marker.movementSpeedKmh ?? 0) <= 0) {
+          movingMarkerIdsRef.current.delete(marker.id);
+          if (trailEnabled) {
+            const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];
+            let layer = movementTrailLayersRef.current[marker.id];
+            if (!layer) {
+              layer = L.polyline(trail, {
+                color: marker.movementTrailColor || marker.color || '#ef4444',
+                weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round',
+                pane: 'drawnLinesPane',
+              }).addTo(map);
+              movementTrailLayersRef.current[marker.id] = layer;
+            }
+            updateTrailStyle(layer, marker);
+            layer.setLatLngs(trail);
+          }
+          return;
+        }
+
+        hasMovingMarkers = true;
+        movingMarkerIdsRef.current.add(marker.id);
+
+        const speedKmPerSecond = Math.max(0, Number(marker.movementSpeedKmh)) / 3600;
+        const current = markerInstance.getLatLng();
+        if (!current || !Number.isFinite(current.lat) || !Number.isFinite(current.lng)) return;
+
+        const [nextLat, nextLng] = destination(
+          current.lat,
+          current.lng,
+          speedKmPerSecond * dtSeconds,
+          Number(marker.rotation || 0)
+        );
+
+        markerInstance.setLatLng([nextLat, nextLng]);
+
+        if (trailEnabled) {
+          const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];
+          const last = trail[trail.length - 1];
+          const movedEnough = !last ||
+            Math.abs(last[0] - nextLat) > 0.00001 ||
+            Math.abs(last[1] - nextLng) > 0.00001;
+
+          if (movedEnough) {
+            trail.push([nextLat, nextLng]);
+            if (trail.length > 5000) trail.splice(0, trail.length - 5000);
+          }
+
+          let layer = movementTrailLayersRef.current[marker.id];
+          if (!layer) {
+            layer = L.polyline(trail, {
+              color: marker.movementTrailColor || marker.color || '#ef4444',
+              weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+              opacity: 0.9,
+              lineCap: 'round',
+              lineJoin: 'round',
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+            movementTrailLayersRef.current[marker.id] = layer;
+          }
+          updateTrailStyle(layer, marker);
+          layer.setLatLngs(trail);
+        }
+
+        movementLiveStateRef.current[marker.id] = {
+          lat: nextLat,
+          lng: nextLng,
+          trail: (trailByMarker.get(marker.id) || marker.movementTrail || []).slice(-5000),
+        };
+
+        if (now - lastPersistAt >= 500) {
+          const trail = trailByMarker.get(marker.id) || [];
+          persistMarker(marker, nextLat, nextLng, trail);
+        }
+      });
+
+      if (now - lastPersistAt >= 500) {
+        lastPersistAt = now;
+      }
+
+      frameId = hasMovingMarkers ? requestAnimationFrame(tick) : 0;
+    };
+
+    const anyMoving = movementMarkersRef.current.some(
+      (marker) => marker.movementEnabled === true && Number(marker.movementSpeedKmh ?? 0) > 0
+    );
+
+    if (anyMoving) {
+      frameId = requestAnimationFrame(tick);
+    } else {
+      // Still render/update trails when the map or style changes while stopped.
+      tick(performance.now());
+    }
+
+    return () => {
+      cancelled = true;
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [isMapReady, movementConfigKey]);
+
     // 2. Add or update current markers
     markers.forEach((markerData) => {
       if (!markerData || isNaN(Number(markerData.lat)) || isNaN(Number(markerData.lng))) {
@@ -3247,7 +3477,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (existingMarker) {
         const isDragging = (existingMarker as any)._isDragging || (existingMarker.dragging as any)?._draggable?._moving;
         if (!isDragging) {
-          existingMarker.setLatLng([lat, lng]);
+          if (!movingMarkerIdsRef.current.has(id)) {
+            existingMarker.setLatLng([lat, lng]);
+          }
           existingMarker.setIcon(customIcon);
         }
         if (draggable) {
@@ -3631,6 +3863,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           linesRef.current[id].remove();
           delete linesRef.current[id];
         }
+      }
+    });
+
+    Object.keys(movementTrailLayersRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      if (!marker || marker.movementTrailEnabled !== true) {
+        movementTrailLayersRef.current[id]?.remove();
+        delete movementTrailLayersRef.current[id];
       }
     });
 
@@ -4983,6 +5223,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     },
     clearSearchedAreas: () => {
       handleClearAllAreas();
+    },
+    getMarkerLiveState: (id: string) => {
+      const marker = markersRef.current[id];
+      const live = movementLiveStateRef.current[id];
+      if (!marker && !live) return null;
+      const pos = marker ? marker.getLatLng() : { lat: live!.lat, lng: live!.lng };
+      return {
+        lat: pos.lat,
+        lng: pos.lng,
+        trail: live?.trail?.slice(-5000) || [],
+      };
     }
   }));
 

@@ -15,6 +15,12 @@ export interface IconPreset {
   zoneRadiusKm?: number;
   zoneSize?: number;
   customIconUrl?: string;
+  movementSpeedKmh?: number;
+  movementEnabled?: boolean;
+  movementTrailEnabled?: boolean;
+  movementTrailColor?: string;
+  movementTrailWidth?: number;
+  movementTrailDashStyle?: 'solid' | 'dashed' | 'dotted';
 }
 
 export interface CustomMarker {
@@ -39,6 +45,13 @@ export interface CustomMarker {
   zoneColor?: string;
   zoneRadiusKm?: number;
   zoneSize?: number;
+  movementSpeedKmh?: number;
+  movementEnabled?: boolean;
+  movementTrailEnabled?: boolean;
+  movementTrailColor?: string;
+  movementTrailWidth?: number;
+  movementTrailDashStyle?: 'solid' | 'dashed' | 'dotted';
+  movementTrail?: [number, number][];
   endLat?: number;
   endLng?: number;
 }

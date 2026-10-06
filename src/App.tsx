@@ -314,6 +314,17 @@ export default function App() {
               endLat: m.endLat !== undefined && !isNaN(Number(m.endLat)) ? Number(m.endLat) : undefined,
               endLng: m.endLng !== undefined && !isNaN(Number(m.endLng)) ? Number(m.endLng) : undefined,
               endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
+              movementSpeedKmh: Number.isFinite(Number(m.movementSpeedKmh)) ? Math.max(0, Number(m.movementSpeedKmh)) : 100,
+              movementEnabled: m.movementEnabled === true,
+              movementTrailEnabled: m.movementTrailEnabled === true,
+              movementTrailColor: typeof m.movementTrailColor === 'string' ? m.movementTrailColor : (m.color || '#ef4444'),
+              movementTrailWidth: Number.isFinite(Number(m.movementTrailWidth)) ? Math.max(1, Number(m.movementTrailWidth)) : 3,
+              movementTrailDashStyle: m.movementTrailDashStyle === 'dashed' || m.movementTrailDashStyle === 'dotted' ? m.movementTrailDashStyle : 'solid',
+              movementTrail: Array.isArray(m.movementTrail)
+                ? m.movementTrail
+                    .filter((pt: any) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])))
+                    .map((pt: any) => [Number(pt[0]), Number(pt[1])] as [number, number])
+                : [],
             }));
         }
       }
@@ -1404,6 +1415,12 @@ export default function App() {
             zoneColor: lastMarker.zoneColor || lastMarker.color || '#ef4444',
             zoneRadiusKm: lastMarker.zoneRadiusKm !== undefined ? lastMarker.zoneRadiusKm : (lastMarker.zoneSize && lastMarker.zoneSize <= 200 ? lastMarker.zoneSize : 5),
             zoneSize: lastMarker.zoneSize || 5,
+            movementSpeedKmh: Number.isFinite(Number(lastMarker.movementSpeedKmh)) ? Number(lastMarker.movementSpeedKmh) : 100,
+            movementEnabled: lastMarker.movementEnabled === true,
+            movementTrailEnabled: lastMarker.movementTrailEnabled === true,
+            movementTrailColor: lastMarker.movementTrailColor || lastMarker.color || '#ef4444',
+            movementTrailWidth: Number.isFinite(Number(lastMarker.movementTrailWidth)) ? Number(lastMarker.movementTrailWidth) : 3,
+            movementTrailDashStyle: lastMarker.movementTrailDashStyle || 'solid',
           };
         }
       } catch (e) {
@@ -1424,6 +1441,12 @@ export default function App() {
       zoneColor: '#ef4444',
       zoneRadiusKm: 10,
       zoneSize: 10,
+      movementSpeedKmh: 100,
+      movementEnabled: false,
+      movementTrailEnabled: false,
+      movementTrailColor: '#ef4444',
+      movementTrailWidth: 3,
+      movementTrailDashStyle: 'solid',
     };
   });
 
@@ -1620,6 +1643,13 @@ export default function App() {
       zoneColor: baseStyle.zoneColor || baseStyle.color || '#ef4444',
       zoneRadiusKm: baseStyle.zoneRadiusKm !== undefined ? baseStyle.zoneRadiusKm : (baseStyle.zoneSize && baseStyle.zoneSize <= 200 ? baseStyle.zoneSize : 5),
       zoneSize: baseStyle.zoneSize || 5,
+      movementSpeedKmh: Number.isFinite(Number(baseStyle.movementSpeedKmh)) ? Math.max(0, Number(baseStyle.movementSpeedKmh)) : 100,
+      movementEnabled: baseStyle.movementEnabled === true,
+      movementTrailEnabled: baseStyle.movementTrailEnabled === true,
+      movementTrailColor: baseStyle.movementTrailColor || baseStyle.color || '#ef4444',
+      movementTrailWidth: Number.isFinite(Number(baseStyle.movementTrailWidth)) ? Math.max(1, Number(baseStyle.movementTrailWidth)) : 3,
+      movementTrailDashStyle: baseStyle.movementTrailDashStyle || 'solid',
+      movementTrail: [],
     };
 
     setMarkers((prev) => [...prev, newMarker]);
@@ -1642,6 +1672,12 @@ export default function App() {
       zoneColor: newMarker.zoneColor || newMarker.color || '#ef4444',
       zoneRadiusKm: newMarker.zoneRadiusKm,
       zoneSize: newMarker.zoneSize,
+      movementSpeedKmh: newMarker.movementSpeedKmh,
+      movementEnabled: newMarker.movementEnabled,
+      movementTrailEnabled: newMarker.movementTrailEnabled,
+      movementTrailColor: newMarker.movementTrailColor,
+      movementTrailWidth: newMarker.movementTrailWidth,
+      movementTrailDashStyle: newMarker.movementTrailDashStyle,
     });
 
     return newId;
@@ -1675,25 +1711,43 @@ export default function App() {
 
   // Handler: Update an individual marker
   const handleUpdateMarker = (updatedMarker: CustomMarker) => {
+    const liveState = mapRef.current?.getMarkerLiveState?.(updatedMarker.id);
+    const markerToSave: CustomMarker = liveState
+      ? {
+          ...updatedMarker,
+          lat: liveState.lat,
+          lng: liveState.lng,
+          movementTrail: updatedMarker.movementTrailEnabled === true
+            ? (liveState.trail.length ? liveState.trail : updatedMarker.movementTrail)
+            : updatedMarker.movementTrail,
+        }
+      : updatedMarker;
+
     setMarkers((prev) =>
-      prev.map((m) => (m.id === updatedMarker.id ? updatedMarker : m))
+      prev.map((m) => (m.id === markerToSave.id ? markerToSave : m))
     );
     // Also keep the activeStyle synchronized!
     setActiveStyle({
-      title: updatedMarker.title,
-      color: updatedMarker.color,
-      borderColor: updatedMarker.borderColor || '#ffffff',
-      size: updatedMarker.size,
-      rotation: updatedMarker.rotation,
-      iconType: updatedMarker.iconType,
-      draggable: updatedMarker.draggable,
-      labelVisible: updatedMarker.labelVisible,
-      endPointStyle: updatedMarker.endPointStyle || 'none',
-      customIconUrl: updatedMarker.customIconUrl,
-      hasZone: updatedMarker.hasZone || false,
-      zoneColor: updatedMarker.zoneColor || updatedMarker.color || '#ef4444',
-      zoneRadiusKm: updatedMarker.zoneRadiusKm !== undefined ? updatedMarker.zoneRadiusKm : (updatedMarker.zoneSize && updatedMarker.zoneSize <= 200 ? updatedMarker.zoneSize : 5),
-      zoneSize: updatedMarker.zoneSize || 5,
+      title: markerToSave.title,
+      color: markerToSave.color,
+      borderColor: markerToSave.borderColor || '#ffffff',
+      size: markerToSave.size,
+      rotation: markerToSave.rotation,
+      iconType: markerToSave.iconType,
+      draggable: markerToSave.draggable,
+      labelVisible: markerToSave.labelVisible,
+      endPointStyle: markerToSave.endPointStyle || 'none',
+      customIconUrl: markerToSave.customIconUrl,
+      hasZone: markerToSave.hasZone || false,
+      zoneColor: markerToSave.zoneColor || markerToSave.color || '#ef4444',
+      zoneRadiusKm: markerToSave.zoneRadiusKm !== undefined ? markerToSave.zoneRadiusKm : (markerToSave.zoneSize && markerToSave.zoneSize <= 200 ? markerToSave.zoneSize : 5),
+      zoneSize: markerToSave.zoneSize || 5,
+      movementSpeedKmh: markerToSave.movementSpeedKmh ?? 100,
+      movementEnabled: markerToSave.movementEnabled === true,
+      movementTrailEnabled: markerToSave.movementTrailEnabled === true,
+      movementTrailColor: markerToSave.movementTrailColor || markerToSave.color || '#ef4444',
+      movementTrailWidth: markerToSave.movementTrailWidth ?? 3,
+      movementTrailDashStyle: markerToSave.movementTrailDashStyle || 'solid',
     });
   };
 

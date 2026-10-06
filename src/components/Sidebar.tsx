@@ -760,6 +760,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
       zoneColor: preset.zoneColor || preset.color || '#ef4444',
       zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : 60,
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
     };
 
     if (selectedMarker) {
@@ -789,6 +795,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         zoneColor: updates.zoneColor,
         zoneSize: updates.zoneSize,
         customIconUrl: item.dataUrl,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
       });
     }
   };
@@ -932,6 +944,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
       zoneColor: preset.zoneColor || preset.color || (activeStyle.color || '#ef4444'),
       zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
     };
 
     if (selectedMarker) {
@@ -960,6 +978,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         hasZone: updates.hasZone,
         zoneColor: updates.zoneColor,
         zoneSize: updates.zoneSize,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
       });
     }
   };
@@ -1054,6 +1078,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeTitle = selectedMarker ? selectedMarker.title : '';
   const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
+  const activeMovementSpeed = selectedMarker
+    ? (selectedMarker.movementSpeedKmh !== undefined ? selectedMarker.movementSpeedKmh : 100)
+    : (activeStyle.movementSpeedKmh !== undefined ? activeStyle.movementSpeedKmh : 100);
+  const activeMovementEnabled = selectedMarker
+    ? selectedMarker.movementEnabled === true
+    : activeStyle.movementEnabled === true;
+  const activeMovementTrailEnabled = selectedMarker
+    ? selectedMarker.movementTrailEnabled === true
+    : activeStyle.movementTrailEnabled === true;
+  const activeMovementTrailColor = selectedMarker
+    ? (selectedMarker.movementTrailColor || selectedMarker.color || '#ef4444')
+    : (activeStyle.movementTrailColor || activeStyle.color || '#ef4444');
+  const activeMovementTrailWidth = selectedMarker
+    ? (selectedMarker.movementTrailWidth ?? 3)
+    : (activeStyle.movementTrailWidth ?? 3);
+  const activeMovementTrailDashStyle = selectedMarker
+    ? (selectedMarker.movementTrailDashStyle || 'solid')
+    : (activeStyle.movementTrailDashStyle || 'solid');
   const activeDraggable = selectedMarker ? selectedMarker.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true);
   const activeLabelVisible = selectedMarker ? selectedMarker.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true);
   const activeLabelFontSize = selectedMarker ? (selectedMarker.labelFontSize || 11.5) : (activeStyle.labelFontSize || 11.5);
@@ -2475,6 +2517,117 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onChange={(e) => handlePropChange('rotation', Number(e.target.value))}
                     className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
                   />
+                </div>
+
+                {/* Movement controls */}
+                <div className="mt-2 p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {isUa ? 'Рух' : 'Movement'}
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-blue-500 select-none">
+                      <input
+                        type="checkbox"
+                        checked={activeMovementEnabled}
+                        onChange={(e) => handlePropChange('movementEnabled', e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span>{isUa ? 'Увімкнути' : 'Enable'}</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      <span>{isUa ? 'Швидкість' : 'Speed'}</span>
+                      <span className="font-mono text-blue-500">{Number(activeMovementSpeed).toFixed(1)} км/год</span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5000"
+                      step="0.1"
+                      value={activeMovementSpeed}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Math.max(0, Math.min(5000, Number(e.target.value) || 0)))}
+                      className={`w-full border px-3 py-1.5 rounded-xl text-xs font-mono focus:outline-none focus:border-blue-500 ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-800'
+                          : 'bg-[#181d28] border-white/5 text-slate-200'
+                      }`}
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="3000"
+                      step="1"
+                      value={Math.min(3000, Math.max(0, Number(activeMovementSpeed) || 0))}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Number(e.target.value))}
+                      className="w-full h-1 mt-1.5 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeMovementTrailEnabled}
+                      onChange={(e) => handlePropChange('movementTrailEnabled', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{isUa ? 'Залишати слід руху' : 'Leave movement trail'}</span>
+                  </label>
+
+                  {activeMovementTrailEnabled && (
+                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Колір' : 'Color'}
+                        <input
+                          type="color"
+                          value={activeMovementTrailColor}
+                          onChange={(e) => handlePropChange('movementTrailColor', e.target.value)}
+                          className="block w-full h-8 mt-1 p-0.5 rounded-lg border border-slate-200 dark:border-white/10 bg-transparent cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Товщина' : 'Width'}
+                        <span className="block mt-1 font-mono text-blue-500 text-[10px]">{activeMovementTrailWidth}px</span>
+                        <input
+                          type="range"
+                          min="1"
+                          max="15"
+                          step="1"
+                          value={activeMovementTrailWidth}
+                          onChange={(e) => handlePropChange('movementTrailWidth', Number(e.target.value))}
+                          className="w-full h-1 mt-2 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                        />
+                      </label>
+
+                      <div className="col-span-2">
+                        <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Тип лінії' : 'Line style'}
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[
+                            { id: 'solid', ua: 'Суцільна', en: 'Solid' },
+                            { id: 'dashed', ua: 'Пунктир', en: 'Dashed' },
+                            { id: 'dotted', ua: 'Крапки', en: 'Dotted' },
+                          ].map((style) => (
+                            <button
+                              key={style.id}
+                              type="button"
+                              onClick={() => handlePropChange('movementTrailDashStyle', style.id)}
+                              className={`py-1.5 rounded-lg text-[9px] font-bold transition-all ${
+                                activeMovementTrailDashStyle === style.id
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {isUa ? style.ua : style.en}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Toggles */}
