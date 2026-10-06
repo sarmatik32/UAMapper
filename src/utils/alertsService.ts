@@ -23,6 +23,22 @@ export function normalizeLocationName(str: string): string {
     .trim();
 }
 
+export function cleanAlertLocationTitle(title: string): string {
+  if (!title) return '';
+  return title
+    .replace(/^м\.\s*/i, '')
+    .replace(/^місто\s+/i, '')
+    .replace(/^смт\s+/i, '')
+    .replace(/^с\.\s*/i, '')
+    .replace(/\s+(міська|селищна|сільська)?\s*територіальна\s+громада/gi, '')
+    .replace(/\s+територіальна\s+громада/gi, '')
+    .replace(/\s+громада/gi, '')
+    .replace(/\s+міська\s+рада/gi, '')
+    .replace(/\s+район/gi, '')
+    .replace(/\s+область/gi, '')
+    .trim();
+}
+
 export function matchAlertToFeature(alert: AirAlert, featureProps: any): boolean {
   if (!alert || !featureProps) return false;
 
@@ -69,60 +85,269 @@ export function matchAlertToFeature(alert: AirAlert, featureProps: any): boolean
   return false;
 }
 
-export function getAlertVisuals(alertType: AlertType, lang: 'uk' | 'en' = 'uk') {
-  switch (alertType) {
-    case 'artillery_shelling':
-      return {
-        title: lang === 'uk' ? 'Артилерійський обстріл' : 'Artillery Shelling Threat',
-        color: '#f97316', // Orange
-        fillColor: '#ea580c',
-        glowColor: 'rgba(249, 115, 22, 0.6)',
-        badgeBg: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-        iconName: 'ShieldAlert',
-        icon: '💥',
-      };
-    case 'urban_fights':
-      return {
-        title: lang === 'uk' ? 'Вуличні бої' : 'Urban Combat',
-        color: '#b91c1c', // Deep Crimson
-        fillColor: '#991b1b',
-        glowColor: 'rgba(185, 28, 28, 0.6)',
-        badgeBg: 'bg-amber-900/30 text-amber-300 border-amber-700/40',
-        iconName: 'Crosshair',
-        icon: '⚔️',
-      };
-    case 'chemical':
-      return {
-        title: lang === 'uk' ? 'Хімічна загроза' : 'Chemical Threat',
-        color: '#a855f7', // Purple
-        fillColor: '#9333ea',
-        glowColor: 'rgba(168, 85, 247, 0.6)',
-        badgeBg: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-        iconName: 'Biohazard',
-        icon: '☣️',
-      };
-    case 'nuclear_threat':
-      return {
-        title: lang === 'uk' ? 'Радіаційна небезпека' : 'Radiation Threat',
-        color: '#eab308', // Yellow
-        fillColor: '#ca8a04',
-        glowColor: 'rgba(234, 179, 8, 0.6)',
-        badgeBg: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-        iconName: 'Radiation',
-        icon: '☢️',
-      };
-    case 'air_raid':
-    default:
-      return {
-        title: lang === 'uk' ? 'Повітряна тривога' : 'Air Raid Alert',
-        color: '#ef4444', // Vivid Neon Red
-        fillColor: '#dc2626',
-        glowColor: 'rgba(239, 68, 68, 0.65)',
-        badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
-        iconName: 'AlertTriangle',
-        icon: '🚨',
-      };
+export interface AlertVisuals {
+  title: string;
+  color: string;
+  fillColor: string;
+  glowColor: string;
+  badgeBg: string;
+  iconName: string;
+  icon: string;
+  level: 'red' | 'yellow' | 'orange' | 'maroon' | 'purple' | 'lime' | 'cyan' | string;
+  levelTitle: string;
+  threatType?: string;
+  sourceMessage?: string;
+}
+
+export function getAlertVisuals(
+  alertOrType: AirAlert | AlertType | string,
+  lang: 'uk' | 'en' = 'uk'
+): AlertVisuals {
+  const isUa = lang === 'uk';
+  const alertObj: AirAlert | null =
+    typeof alertOrType === 'object' && alertOrType !== null ? (alertOrType as AirAlert) : null;
+  const alertTypeStr: string = alertObj ? alertObj.alert_type : (alertOrType as string) || 'air_raid';
+  const alertLevel = alertObj?.alert_level?.toLowerCase();
+  const threats = alertObj?.threats || [];
+
+  // 1. Check for special alert_types: artillery, urban fights, chemical, nuclear
+  if (alertTypeStr === 'artillery_shelling') {
+    return {
+      title: isUa ? 'Артилерійський обстріл' : 'Artillery Shelling Threat',
+      color: '#f97316', // Orange
+      fillColor: '#ea580c',
+      glowColor: 'rgba(249, 115, 22, 0.7)',
+      badgeBg: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+      iconName: 'ShieldAlert',
+      icon: '💥',
+      level: 'orange',
+      levelTitle: isUa ? 'Артилерія' : 'Artillery',
+      threatType: 'artillery_shelling',
+      sourceMessage: alertObj?.notes || undefined,
+    };
   }
+
+  if (alertTypeStr === 'urban_fights') {
+    return {
+      title: isUa ? 'Вуличні бої' : 'Urban Combat',
+      color: '#b91c1c', // Deep Crimson / Maroon
+      fillColor: '#991b1b',
+      glowColor: 'rgba(185, 28, 28, 0.7)',
+      badgeBg: 'bg-rose-950/40 text-rose-300 border-rose-700/40',
+      iconName: 'Crosshair',
+      icon: '⚔️',
+      level: 'maroon',
+      levelTitle: isUa ? 'Вуличні бої' : 'Urban Fights',
+      threatType: 'urban_fights',
+      sourceMessage: alertObj?.notes || undefined,
+    };
+  }
+
+  if (alertTypeStr === 'chemical') {
+    return {
+      title: isUa ? 'Хімічна загроза' : 'Chemical Threat',
+      color: '#a855f7', // Purple
+      fillColor: '#9333ea',
+      glowColor: 'rgba(168, 85, 247, 0.7)',
+      badgeBg: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+      iconName: 'Biohazard',
+      icon: '☣️',
+      level: 'purple',
+      levelTitle: isUa ? 'Хімічна небезпека' : 'Chemical Threat',
+      threatType: 'chemical',
+      sourceMessage: alertObj?.notes || undefined,
+    };
+  }
+
+  if (alertTypeStr === 'nuclear' || alertTypeStr === 'nuclear_threat') {
+    return {
+      title: isUa ? 'Радіаційна небезпека' : 'Radiation Threat',
+      color: '#84cc16', // Warning Lime
+      fillColor: '#65a30d',
+      glowColor: 'rgba(132, 204, 22, 0.7)',
+      badgeBg: 'bg-lime-500/20 text-lime-400 border-lime-500/30',
+      iconName: 'Radiation',
+      icon: '☢️',
+      level: 'lime',
+      levelTitle: isUa ? 'Радіаційна загроза' : 'Radiation Threat',
+      threatType: 'nuclear',
+      sourceMessage: alertObj?.notes || undefined,
+    };
+  }
+
+  // 2. Yellow Level: Drone / UAV threat (Жовтий рівень - Дронова небезпека)
+  // Check if API specifies alert_level === 'yellow' or threats has yellow / drones
+  const isYellowLevel =
+    alertLevel === 'yellow' ||
+    alertTypeStr === 'yellow' ||
+    alertTypeStr === 'drones' ||
+    (!alertLevel && threats.some((t) => t.level === 'yellow' || t.threat_type === 'drones'));
+
+  if (isYellowLevel) {
+    const droneThreat = threats.find((t) => t.threat_type === 'drones' || t.level === 'yellow');
+    const sourceMsg = droneThreat?.source_message || alertObj?.notes;
+    return {
+      title: sourceMsg || (isUa ? 'Дронова загроза (Жовтий рівень)' : 'Drone Threat (Yellow Level)'),
+      color: '#f59e0b', // Amber-500 / Yellow alert
+      fillColor: '#d97706', // Rich amber fill
+      glowColor: 'rgba(245, 158, 11, 0.75)',
+      badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      iconName: 'AlertTriangle',
+      icon: '🛸',
+      level: 'yellow',
+      levelTitle: isUa ? 'Жовтий рівень' : 'Yellow Level',
+      threatType: 'drones',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  // 3. Red Level: Missile / Ballistic / Aviation / General Air Raid (Червоний рівень)
+  const redThreat = threats.find((t) => t.level === 'red') || threats[0];
+  const threatType = redThreat?.threat_type || '';
+  const sourceMsg = redThreat?.source_message || alertObj?.notes;
+
+  if (threatType === 'ballistic_missiles') {
+    return {
+      title: sourceMsg || (isUa ? 'Балістична загроза (Червоний рівень)' : 'Ballistic Threat (Red Level)'),
+      color: '#ef4444',
+      fillColor: '#dc2626',
+      glowColor: 'rgba(239, 68, 68, 0.75)',
+      badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+      iconName: 'AlertTriangle',
+      icon: '🚀',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'ballistic_missiles',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'cruise_missiles') {
+    return {
+      title: sourceMsg || (isUa ? 'Крилаті ракети (Червоний рівень)' : 'Cruise Missiles (Red Level)'),
+      color: '#ef4444',
+      fillColor: '#dc2626',
+      glowColor: 'rgba(239, 68, 68, 0.75)',
+      badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+      iconName: 'AlertTriangle',
+      icon: '🚀',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'cruise_missiles',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'unspecified_missiles') {
+    return {
+      title: sourceMsg || (isUa ? 'Ракетна небезпека (Червоний рівень)' : 'Missile Threat (Red Level)'),
+      color: '#ef4444',
+      fillColor: '#dc2626',
+      glowColor: 'rgba(239, 68, 68, 0.75)',
+      badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+      iconName: 'AlertTriangle',
+      icon: '🚀',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'unspecified_missiles',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'guided_aerial_bombs') {
+    return {
+      title: sourceMsg || (isUa ? 'Загроза КАБ (Червоний рівень)' : 'Guided Aerial Bombs (Red Level)'),
+      color: '#f43f5e',
+      fillColor: '#e11d48',
+      glowColor: 'rgba(244, 63, 94, 0.75)',
+      badgeBg: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+      iconName: 'AlertTriangle',
+      icon: '💣',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'guided_aerial_bombs',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'mig31k_departure') {
+    return {
+      title: sourceMsg || (isUa ? 'Зліт МіГ-31К (Червоний рівень)' : 'MiG-31K Launch (Red Level)'),
+      color: '#ef4444',
+      fillColor: '#dc2626',
+      glowColor: 'rgba(239, 68, 68, 0.75)',
+      badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+      iconName: 'AlertTriangle',
+      icon: '✈️',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'mig31k_departure',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'strategic_aircraft_activity') {
+    return {
+      title: sourceMsg || (isUa ? 'Стратегічна авіація (Червоний рівень)' : 'Strategic Aviation (Red Level)'),
+      color: '#ef4444',
+      fillColor: '#dc2626',
+      glowColor: 'rgba(239, 68, 68, 0.75)',
+      badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+      iconName: 'AlertTriangle',
+      icon: '✈️',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'strategic_aircraft_activity',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'tactic_aircraft_activity') {
+    return {
+      title: sourceMsg || (isUa ? 'Тактична авіація (Червоний рівень)' : 'Tactical Aviation (Red Level)'),
+      color: '#f97316',
+      fillColor: '#ea580c',
+      glowColor: 'rgba(249, 115, 22, 0.75)',
+      badgeBg: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+      iconName: 'AlertTriangle',
+      icon: '🛩️',
+      level: 'red',
+      levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+      threatType: 'tactic_aircraft_activity',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  if (threatType === 'air_defense') {
+    return {
+      title: sourceMsg || (isUa ? 'Робота ППО' : 'Air Defense Active'),
+      color: '#06b6d4',
+      fillColor: '#0891b2',
+      glowColor: 'rgba(6, 182, 212, 0.75)',
+      badgeBg: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+      iconName: 'ShieldAlert',
+      icon: '🛡️',
+      level: 'cyan',
+      levelTitle: isUa ? 'ППО' : 'Air Defense',
+      threatType: 'air_defense',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
+  // Default Red Air Raid Alert
+  return {
+    title: sourceMsg || (isUa ? 'Повітряна тривога (Червоний рівень)' : 'Air Raid Alert (Red Level)'),
+    color: '#ef4444', // Vivid Neon Red
+    fillColor: '#dc2626',
+    glowColor: 'rgba(239, 68, 68, 0.65)',
+    badgeBg: 'bg-red-500/20 text-red-400 border-red-500/30',
+    iconName: 'AlertTriangle',
+    icon: '🚨',
+    level: 'red',
+    levelTitle: isUa ? 'Червоний рівень' : 'Red Level',
+    threatType: 'air_raid',
+    sourceMessage: sourceMsg || undefined,
+  };
 }
 
 export function formatAlertDuration(startedAtStr: string, lang: 'uk' | 'en' = 'uk'): string {

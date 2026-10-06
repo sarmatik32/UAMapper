@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
+import { simplifyLatLngPath } from '../utils/smoothing';
 import { 
-  Map, 
+  Map as MapIcon, 
   Settings, 
   Layers, 
   Trash2, 
@@ -39,19 +40,21 @@ import {
   Radio,
   Bell,
   RefreshCw,
-  Type
+  Type,
+  PanelRightClose,
+  KeyRound,
+  ExternalLink,
+  X
 } from 'lucide-react';
 
 interface SidebarProps {
+  onClose?: () => void;
   markers: CustomMarker[];
   selectedMarkerId: string | null;
   onSelectMarker: (id: string | null) => void;
   onAddMarker: (lat?: number, lng?: number) => void;
   onUpdateMarker: (marker: CustomMarker) => void;
   onDeleteMarker: (id: string) => void;
-  routePlacementMarkerId?: string | null;
-  onStartRoutePlacement?: (markerId: string) => void;
-  onCancelRoutePlacement?: () => void;
   onClearMarkers: () => void;
   tileLayers: TileLayerConfig[];
   activeTileLayer: TileLayerConfig;
@@ -85,6 +88,8 @@ interface SidebarProps {
   onUpdateWatermarkRotation?: (rotation: number) => void;
   showLegendOverlay?: boolean;
   onUpdateShowLegendOverlay?: (show: boolean) => void;
+  showLogoAndLegendOnMap?: boolean;
+  onUpdateShowLogoAndLegendOnMap?: (show: boolean) => void;
   legendOverlayText?: string;
   onUpdateLegendOverlayText?: (text: string) => void;
   showRadarOverlay?: boolean;
@@ -95,10 +100,27 @@ interface SidebarProps {
   onUpdateMapFont?: (font: MapFontFamily) => void;
   showCityBoundary?: boolean;
   onUpdateShowCityBoundary?: (show: boolean) => void;
+  cityBoundaryConfig?: BoundaryStyleConfig;
+  onUpdateCityBoundaryConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
   showDistrictBoundary?: boolean;
   onUpdateShowDistrictBoundary?: (show: boolean) => void;
+  districtBoundaryConfig?: BoundaryStyleConfig;
+  onUpdateDistrictBoundaryConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
+  showUkraineBoundary?: boolean;
+  onUpdateShowUkraineBoundary?: (show: boolean) => void;
+  ukraineBoundaryConfig?: UkraineBoundaryConfig;
+  onUpdateUkraineBoundaryConfig?: (updates: Partial<UkraineBoundaryConfig>) => void;
   showHromadaBoundaries?: boolean;
   onUpdateShowHromadaBoundaries?: (show: boolean) => void;
+  hromadaBoundariesConfig?: BoundaryStyleConfig;
+  onUpdateHromadaBoundariesConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
+  showQuickSettlements?: boolean;
+  onToggleQuickSettlements?: (show: boolean) => void;
+  deepStateOccupiedConfig?: DeepStateOccupiedConfig;
+  onUpdateDeepStateOccupiedConfig?: (updates: Partial<DeepStateOccupiedConfig>) => void;
+  isLoadingDeepState?: boolean;
+  deepStateLastSync?: string | null;
+  onRefreshDeepState?: () => void;
   showSettlementLabels?: boolean;
   onUpdateShowSettlementLabels?: (show: boolean) => void;
   settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
@@ -114,6 +136,8 @@ interface SidebarProps {
   onImportCustomSettlements?: (settlements: Settlement[]) => void;
   onExportAllSettings?: () => void;
   onImportAllSettings?: (file: File) => void;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
+  onUpdateCustomLibrary?: (lib: { id: string; name: string; dataUrl: string }[]) => void;
   autoHighlightZone?: boolean;
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   customIconTitles?: Record<string, string>;
@@ -142,14 +166,24 @@ interface SidebarProps {
   onChangeLineStartCustomIcon?: (url: string) => void;
   lineStartIconRotation?: number;
   onChangeLineStartIconRotation?: (rot: number) => void;
+  lineStartIconSize?: number;
+  onChangeLineStartIconSize?: (size: number) => void;
   lineEndStyle?: LineEndpointType;
   onChangeLineEndStyle?: (style: LineEndpointType) => void;
   lineEndCustomIcon?: string;
   onChangeLineEndCustomIcon?: (url: string) => void;
   lineEndIconRotation?: number;
   onChangeLineEndIconRotation?: (rot: number) => void;
+  lineEndIconSize?: number;
+  onChangeLineEndIconSize?: (size: number) => void;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
   onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
+  lineDrawMethod?: LineDrawMethod;
+  onChangeLineDrawMethod?: (method: LineDrawMethod) => void;
+
+  // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
+  mapLegendConfig?: MapLegendConfig;
+  onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -167,19 +201,29 @@ interface SidebarProps {
   onChangeAlertsStrokeWidth?: (width: number) => void;
   onRefreshAlerts?: () => void;
   isLoadingAlerts?: boolean;
+
+  // Live Mode (Neptun) Props
+  isLiveMode?: boolean;
+  onToggleLiveMode?: () => void;
+  liveThreats?: NeptunThreat[];
+  isLoadingLive?: boolean;
+  onRefreshLive?: () => void;
+  showLiveTrails?: boolean;
+  onToggleShowLiveTrails?: () => void;
+  showLiveMessagesFeed?: boolean;
+  onToggleShowLiveMessagesFeed?: () => void;
+  liveMessagesCount?: number;
 }
 
 
 export const Sidebar: React.FC<SidebarProps> = ({
+  onClose,
   markers,
   selectedMarkerId,
   onSelectMarker,
   onAddMarker,
   onUpdateMarker,
   onDeleteMarker,
-  routePlacementMarkerId = null,
-  onStartRoutePlacement,
-  onCancelRoutePlacement,
   onClearMarkers,
   tileLayers,
   activeTileLayer,
@@ -192,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   interactionMode = 'draw',
   onSetInteractionMode = (_mode) => {},
   onUndo = () => {},
-  theme = 'dark',
+  theme = 'light',
   onToggleTheme = () => {},
   onExportPNG = () => {},
   onExportTelegram = () => {},
@@ -213,6 +257,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateWatermarkRotation = (_rotation) => {},
   showLegendOverlay = true,
   onUpdateShowLegendOverlay = (_show) => {},
+  showLogoAndLegendOnMap = true,
+  onUpdateShowLogoAndLegendOnMap = (_show) => {},
   legendOverlayText = '',
   onUpdateLegendOverlayText = (_text) => {},
   showRadarOverlay = true,
@@ -223,10 +269,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onUpdateMapFont = (_font) => {},
   showCityBoundary = true,
   onUpdateShowCityBoundary,
+  cityBoundaryConfig,
+  onUpdateCityBoundaryConfig,
   showDistrictBoundary = true,
   onUpdateShowDistrictBoundary,
+  districtBoundaryConfig,
+  onUpdateDistrictBoundaryConfig,
+  showUkraineBoundary = true,
+  onUpdateShowUkraineBoundary,
+  ukraineBoundaryConfig,
+  onUpdateUkraineBoundaryConfig,
   showHromadaBoundaries = true,
   onUpdateShowHromadaBoundaries,
+  hromadaBoundariesConfig,
+  onUpdateHromadaBoundariesConfig,
+  showQuickSettlements = true,
+  onToggleQuickSettlements,
+  deepStateOccupiedConfig,
+  onUpdateDeepStateOccupiedConfig,
+  isLoadingDeepState = false,
+  deepStateLastSync = null,
+  onRefreshDeepState,
   showSettlementLabels = true,
   onUpdateShowSettlementLabels = (_show) => {},
   settlementLabelMode = 'all',
@@ -242,6 +305,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onImportCustomSettlements = (_settlements) => {},
   onExportAllSettings,
   onImportAllSettings,
+  customLibrary: propsCustomLibrary,
+  onUpdateCustomLibrary,
   autoHighlightZone = false,
   onToggleAutoHighlightZone = (_enabled) => {},
   customIconTitles = {},
@@ -267,6 +332,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeAlertsStrokeWidth,
   onRefreshAlerts,
   isLoadingAlerts = false,
+  isLiveMode = false,
+  onToggleLiveMode,
+  liveThreats = [],
+  isLoadingLive = false,
+  onRefreshLive,
+  showLiveTrails = true,
+  onToggleShowLiveTrails,
+  showLiveMessagesFeed = true,
+  onToggleShowLiveMessagesFeed,
+  liveMessagesCount = 0,
   onSelectLine = (_id) => {},
   onUpdateLine = (_line) => {},
   onDeleteLine = (_id) => {},
@@ -283,22 +358,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onChangeLineStartCustomIcon = (_url) => {},
   lineStartIconRotation = 0,
   onChangeLineStartIconRotation = (_rot) => {},
+  lineStartIconSize = 32,
+  onChangeLineStartIconSize = (_size) => {},
   lineEndStyle = 'none',
   onChangeLineEndStyle = (_style) => {},
   lineEndCustomIcon = '',
   onChangeLineEndCustomIcon = (_url) => {},
   lineEndIconRotation = 0,
   onChangeLineEndIconRotation = (_rot) => {},
+  lineEndIconSize = 32,
+  onChangeLineEndIconSize = (_size) => {},
   lineDashStyle = 'solid',
   onChangeLineDashStyle = (_style) => {},
+  lineDrawMethod = 'freehand',
+  onChangeLineDrawMethod = (_method) => {},
+
+  // Map Legend
+  mapLegendConfig,
+  onUpdateMapLegendConfig,
 }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [customTileUrl, setCustomTileUrl] = useState('');
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
+  const [isEditingVisicomKey, setIsEditingVisicomKey] = useState(false);
+  const [newVisicomKeyInput, setNewVisicomKeyInput] = useState('');
+  const [visicomKeySavedSuccess, setVisicomKeySavedSuccess] = useState(false);
+  const [deepStateSubTab, setDeepStateSubTab] = useState<'fill' | 'stroke' | 'gray'>('fill');
+  const [isUkraineSettingsOpen, setIsUkraineSettingsOpen] = useState(false);
+  const [isCitySettingsOpen, setIsCitySettingsOpen] = useState(false);
+  const [isDistrictSettingsOpen, setIsDistrictSettingsOpen] = useState(false);
+  const [isHromadaSettingsOpen, setIsHromadaSettingsOpen] = useState(false);
 
-  // Custom PNG Library State
+  // Custom PNG Library State (synced with props / App state)
   const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    if (propsCustomLibrary && propsCustomLibrary.length > 0) return propsCustomLibrary;
     try {
       const saved = localStorage.getItem('visicom_custom_library');
       return saved ? JSON.parse(saved) : [];
@@ -306,6 +400,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       return [];
     }
   });
+
+  useEffect(() => {
+    if (propsCustomLibrary) {
+      setCustomLibrary(propsCustomLibrary);
+    }
+  }, [propsCustomLibrary]);
 
   const handleWatermarkImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -358,19 +458,91 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const currLineStartStyle = selectedLine ? selectedLine.startPointStyle : lineStartStyle;
   const currLineStartCustomIcon = selectedLine ? (selectedLine.startCustomIconUrl || '') : lineStartCustomIcon;
   const currLineStartIconRotation = selectedLine ? (selectedLine.startIconRotation || 0) : (lineStartIconRotation || 0);
+  const currLineStartIconSize = selectedLine ? (selectedLine.startIconSize || 32) : (lineStartIconSize || 32);
   const currLineEndStyle = selectedLine ? selectedLine.endPointStyle : lineEndStyle;
   const currLineEndCustomIcon = selectedLine ? (selectedLine.endCustomIconUrl || '') : lineEndCustomIcon;
   const currLineEndIconRotation = selectedLine ? (selectedLine.endIconRotation || 0) : (lineEndIconRotation || 0);
+  const currLineEndIconSize = selectedLine ? (selectedLine.endIconSize || 32) : (lineEndIconSize || 32);
+  const currLineLabel = selectedLine ? (selectedLine.label || '') : '';
+  const currLineLabelSize = selectedLine ? (selectedLine.labelSize || 12) : 12;
   const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
+
+  const handleSimplifySelectedLine = (targetCount: number) => {
+    if (!selectedLine) return;
+    const optimized = simplifyLatLngPath(selectedLine.points, targetCount);
+    onUpdateLine({
+      ...selectedLine,
+      points: optimized,
+      smoothed: true,
+    });
+  };
 
   const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
 
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
+  const accordionContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSection = (sectionKey: string) => {
+    setTimeout(() => {
+      const container = accordionContainerRef.current;
+      const targetEl = document.getElementById(`section-${sectionKey}`);
+      if (!container || !targetEl) return;
+      
+      const targetOffset = targetEl.offsetTop - container.offsetTop;
+      container.scrollTo({
+        top: Math.max(0, targetOffset - 4),
+        behavior: 'smooth'
+      });
+    }, 60);
   };
+
+  const openSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections({
+      mode: section === 'mode',
+      lines: section === 'lines',
+      styles: section === 'styles',
+      objects: section === 'objects',
+      map: section === 'map',
+      overlays: section === 'overlays',
+      settings: section === 'settings',
+    });
+    scrollToSection(String(section));
+  };
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => {
+      const isCurrentlyOpen = prev[section];
+      const willBeOpen = !isCurrentlyOpen;
+      
+      if (willBeOpen) {
+        scrollToSection(String(section));
+      }
+      
+      return {
+        mode: willBeOpen && section === 'mode',
+        lines: willBeOpen && section === 'lines',
+        styles: willBeOpen && section === 'styles',
+        objects: willBeOpen && section === 'objects',
+        map: willBeOpen && section === 'map',
+        overlays: willBeOpen && section === 'overlays',
+        settings: willBeOpen && section === 'settings',
+      };
+    });
+  };
+
+  const isLinesOpen = expandedSections.lines;
+  const isAnySectionOpen = expandedSections.mode || isLinesOpen || expandedSections.styles || expandedSections.objects || expandedSections.map || expandedSections.overlays;
+
+  useEffect(() => {
+    if (interactionMode === 'line' || selectedLineId !== null) {
+      openSection('lines');
+    }
+  }, [interactionMode, selectedLineId]);
+
+  useEffect(() => {
+    if (selectedMarkerId !== null) {
+      openSection('styles');
+    }
+  }, [selectedMarkerId]);
 
   const saveToLibrary = async (name: string, rawDataUrl: string) => {
     const optimizedDataUrl = await optimizeIconDataUrl(rawDataUrl);
@@ -379,12 +551,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       name,
       dataUrl: optimizedDataUrl,
     };
-    setCustomLibrary((prev) => {
-      const updated = [...prev, newItem];
-      safeSetItem('visicom_custom_library', JSON.stringify(updated));
-      return updated;
-    });
-    return newItem.dataUrl;
+    const updated = [...customLibrary, newItem];
+    setCustomLibrary(updated);
+    safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
+    return newItem;
   };
 
   const deleteFromLibrary = (id: string, e: React.MouseEvent) => {
@@ -392,6 +563,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const updated = customLibrary.filter((item) => item.id !== id);
     setCustomLibrary(updated);
     safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
   };
 
   const handleFileImportSettlements = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -588,6 +760,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
       zoneColor: preset.zoneColor || preset.color || '#ef4444',
       zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : 60,
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
     };
 
     if (selectedMarker) {
@@ -617,6 +795,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         zoneColor: updates.zoneColor,
         zoneSize: updates.zoneSize,
         customIconUrl: item.dataUrl,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
       });
     }
   };
@@ -635,13 +819,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           const defaultName = file.name.replace(/\.[^/.]+$/, "");
           const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
           
-          const savedUrl = await saveToLibrary(name, base64);
-          const newItem = {
-            id: 'custom_' + Date.now(),
-            name,
-            dataUrl: savedUrl,
-          };
-          
+          const newItem = await saveToLibrary(name, base64);
           handleSelectCustomIcon(newItem);
         };
         reader.readAsDataURL(file);
@@ -658,9 +836,91 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return language === 'uk' ? 'Маркер' : 'Marker';
   };
 
+  const generateLegendItemsFromMap = (): MapLegendItem[] => {
+    const itemsMap = new Map<string, MapLegendItem>();
+
+    markers.forEach((m) => {
+      const key = `${m.iconType}_${m.color}_${m.customIconUrl || ''}`;
+      if (!itemsMap.has(key)) {
+        const title = m.title || customIconTitles[m.iconType] || getDefaultIconName(m.iconType);
+        itemsMap.set(key, {
+          id: `marker_${key}`,
+          iconType: m.iconType,
+          customIconUrl: m.customIconUrl,
+          color: m.color,
+          name: title,
+          title,
+          countText: '1 шт',
+          count: '1 шт',
+          visible: true,
+        });
+      } else {
+        const existing = itemsMap.get(key)!;
+        const currentCountNum = parseInt(existing.countText || existing.count || '1', 10);
+        const newCount = isNaN(currentCountNum) ? 2 : currentCountNum + 1;
+        existing.count = `${newCount} шт`;
+        existing.countText = `${newCount} шт`;
+      }
+    });
+
+    drawnLines.forEach((l) => {
+      if (l.startPointStyle === 'custom_icon' && l.startCustomIconUrl) {
+        const key = `line_start_${l.startCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Початок маршруту' : 'Route Start';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.startCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+      if (l.endPointStyle === 'custom_icon' && l.endCustomIconUrl) {
+        const key = `line_end_${l.endCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Кінець маршруту' : 'Route End';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.endCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      } else if (l.endPointStyle === 'explosion') {
+        const key = `line_explosion_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Ураження / Вибух' : 'Impact / Explosion';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'crosshair',
+            color: '#ef4444',
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+    });
+
+    return Array.from(itemsMap.values());
+  };
+
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
-    setExpandedSections((prev) => ({ ...prev, styles: true }));
+    openSection('styles');
 
     const fallbackPreset = getDefaultPresetForIcon(iconTypeId);
     const preset = iconPresets[iconTypeId] || fallbackPreset;
@@ -684,6 +944,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
       zoneColor: preset.zoneColor || preset.color || (activeStyle.color || '#ef4444'),
       zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
     };
 
     if (selectedMarker) {
@@ -712,6 +978,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         hasZone: updates.hasZone,
         zoneColor: updates.zoneColor,
         zoneSize: updates.zoneSize,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
       });
     }
   };
@@ -806,8 +1078,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeTitle = selectedMarker ? selectedMarker.title : '';
   const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
+  const activeMovementSpeed = selectedMarker
+    ? (selectedMarker.movementSpeedKmh !== undefined ? selectedMarker.movementSpeedKmh : 100)
+    : (activeStyle.movementSpeedKmh !== undefined ? activeStyle.movementSpeedKmh : 100);
+  const activeMovementEnabled = selectedMarker
+    ? selectedMarker.movementEnabled === true
+    : activeStyle.movementEnabled === true;
+  const activeMovementTrailEnabled = selectedMarker
+    ? selectedMarker.movementTrailEnabled === true
+    : activeStyle.movementTrailEnabled === true;
+  const activeMovementTrailColor = selectedMarker
+    ? (selectedMarker.movementTrailColor || selectedMarker.color || '#ef4444')
+    : (activeStyle.movementTrailColor || activeStyle.color || '#ef4444');
+  const activeMovementTrailWidth = selectedMarker
+    ? (selectedMarker.movementTrailWidth ?? 3)
+    : (activeStyle.movementTrailWidth ?? 3);
+  const activeMovementTrailDashStyle = selectedMarker
+    ? (selectedMarker.movementTrailDashStyle || 'solid')
+    : (activeStyle.movementTrailDashStyle || 'solid');
   const activeDraggable = selectedMarker ? selectedMarker.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true);
   const activeLabelVisible = selectedMarker ? selectedMarker.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true);
+  const activeLabelFontSize = selectedMarker ? (selectedMarker.labelFontSize || 11.5) : (activeStyle.labelFontSize || 11.5);
+  const activeLabelOrientation = selectedMarker ? (selectedMarker.labelOrientation || 'auto') : (activeStyle.labelOrientation || 'auto');
   
   // Tactical zone properties
   const activeHasZone = selectedMarker ? !!selectedMarker.hasZone : !!activeStyle.hasZone;
@@ -815,28 +1107,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
 
   return (
-    <div className={`modern-sidebar w-full md:w-80 flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 ${
+    <div className={`modern-sidebar w-full flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 backdrop-blur-3xl backdrop-saturate-200 transition-colors duration-300 ${
       theme === 'light'
-        ? 'bg-white border-l border-slate-200 text-slate-700 shadow-xl'
-        : 'bg-[#161a22] border-l border-[#262c38] text-slate-300 shadow-2xl'
+        ? 'bg-white/45 border-l border-white/60 text-slate-800 shadow-2xl'
+        : 'bg-[#0a0d14]/45 border-l border-white/10 text-slate-200 shadow-2xl'
     }`}>
       
       {/* Header section with App Branding */}
-      <div className={`p-2 sm:p-4 border-b flex justify-between items-center gap-1.5 sm:gap-3 ${
-        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/50 border-[#262c38]'
+      <div className={`px-3 py-2.5 border-b flex justify-between items-center gap-2 backdrop-blur-2xl shrink-0 ${
+        theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
       }`}>
-        <div className={`px-2 py-1 sm:px-3 sm:py-1.5 rounded-full border flex flex-nowrap items-center gap-[1px] sm:gap-[2px] shadow-md transition-all select-none flex-shrink min-w-0 ${
-          theme === 'light' 
-            ? 'bg-slate-950/90 border-slate-900 text-white' 
-            : 'bg-white/90 border-white text-slate-950'
-        }`}>
+        {/* Logo and channel badge (Clickable link to Telegram) */}
+        <a
+          href="https://t.me/krrig_alerts"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Telegram: @krrig_alerts"
+          className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-sm transition-all select-none min-w-0 cursor-pointer hover:opacity-90 active:scale-95 ${
+            theme === 'light' 
+              ? 'bg-slate-950/90 border-slate-900 text-white' 
+              : 'bg-white/90 border-white text-slate-950'
+          }`}
+        >
           <span 
-            className="font-sans font-bold tracking-tight text-[10.5px] sm:text-[13px] leading-none flex items-center whitespace-nowrap"
+            className="font-sans font-bold tracking-tight text-[11px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
             style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
           >
             UA Mapper
           </span>
-          <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg className="w-3.5 h-3.5 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
             <defs>
               <linearGradient id="telegram-watermark-sidebar" x1="0%" y1="0%" x2="100%" y2="100%">
                 <stop offset="0%" stopColor="#2AABEE" />
@@ -849,54 +1148,72 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className={`inline-block w-[1px] h-2.5 self-center ${
             theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
           }`} />
-          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7px] sm:text-[8px] whitespace-nowrap ${
+          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7.5px] whitespace-nowrap ${
             theme === 'light' ? 'text-white' : 'text-slate-950'
           }`}>
             BY @KRRIG_ALERTS
           </span>
-        </div>
+        </a>
 
         {/* Top-Right utility buttons */}
-        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           {/* Theme Toggle Button */}
           <button
             onClick={onToggleTheme}
             title={isUa ? 'Перемкнути світлу/темну тему' : 'Toggle light/dark theme'}
-            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
             }`}
           >
-            {theme === 'light' ? <Moon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-400" />}
+            {theme === 'light' ? <Moon className="w-3.5 h-3.5 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
           </button>
 
           <button
             onClick={onToggleLanguage}
             title={isUa ? 'Switch to English' : 'Перемкнути на українську'}
-            className={`w-[30px] h-[30px] sm:w-[34px] sm:h-[34px] flex items-center justify-center border rounded-xl transition-all cursor-pointer ${
-              theme === 'light' ? 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200' : 'bg-white/5 border-white/5 text-slate-400 hover:bg-white/10'
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
             }`}
           >
-            <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
+            <Globe className="w-3.5 h-3.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
           </button>
+
+          {/* Hide Sidebar Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              title={isUa ? 'Сховати бічну панель' : 'Hide sidebar panel'}
+              className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+                theme === 'light' 
+                  ? 'bg-white/70 border-slate-200/80 text-slate-700 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm' 
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-red-400'
+              }`}
+            >
+              <PanelRightClose className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 
       {/* Accordion List wrapper */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+      <div 
+        ref={accordionContainerRef}
+        className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 pb-3 pt-1 space-y-2.5 scroll-smooth"
+      >
 
         {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
-        <div className={`p-2 rounded-2xl border shadow-sm flex items-center justify-around transition-all ${
+        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl grid grid-cols-6 gap-1.5 items-center flex-shrink-0 transition-all ${
           theme === 'light' 
-            ? 'border-slate-200 bg-white' 
-            : 'border-[#262c38] bg-[#0e1117]/60'
+            ? 'border-slate-200/80 bg-white/60' 
+            : 'border-white/10 bg-white/[0.04]'
         }`}>
           <button
             onClick={() => onUpdateShowSettlementLabels?.(!showSettlementLabels)}
             title={isUa ? `Назви населених пунктів: ${showSettlementLabels ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Settlement labels: ${showSettlementLabels ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               showSettlementLabels
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <Building2 className="w-4 h-4" />
@@ -905,58 +1222,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
             title={isUa ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               autoHighlightZone
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <Layers className="w-4 h-4" />
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'redzone' ? 'draw' : 'redzone')}
+            onClick={() => {
+              const next = interactionMode === 'redzone' ? 'draw' : 'redzone';
+              onSetInteractionMode(next);
+              if (next === 'redzone') openSection('mode');
+            }}
             title={isUa ? 'Червоні зони' : 'Red Zone Mode'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'redzone'
                 ? 'bg-red-500 text-white font-bold shadow-md shadow-red-500/30 ring-2 ring-red-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-red-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-red-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <ShieldAlert className="w-4 h-4" />
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'settlement' ? 'draw' : 'settlement')}
+            onClick={() => {
+              const next = interactionMode === 'settlement' ? 'draw' : 'settlement';
+              onSetInteractionMode(next);
+              if (next === 'settlement') openSection('objects');
+            }}
             title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'settlement'
                 ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-blue-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <MapPin className="w-4 h-4" />
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'line' ? 'draw' : 'line')}
+            onClick={() => {
+              const next = interactionMode === 'line' ? 'draw' : 'line';
+              onSetInteractionMode(next);
+              if (next === 'line') openSection('lines');
+            }}
             title={isUa ? 'Малювання ліній зі зглажуванням' : 'Draw Smoothed Lines'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'line'
                 ? 'bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-emerald-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-emerald-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <Spline className="w-4 h-4" />
           </button>
 
           <button
-            onClick={() => onSetInteractionMode(interactionMode === 'measure' ? 'draw' : 'measure')}
+            onClick={() => {
+              const next = interactionMode === 'measure' ? 'draw' : 'measure';
+              onSetInteractionMode(next);
+              if (next === 'measure') openSection('mode');
+            }}
             title={isUa ? 'Виміряти відстань' : 'Measure Distance'}
-            className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
               interactionMode === 'measure'
                 ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
-                : 'bg-slate-100 dark:bg-slate-900 text-slate-500 hover:text-amber-500 border border-slate-200 dark:border-white/10'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
             }`}
           >
             <Ruler className="w-4 h-4" />
@@ -964,15 +1297,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-mode"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.mode
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('mode')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.mode
+                ? (theme === 'light'
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -983,33 +1324,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
 
           {expandedSections.mode && (
-            <div className="p-3 grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onSetInteractionMode('draw')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'draw'
-                    ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <PenTool className="w-4 h-4" />
-                <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
-              </button>
+            <div className="p-3 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onSetInteractionMode('draw')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'draw'
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <PenTool className="w-4 h-4" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('line')}
-                className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
-                  interactionMode === 'line'
-                    ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
-                    : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
-                }`}
-              >
-                <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
-              </button>
+                <button
+                  onClick={() => onSetInteractionMode('line')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'line'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
+                </button>
 
-              <button
-                onClick={() => onSetInteractionMode('pan')}
+                <button
+                  onClick={() => onSetInteractionMode('pan')}
                   className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
                     interactionMode === 'pan'
                       ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
@@ -1044,19 +1386,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
                 </button>
               </div>
+
+              {interactionMode === 'measure' && (
+                <div className="mt-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs">
+                    <Ruler className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Режим лінійки (Вимірювання)' : 'Ruler Mode (Measurement)'}</span>
+                  </div>
+                  <ul className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 pl-3.5 list-disc leading-tight">
+                    <li>{isUa ? 'Клікайте по карті для додавання точок' : 'Click on map to add points'}</li>
+                    <li>{isUa ? 'Перетягуйте нанесені точки мишкою' : 'Drag placed points with mouse'}</li>
+                    <li>{isUa ? 'Клік по точці відкриває меню видалення (або ПКМ)' : 'Click point to delete (or right-click)'}</li>
+                    <li>{isUa ? 'Backspace — скасувати точку, Esc — очистити' : 'Backspace removes last point, Esc clears all'}</li>
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         {/* 1.5 НАЛАШТУВАННЯ ЛІНІЙ (LINE DRAWING & CONFIGURATION) */}
-        <div className={`border rounded-2xl overflow-hidden transition-all ${
-          interactionMode === 'line' || selectedLineId !== null ? 'ring-2 ring-emerald-500/60 border-emerald-500' : (theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20')
-        }`}>
+        <div 
+          id="section-lines"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            isLinesOpen
+              ? (interactionMode === 'line' || selectedLineId !== null
+                  ? (theme === 'light'
+                      ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-white shadow-md'
+                      : 'ring-2 ring-emerald-500/60 border-emerald-500 bg-[#141824] shadow-lg')
+                  : (theme === 'light'
+                      ? 'border-slate-300 bg-white shadow-md'
+                      : 'border-white/15 bg-[#141824] shadow-lg'))
+              : (interactionMode === 'line' || selectedLineId !== null
+                  ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-emerald-500/10'
+                  : (theme === 'light' 
+                      ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' 
+                      : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50'))
+          }`}>
           <button
             onClick={() => toggleSection('lines')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              interactionMode === 'line'
-                ? 'bg-emerald-500/15 text-emerald-400'
-                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              isLinesOpen
+                ? (interactionMode === 'line'
+                    ? (theme === 'light' 
+                        ? 'rounded-t-2xl bg-emerald-50 text-emerald-800 border-b border-emerald-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#13221d] text-emerald-400 border-b border-emerald-500/20 shadow-xs')
+                    : (theme === 'light'
+                        ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs'))
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -1069,11 +1449,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {drawnLines.length}
                 </span>
               )}
-              {expandedSections.lines ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+              {isLinesOpen ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
             </div>
           </button>
 
-          {(expandedSections.lines || interactionMode === 'line' || selectedLineId !== null) && (
+          {isLinesOpen && (
             <div className="p-3.5 space-y-4 text-xs">
               
               {/* Target indicator */}
@@ -1111,6 +1491,48 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <span>{isUa ? 'Увімкнути режим малювання лінії' : 'Activate Line Drawing Mode'}</span>
                 </button>
               )}
+
+              {/* Спосіб нанесення лінії (Від руки як в Paint чи По точках) */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Спосіб малювання' : 'Drawing Technique'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('freehand')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'freehand'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'Від руки (Paint)' : 'Freehand (Paint)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('points')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'points'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <PenTool className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'По точках' : 'Point-by-point'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {lineDrawMethod === 'freehand'
+                    ? (isUa 
+                        ? '✨ Проведіть мишкою або пальцем по екрану (як в Paint). Після відпускання лінія автоматично згладиться сама.' 
+                        : '✨ Draw with mouse or finger (like Paint). Once released, the line will automatically smooth itself.')
+                    : (isUa 
+                        ? '📐 Послідовні натискання на карті для точного нанесення лінії по вузлових точках.' 
+                        : '📐 Click sequentially on the map to place precise path vertices.')}
+                </p>
+              </div>
 
               {/* 1. Color Picker */}
               <div>
@@ -1197,6 +1619,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {isUa ? 'Повороти та кути сильно згладжуються плавною дугою' : 'Turn angles and corners are strongly smoothed into curves'}
                 </p>
               </div>
+
+              {/* 3.1 Point Simplification for Hand-Drawn Lines / Easy Editing */}
+              {selectedLine && (
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">
+                        {isUa ? 'Точки редагування лінії' : 'Editing Control Points'}
+                      </span>
+                    </div>
+                    <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                      selectedLine.points.length > 22
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      {selectedLine.points.length} {isUa ? 'точок' : 'pts'}
+                    </span>
+                  </div>
+
+                  {selectedLine.points.length > 20 ? (
+                    <p className="text-[10px] text-amber-400 leading-snug font-medium">
+                      {isUa
+                        ? 'У лінії забагато точок для зручного редагування. Оберіть кількість вузлів для оптимізації:'
+                        : 'Too many points for comfortable editing. Choose desired point count to optimize:'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      {isUa
+                        ? 'Зменшення точок робить перетягування та зміну форми лінії легким і точним:'
+                        : 'Fewer points make shaping and adjusting the line much easier:'}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(10)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Зменшити до ~10 ключових точок' : 'Reduce to ~10 points'}
+                    >
+                      {isUa ? 'Мінімум (~10)' : 'Min (~10)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(16)}
+                      className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold transition-all cursor-pointer text-center shadow-sm active:scale-95"
+                      title={isUa ? 'Оптимально: ~16 точок для гарної форми' : 'Optimal: ~16 points'}
+                    >
+                      {isUa ? 'Оптимально (~16)' : 'Optimal (~16)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(24)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Детальніше: ~24 точки' : 'Detailed: ~24 points'}
+                    >
+                      {isUa ? 'Детально (~24)' : 'Detailed (~24)'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* 4. Dash Style */}
               <div>
@@ -1335,6 +1819,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     />
                   </div>
                 )}
+
+                {currLineStartStyle !== 'none' && currLineStartStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір початкової іконки' : 'Start Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineStartIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineStartIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startIconSize: val });
+                        else onChangeLineStartIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 6. End Point Style */}
@@ -1445,6 +1950,57 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     />
                   </div>
                 )}
+
+                {currLineEndStyle !== 'none' && currLineEndStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір кінцевої іконки' : 'End Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineEndIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineEndIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endIconSize: val });
+                        else onChangeLineEndIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {/* Selected line text label */}
+                {selectedLine && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                      {isUa ? 'Підпис лінії на карті' : 'Line Label Text'}
+                    </label>
+                    <input
+                      type="text"
+                      value={currLineLabel}
+                      placeholder={isUa ? 'Введіть підпис лінії...' : 'Enter line label...'}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, label: e.target.value })}
+                      className={`w-full border px-2.5 py-1.5 rounded-lg text-xs focus:outline-none focus:border-emerald-500 ${
+                        theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                      }`}
+                    />
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір шрифту підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineLabelSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="9"
+                      max="24"
+                      value={currLineLabelSize}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, labelSize: Number(e.target.value) })}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 7. Drawn Lines List & Clear All */}
@@ -1495,22 +2051,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 </div>
               )}
-
             </div>
           )}
         </div>
 
         {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
-
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-styles"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.styles
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('styles')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.styles
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -1816,33 +2378,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
 
                 {/* Dividing Line Thickness (Товщина роздільної лінії) */}
-                {selectedMarker && (
-                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-white/5">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (routePlacementMarkerId === selectedMarker.id) onCancelRoutePlacement?.();
-                        else onStartRoutePlacement?.(selectedMarker.id);
-                      }}
-                      className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl border text-xs font-extrabold transition-all cursor-pointer ${
-                        routePlacementMarkerId === selectedMarker.id
-                          ? 'bg-amber-500/15 border-amber-500/50 text-amber-500 shadow-sm'
-                          : 'bg-blue-500/10 border-blue-500/30 text-blue-500 hover:bg-blue-500/15'
-                      }`}
-                    >
-                      <MapPin className="w-4 h-4" />
-                      <span>
-                        {routePlacementMarkerId === selectedMarker.id
-                          ? (isUa ? 'Режим маршруту увімкнено' : 'Route placement active')
-                          : (isUa ? 'Вказати маршрут на мапі' : 'Set route on map')}
-                      </span>
-                    </button>
-                    <p className="text-[9px] text-slate-500 mt-1.5 text-center">
-                      {isUa ? 'Після натискання просто клацніть кінцеву точку маршруту.' : 'Click the destination on the map after pressing the button.'}
-                    </p>
-                  </div>
-                )}
-
                 {activeEndPointStyle === 'line' && (
                   <div className="pt-2 mt-2 border-t border-slate-200 dark:border-white/5 space-y-1.5 animate-fade-in">
                     <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
@@ -1984,6 +2519,117 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   />
                 </div>
 
+                {/* Movement controls */}
+                <div className="mt-2 p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {isUa ? 'Рух' : 'Movement'}
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-blue-500 select-none">
+                      <input
+                        type="checkbox"
+                        checked={activeMovementEnabled}
+                        onChange={(e) => handlePropChange('movementEnabled', e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span>{isUa ? 'Увімкнути' : 'Enable'}</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      <span>{isUa ? 'Швидкість' : 'Speed'}</span>
+                      <span className="font-mono text-blue-500">{Number(activeMovementSpeed).toFixed(1)} км/год</span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5000"
+                      step="0.1"
+                      value={activeMovementSpeed}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Math.max(0, Math.min(5000, Number(e.target.value) || 0)))}
+                      className={`w-full border px-3 py-1.5 rounded-xl text-xs font-mono focus:outline-none focus:border-blue-500 ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-800'
+                          : 'bg-[#181d28] border-white/5 text-slate-200'
+                      }`}
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="3000"
+                      step="1"
+                      value={Math.min(3000, Math.max(0, Number(activeMovementSpeed) || 0))}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Number(e.target.value))}
+                      className="w-full h-1 mt-1.5 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeMovementTrailEnabled}
+                      onChange={(e) => handlePropChange('movementTrailEnabled', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{isUa ? 'Залишати слід руху' : 'Leave movement trail'}</span>
+                  </label>
+
+                  {activeMovementTrailEnabled && (
+                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Колір' : 'Color'}
+                        <input
+                          type="color"
+                          value={activeMovementTrailColor}
+                          onChange={(e) => handlePropChange('movementTrailColor', e.target.value)}
+                          className="block w-full h-8 mt-1 p-0.5 rounded-lg border border-slate-200 dark:border-white/10 bg-transparent cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Товщина' : 'Width'}
+                        <span className="block mt-1 font-mono text-blue-500 text-[10px]">{activeMovementTrailWidth}px</span>
+                        <input
+                          type="range"
+                          min="1"
+                          max="15"
+                          step="1"
+                          value={activeMovementTrailWidth}
+                          onChange={(e) => handlePropChange('movementTrailWidth', Number(e.target.value))}
+                          className="w-full h-1 mt-2 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                        />
+                      </label>
+
+                      <div className="col-span-2">
+                        <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Тип лінії' : 'Line style'}
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[
+                            { id: 'solid', ua: 'Суцільна', en: 'Solid' },
+                            { id: 'dashed', ua: 'Пунктир', en: 'Dashed' },
+                            { id: 'dotted', ua: 'Крапки', en: 'Dotted' },
+                          ].map((style) => (
+                            <button
+                              key={style.id}
+                              type="button"
+                              onClick={() => handlePropChange('movementTrailDashStyle', style.id)}
+                              className={`py-1.5 rounded-lg text-[9px] font-bold transition-all ${
+                                activeMovementTrailDashStyle === style.id
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {isUa ? style.ua : style.en}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Toggles */}
                 <div className="grid grid-cols-2 gap-2 pt-1.5">
                   <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
@@ -2006,6 +2652,51 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </label>
                 </div>
 
+                {/* Label Font Size & Orientation Controls */}
+                {activeLabelVisible && (
+                  <div className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span>{isUa ? 'Розмір підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-blue-500 font-bold">{Math.round(activeLabelFontSize)}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max="28"
+                      step="0.5"
+                      value={activeLabelFontSize}
+                      onChange={(e) => handlePropChange('labelFontSize', Number(e.target.value))}
+                      className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+
+                    <div className="pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isUa ? 'Орієнтація підпису' : 'Label Orientation'}
+                      </span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: 'auto', nameUa: 'Читабельно', nameEn: 'Readable' },
+                          { id: 'upright', nameUa: 'Горизонтально', nameEn: 'Horizontal' },
+                          { id: 'follow_icon', nameUa: 'З іконкою', nameEn: 'Follow' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handlePropChange('labelOrientation', opt.id as any)}
+                            className={`py-1 px-1 rounded-lg text-[9px] font-bold transition-all text-center ${
+                              activeLabelOrientation === opt.id
+                                ? 'bg-blue-500 text-white shadow-xs'
+                                : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {isUa ? opt.nameUa : opt.nameEn}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Delete Current Selected Marker button */}
                 {selectedMarker && (
                   <button
@@ -2017,21 +2708,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 )}
               </div>
-
             </div>
           )}
         </div>
 
         {/* 3. ОБ'ЄКТИ (OBJECTS) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-objects"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.objects
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('objects')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.objects
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2122,19 +2820,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* 4. КАРТА (MAP) */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' ? 'border-slate-200 bg-slate-50/50' : 'border-[#262c38] bg-[#0e1117]/20'
-        }`}>
+        <div 
+          id="section-map"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.map
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('map')}
-            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-colors ${
-              theme === 'light' 
-                ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
-                : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white'
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.map
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
-              <Map className="w-3.5 h-3.5 text-blue-500" />
+              <MapIcon className="w-3.5 h-3.5 text-blue-500" />
               <span>{t.secMap}</span>
             </div>
             {expandedSections.map ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
@@ -2165,6 +2871,196 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 ))}
               </div>
 
+              {/* Apple Maps Info & Direct Link */}
+              {activeTileLayer.id.startsWith('apple_maps') && (
+                <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 animate-fade-in ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base select-none">🍎</span>
+                    <div>
+                      <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                        <span>Apple Maps</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                          {isUa ? 'Офіційні тайли' : 'Official MapKit'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Офіційні карти Apple без водяних знаків' : 'Clean Apple tiles, no watermark'}
+                      </div>
+                    </div>
+                  </div>
+                  <a
+                    href="https://maps.apple.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 border border-blue-500/20 shrink-0"
+                    title="Відкрити maps.apple.com"
+                  >
+                    <span>maps.apple.com</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* DeepStateMap Info & Direct Link */}
+              {activeTileLayer.id === 'deepstatemap' && (
+                <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 animate-fade-in ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base select-none">🇺🇦</span>
+                    <div>
+                      <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                        <span>DeepStateMap.live</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
+                          {isUa ? 'Офіційні тайли' : 'Official Tiles'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Оригінальна тактична карта України' : 'Original Ukrainian tactical map style'}
+                      </div>
+                    </div>
+                  </div>
+                  <a
+                    href="https://deepstatemap.live/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 border border-blue-500/20 shrink-0"
+                    title="Відкрити deepstatemap.live"
+                  >
+                    <span>deepstate</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* Visicom API Key / Token Setting */}
+              <div className={`p-3 rounded-2xl border space-y-2.5 ${
+                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${visicomKey ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-amber-500'}`} />
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                      {isUa ? 'API-токен Visicom' : 'Visicom API Token'}
+                    </span>
+                  </div>
+                  {visicomKey ? (
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {isUa ? 'Підключено' : 'Active'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      {isUa ? 'Не вказано' : 'Missing'}
+                    </span>
+                  )}
+                </div>
+
+                {!isEditingVisicomKey ? (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewVisicomKeyInput(visicomKey || '');
+                        setIsEditingVisicomKey(true);
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Ввести новий API' : 'Enter new API key'}</span>
+                    </button>
+
+                    <a
+                      href="https://developer.visicom.ua"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-2 text-[11px] rounded-xl text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors"
+                      title={isUa ? 'Отримати ключ на Visicom' : 'Get key from Visicom'}
+                    >
+                      {isUa ? 'Отримати' : 'Get key'} ↗
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-white/10">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span>{isUa ? 'Новий API ключ:' : 'New API key:'}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={newVisicomKeyInput}
+                      onChange={(e) => setNewVisicomKeyInput(e.target.value.trim())}
+                      placeholder={isUa ? 'Вставте ваш токен сюди...' : 'Paste your token here...'}
+                      autoFocus
+                      className={`w-full font-mono text-xs px-2.5 py-2 rounded-xl border focus:outline-none focus:border-blue-500 transition-colors ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                          : 'bg-slate-900 border-white/15 text-slate-100 placeholder-slate-600'
+                      }`}
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey(newVisicomKeyInput.trim());
+                          setIsEditingVisicomKey(false);
+                          setVisicomKeySavedSuccess(true);
+                          setTimeout(() => setVisicomKeySavedSuccess(false), 2500);
+                        }}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isUa ? 'Зберегти' : 'Save'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey('da8a72ade6f663ff3743cd79f3c2d9f3');
+                          setIsEditingVisicomKey(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                        title={isUa ? 'Встановити стандартний ключ' : 'Set default key'}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {isUa ? 'Скасувати' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {visicomKeySavedSuccess && (
+                  <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'API-ключ успішно збережено!' : 'API key saved successfully!'}</span>
+                  </div>
+                )}
+              </div>
+
               {/* Visicom Watermark Notice */}
               {activeTileLayer.id === 'visicom' && !visicomKey && (
                 <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] leading-relaxed">
@@ -2174,8 +3070,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </p>
                   <span>
                     {isUa 
-                      ? 'Сервер Visicom автоматично додає на тайли текст про обмеження використання. Введіть API-ключ з developer.visicom.ua в налаштуваннях нижче, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
-                      : 'Visicom tiles include a usage watermark unless an API key from developer.visicom.ua is provided. Enter your API key below or select CartoDB/Esri layer for a clean map.'}
+                      ? 'Введіть API-ключ з developer.visicom.ua вище, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
+                      : 'Enter your API key above or select CartoDB/Esri layer for a clean map.'}
                   </span>
                 </div>
               )}
@@ -2223,18 +3119,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
 
-        {/* MAP OVERLAYS SECTION */}
-        <div className={`border rounded-2xl overflow-hidden ${
-          theme === 'light' 
-            ? 'bg-white border-slate-200' 
-            : 'bg-[#181d28]/60 border-white/5'
-        }`}>
+        {/* MAP OVERLAYS & SETTINGS SECTION */}
+        <div 
+          id="section-overlays"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.overlays
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
           <button
             onClick={() => toggleSection('overlays')}
-            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all ${
+            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all cursor-pointer select-none ${
               expandedSections.overlays
-                ? (theme === 'light' ? 'bg-slate-50 text-slate-900 border-b border-slate-100' : 'bg-white/5 text-white border-b border-white/5')
-                : (theme === 'light' ? 'bg-slate-100/50 hover:bg-slate-100 text-slate-800' : 'bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
             }`}
           >
             <div className="flex items-center gap-2">
@@ -2246,6 +3148,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           {expandedSections.overlays && (
             <div className="p-3 space-y-3.5">
+              {/* Live Mode (neptun.in.ua) Block */}
+              <div className="p-3 rounded-xl bg-red-600/10 border border-red-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      {isLiveMode && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isLiveMode ? 'bg-red-500' : 'bg-slate-400'}`}></span>
+                    </span>
+                    <span className="text-[10px] font-extrabold text-red-400 uppercase tracking-wider flex items-center gap-1">
+                      <span>{isUa ? 'Режим Live' : 'Live Mode'}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {isLiveMode && onRefreshLive && (
+                      <button
+                        type="button"
+                        onClick={onRefreshLive}
+                        disabled={isLoadingLive}
+                        className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                        title={isUa ? 'Оновити дані Live' : 'Refresh live data'}
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingLive ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={isLiveMode} 
+                        onChange={() => onToggleLiveMode?.()}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-8 h-4 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-red-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                  <span>{isUa ? 'Виявлено цілей у реальному часі:' : 'Live threats detected:'}</span>
+                  <span className="font-mono font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded-md">
+                    {liveThreats.length}
+                  </span>
+                </div>
+
+                {isLiveMode && (
+                  <div className="space-y-2 pt-2 border-t border-red-500/20 animate-fade-in">
+                    {/* Trails Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Траєкторії польоту (треки)' : 'Flight Trails'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveTrails} 
+                          onChange={() => onToggleShowLiveTrails?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Side Messages Feed Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Оперативна стрічка збоку' : 'Side Radar Feed'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveMessagesFeed} 
+                          onChange={() => onToggleShowLiveMessagesFeed?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-cyan-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Air Raid Alerts (alerts.in.ua) Block */}
               <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
                 <div className="flex items-center justify-between">
@@ -2381,10 +3366,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
                 <div className="flex flex-col">
                   <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
-                    {isUa ? 'Експорт усіх налаштувань' : 'Export All Settings'}
+                    {isUa ? 'Експорт ZIP (все + власні іконки)' : 'Export ZIP (All Settings + Icons)'}
                   </span>
                   <span className="text-[9px] text-slate-400 leading-normal">
-                    {isUa ? 'Перенести всі позначки, лінії та опції на інший пристрій' : 'Transfer all markers, lines & config to another device'}
+                    {isUa ? 'Архів ZIP з усіма налаштуваннями, мітками, лініями та доданими іконками для іншого пристрою' : 'ZIP archive with settings, markers, lines & custom icons for migration'}
                   </span>
                 </div>
 
@@ -2393,21 +3378,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     type="button"
                     onClick={onExportAllSettings}
                     className="py-2 px-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
-                    title={isUa ? 'Експортувати всі налаштування та дані у файл JSON' : 'Export all settings and data to JSON file'}
+                    title={isUa ? 'Експортувати всі налаштування та додані іконки у ZIP-архів' : 'Export all settings and custom icons as ZIP archive'}
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>{isUa ? 'Експорт усіх' : 'Export All'}</span>
+                    <span>{isUa ? 'Експорт ZIP' : 'Export ZIP'}</span>
                   </button>
 
                   <label
                     className="py-2 px-2 rounded-lg bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/20 font-bold text-xs text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    title={isUa ? 'Імпортувати всі налаштування з файлу JSON' : 'Import all settings from JSON file'}
+                    title={isUa ? 'Імпортувати ZIP або JSON з налаштуваннями та власними іконками' : 'Import ZIP or JSON with settings & custom icons'}
                   >
                     <Upload className="w-3.5 h-3.5 text-emerald-400" />
                     <span>{isUa ? 'Імпорт' : 'Import'}</span>
                     <input
                       type="file"
-                      accept=".json"
+                      accept=".zip,.json"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file && onImportAllSettings) {
@@ -2620,6 +3605,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
               </div>
 
+              {/* Show Logo & Legend on Live Map toggle */}
+              <div className="flex items-center justify-between py-1.5 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col pr-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Лого та легенда на карті' : 'Logo & Legend on Map'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Приховує на екрані; при копіюванні та експорті завжди відображаються' : 'Hides on screen; always visible in buffer & export'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none flex-shrink-0">
+                  <input 
+                    type="checkbox" 
+                    checked={showLogoAndLegendOnMap} 
+                    onChange={(e) => onUpdateShowLogoAndLegendOnMap(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
               {/* Show Legend toggle */}
               <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
                 <div className="flex flex-col">
@@ -2668,70 +3674,1362 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {isUa ? 'Обводки та межі території' : 'Territory Boundary Outlines'}
                 </label>
 
-                {/* 1. City Boundary Toggle */}
-                <div className="flex items-center justify-between py-1">
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-sky-400 inline-block"></span>
-                      {isUa ? 'Обводка міста' : 'City Boundary'}
-                    </span>
-                    <span className="text-[9px] text-slate-400 leading-normal">
-                      {isUa ? 'Блакитна пунктирна лінія межі міста (Кривий Ріг)' : 'Sky blue dashed city boundary line'}
-                    </span>
+                {/* 1. Ukraine State Border Toggle (Обводка України) */}
+                <div className="py-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: ukraineBoundaryConfig?.color || '#f59e0b' }}
+                        ></span>
+                        {isUa ? 'Обводка України' : 'Ukraine Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Державний кордон України (межі 1991 року)' : 'State border of Ukraine (1991 borders)'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showUkraineBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsUkraineSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isUkraineSettingsOpen 
+                              ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю кордону' : 'Border style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showUkraineBoundary)} 
+                          onChange={(e) => onUpdateShowUkraineBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-amber-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                      </label>
+                    </div>
                   </div>
-                  <label className="relative inline-flex items-center cursor-pointer select-none">
-                    <input 
-                      type="checkbox" 
-                      checked={showCityBoundary} 
-                      onChange={(e) => onUpdateShowCityBoundary?.(e.target.checked)}
-                      className="sr-only peer" 
-                    />
-                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
-                  </label>
+
+                  {/* Expandable Customization Settings for Ukraine Border */}
+                  {Boolean(showUkraineBoundary) && isUkraineSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір кордону' : 'Border Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {ukraineBoundaryConfig?.color || '#f59e0b'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Жовтий', color: '#eab308' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateUkraineBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (ukraineBoundaryConfig?.color || '#f59e0b').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-amber-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={ukraineBoundaryConfig?.color || '#f59e0b'}
+                              onChange={(e) => onUpdateUkraineBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: ukraineBoundaryConfig?.color || '#f59e0b' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Line Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Width'}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 font-bold">
+                            {(ukraineBoundaryConfig?.weight ?? 2.8).toFixed(1)} px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={ukraineBoundaryConfig?.weight ?? 2.8}
+                          onChange={(e) => onUpdateUkraineBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (ukraineBoundaryConfig?.strokeStyle || 'solid') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateUkraineBoundaryConfig?.({ strokeStyle: style.id as UkraineBoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 font-bold">
+                            {Math.round((ukraineBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={ukraineBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateUkraineBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* 2. District Boundary Toggle */}
+                {/* 2. City Boundary Toggle (Обводка міста) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: cityBoundaryConfig?.color || '#38bdf8' }}
+                        ></span>
+                        {isUa ? 'Обводка міста' : 'City Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межа міста (Кривий Ріг)' : 'City boundary (Kryvyi Rih)'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showCityBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCitySettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isCitySettingsOpen 
+                              ? 'bg-sky-500/20 text-sky-600 dark:text-sky-400 ring-1 ring-sky-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки міста' : 'City boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showCityBoundary)} 
+                          onChange={(e) => onUpdateShowCityBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for City Boundary */}
+                  {Boolean(showCityBoundary) && isCitySettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки міста' : 'City Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {cityBoundaryConfig?.color || '#38bdf8'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Жовтий', color: '#eab308' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateCityBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (cityBoundaryConfig?.color || '#38bdf8').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-sky-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={cityBoundaryConfig?.color || '#38bdf8'}
+                              onChange={(e) => onUpdateCityBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: cityBoundaryConfig?.color || '#38bdf8' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-sky-600 dark:text-sky-400 font-bold">
+                            {(cityBoundaryConfig?.weight ?? 2.0).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={cityBoundaryConfig?.weight ?? 2.0}
+                          onChange={(e) => onUpdateCityBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (cityBoundaryConfig?.strokeStyle || 'dashed') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateCityBoundaryConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-sky-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-sky-600 dark:text-sky-400 font-bold">
+                            {Math.round((cityBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={cityBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateCityBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. District Boundary Toggle (Обводка району) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: districtBoundaryConfig?.color || '#10b981' }}
+                        ></span>
+                        {isUa ? 'Обводка району' : 'District Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межа Криворізького району' : 'Kryvyi Rih district boundary line'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showDistrictBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsDistrictSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isDistrictSettingsOpen 
+                              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки району' : 'District boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showDistrictBoundary)} 
+                          onChange={(e) => onUpdateShowDistrictBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-emerald-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for District Boundary */}
+                  {Boolean(showDistrictBoundary) && isDistrictSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки району' : 'District Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {districtBoundaryConfig?.color || '#10b981'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Зелений', color: '#22c55e' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateDistrictBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (districtBoundaryConfig?.color || '#10b981').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-emerald-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={districtBoundaryConfig?.color || '#10b981'}
+                              onChange={(e) => onUpdateDistrictBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: districtBoundaryConfig?.color || '#10b981' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            {(districtBoundaryConfig?.weight ?? 2.2).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={districtBoundaryConfig?.weight ?? 2.2}
+                          onChange={(e) => onUpdateDistrictBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (districtBoundaryConfig?.strokeStyle || 'solid') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateDistrictBoundaryConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            {Math.round((districtBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={districtBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateDistrictBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Settlements & Hromadas Boundary Toggle (Обводка н/п та громад) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: hromadaBoundariesConfig?.color || '#475569' }}
+                        ></span>
+                        {isUa ? 'Обводка н/п та громад' : 'Hromada Boundaries'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межі об\'єднаних громад та населених пунктів' : 'Community boundary lines'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showHromadaBoundaries) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsHromadaSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isHromadaSettingsOpen 
+                              ? 'bg-slate-500/20 text-slate-700 dark:text-slate-300 ring-1 ring-slate-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки н/п та громад' : 'Hromada boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showHromadaBoundaries)} 
+                          onChange={(e) => onUpdateShowHromadaBoundaries?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-slate-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for Hromada Boundaries */}
+                  {Boolean(showHromadaBoundaries) && isHromadaSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки громад' : 'Hromada Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {hromadaBoundariesConfig?.color || '#475569'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Темно-сірий', color: '#475569' },
+                            { name: 'Світло-сірий', color: '#94a3b8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateHromadaBoundariesConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (hromadaBoundariesConfig?.color || '#475569').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-slate-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={hromadaBoundariesConfig?.color || '#475569'}
+                              onChange={(e) => onUpdateHromadaBoundariesConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: hromadaBoundariesConfig?.color || '#475569' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-bold">
+                            {(hromadaBoundariesConfig?.weight ?? 1.4).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.8"
+                          max="4.5"
+                          step="0.2"
+                          value={hromadaBoundariesConfig?.weight ?? 1.4}
+                          onChange={(e) => onUpdateHromadaBoundariesConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (hromadaBoundariesConfig?.strokeStyle || 'dashed') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateHromadaBoundariesConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-slate-600 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-bold">
+                            {Math.round((hromadaBoundariesConfig?.opacity ?? 0.85) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={hromadaBoundariesConfig?.opacity ?? 0.85}
+                          onChange={(e) => onUpdateHromadaBoundariesConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Quick Settlement Buttons Toggle */}
                 <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
                   <div className="flex flex-col">
                     <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                      {isUa ? 'Обводка району' : 'District Boundary'}
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      {isUa ? 'Швидкі кнопки н/п під пошуком' : 'Quick settlement buttons'}
                     </span>
                     <span className="text-[9px] text-slate-400 leading-normal">
-                      {isUa ? 'Зелена лінія Криворізького району' : 'Green district boundary line'}
+                      {isUa ? 'Відображати кнопки міст і сіл під районами Кривого Рогу' : 'Show town buttons under Kryvyi Rih districts'}
                     </span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer select-none">
                     <input 
                       type="checkbox" 
-                      checked={showDistrictBoundary} 
-                      onChange={(e) => onUpdateShowDistrictBoundary?.(e.target.checked)}
-                      className="sr-only peer" 
-                    />
-                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                  </label>
-                </div>
-
-                {/* 3. Settlements & Hromadas Boundary Toggle */}
-                <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
-                  <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
-                      {isUa ? 'Обводка н/п та громад' : 'Settlement & Hromada Boundaries'}
-                    </span>
-                    <span className="text-[9px] text-slate-400 leading-normal">
-                      {isUa ? 'Темно-сірі межі об\'єднаних громад та населених пунктів' : 'Dark gray community boundary lines'}
-                    </span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer select-none">
-                    <input 
-                      type="checkbox" 
-                      checked={showHromadaBoundaries} 
-                      onChange={(e) => onUpdateShowHromadaBoundaries?.(e.target.checked)}
+                      checked={showQuickSettlements} 
+                      onChange={(e) => onToggleQuickSettlements?.(e.target.checked)}
                       className="sr-only peer" 
                     />
                     <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
                   </label>
+                </div>
+
+                {/* 5. DeepStateMap Occupied Territories */}
+                <div className="border-t border-slate-100/80 dark:border-white/5 pt-2.5 mt-2">
+                  <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-3 space-y-3 shadow-xs">
+                    {/* Header with Switch */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          deepStateOccupiedConfig?.enabled 
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30' 
+                            : 'bg-slate-200/80 dark:bg-slate-700/60 text-slate-500'
+                        }`}>
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="text-[12px] font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span>{isUa ? 'Окуповані території' : 'Occupied Territories'}</span>
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                              DeepState
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-400">
+                            {isUa ? 'Актуальні дані лінії фронту та ТОТ України' : 'Up-to-date front line and temporarily occupied areas'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(deepStateOccupiedConfig?.enabled)} 
+                          onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ enabled: e.target.checked })}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-rose-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Expandable Settings when Enabled */}
+                    {deepStateOccupiedConfig?.enabled && (
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/50 space-y-3 animate-in fade-in duration-200">
+                        {/* Sub-Tabs: Заливка / Обводка / Сіра зона */}
+                        <div className="grid grid-cols-3 gap-1 bg-slate-200/70 dark:bg-slate-900/60 p-1 rounded-lg text-[10px] font-semibold text-center select-none">
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('fill')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'fill'
+                                ? 'bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Заливка / Штрих' : 'Fill & Pattern'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('stroke')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'stroke'
+                                ? 'bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Обводка' : 'Border'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('gray')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'gray'
+                                ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Сіра зона' : 'Gray Zone'}
+                          </button>
+                        </div>
+
+                        {/* TAB 1: ЗАЛИВКА ТА ШТРИХ / СІТКА */}
+                        {deepStateSubTab === 'fill' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Fill Color Picker & Presets */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Колір заливки' : 'Fill Color'}
+                                </span>
+                                <span className="font-mono text-[10px] text-slate-400 uppercase">
+                                  {deepStateOccupiedConfig.fillColor}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={deepStateOccupiedConfig.fillColor || '#b91c1c'}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ fillColor: e.target.value })}
+                                  className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent p-0.5 shrink-0"
+                                  title={isUa ? 'Вибрати довільний колір' : 'Choose custom color'}
+                                />
+                                <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                                  {[
+                                    { color: '#b91c1c', title: 'Tactical Red' },
+                                    { color: '#a52714', title: 'DeepState Classic' },
+                                    { color: '#ef4444', title: 'Bright Red' },
+                                    { color: '#7f1d1d', title: 'Dark Crimson' },
+                                    { color: '#880e4f', title: 'Deep Plum' },
+                                    { color: '#f97316', title: 'Amber Red' },
+                                  ].map(({ color, title }) => (
+                                    <button
+                                      key={color}
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ fillColor: color })}
+                                      title={title}
+                                      className={`w-6 h-6 rounded-md border transition-all cursor-pointer ${
+                                        deepStateOccupiedConfig.fillColor?.toLowerCase() === color.toLowerCase()
+                                          ? 'ring-2 ring-rose-500 scale-110 border-white shadow-xs z-10'
+                                          : 'border-black/10 dark:border-white/10 hover:scale-105'
+                                      }`}
+                                      style={{ backgroundColor: color }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Pattern Type Selector */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Тип заливки (штрих / сітка)' : 'Fill Pattern Type'}
+                                </span>
+                                <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                                  {deepStateOccupiedConfig.fillPattern === 'diagonal-right' && (isUa ? 'Штрих ///' : 'Hatch ///')}
+                                  {deepStateOccupiedConfig.fillPattern === 'diagonal-left' && (isUa ? 'Штрих \\\\\\' : 'Hatch \\\\\\')}
+                                  {deepStateOccupiedConfig.fillPattern === 'cross-hatch' && (isUa ? 'Сітка #' : 'Cross-Grid #')}
+                                  {deepStateOccupiedConfig.fillPattern === 'dots' && (isUa ? 'Крапки •' : 'Dots •')}
+                                  {deepStateOccupiedConfig.fillPattern === 'horizontal' && (isUa ? 'Смуги =' : 'Horizontal =')}
+                                  {deepStateOccupiedConfig.fillPattern === 'vertical' && (isUa ? 'Смуги ||' : 'Vertical ||')}
+                                  {(!deepStateOccupiedConfig.fillPattern || deepStateOccupiedConfig.fillPattern === 'solid') && (isUa ? 'Суцільна' : 'Solid')}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {[
+                                  { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', svg: (
+                                    <div className="w-5 h-5 rounded-xs bg-rose-600/80 mx-auto" />
+                                  )},
+                                  { id: 'diagonal-right', label: isUa ? 'Штрих ///' : 'Hatch /', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="20" x2="20" y2="0" stroke="currentColor" strokeWidth="2.5" />
+                                      <line x1="-5" y1="15" x2="15" y2="-5" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="5" y1="25" x2="25" y2="5" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'diagonal-left', label: isUa ? 'Штрих \\' : 'Hatch \\', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="0" x2="20" y2="20" stroke="currentColor" strokeWidth="2.5" />
+                                      <line x1="5" y1="-5" x2="25" y2="15" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="-5" y1="5" x2="15" y2="25" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'cross-hatch', label: isUa ? 'Сітка #' : 'Grid #', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="7" x2="20" y2="7" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="14" x2="20" y2="14" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="7" y1="0" x2="7" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="14" y1="0" x2="14" y2="20" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'dots', label: isUa ? 'Крапки' : 'Dots', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <circle cx="5" cy="5" r="2" fill="currentColor" />
+                                      <circle cx="15" cy="5" r="2" fill="currentColor" />
+                                      <circle cx="10" cy="10" r="2" fill="currentColor" />
+                                      <circle cx="5" cy="15" r="2" fill="currentColor" />
+                                      <circle cx="15" cy="15" r="2" fill="currentColor" />
+                                    </svg>
+                                  )},
+                                  { id: 'horizontal', label: isUa ? 'Смуги =' : 'Horiz', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="5" x2="20" y2="5" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="10" x2="20" y2="10" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="15" x2="20" y2="15" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'vertical', label: isUa ? 'Смуги ||' : 'Vert', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="5" y1="0" x2="5" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="10" y1="0" x2="10" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="15" y1="0" x2="15" y2="20" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                ].map((pattern) => {
+                                  const isSelected = (deepStateOccupiedConfig.fillPattern || 'solid') === pattern.id;
+                                  return (
+                                    <button
+                                      key={pattern.id}
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ fillPattern: pattern.id as DeepStatePatternType })}
+                                      className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                                        isSelected
+                                          ? 'bg-rose-500/15 border-rose-500 text-rose-600 dark:text-rose-400 font-bold shadow-xs scale-102'
+                                          : 'bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                      }`}
+                                    >
+                                      <div className="w-full flex items-center justify-center text-rose-600 dark:text-rose-400">
+                                        {pattern.svg}
+                                      </div>
+                                      <span className="text-[9px] truncate max-w-full">{pattern.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Pattern Density and Stroke Options (Visible when pattern !== 'solid') */}
+                            {deepStateOccupiedConfig.fillPattern && deepStateOccupiedConfig.fillPattern !== 'solid' && (
+                              <div className="p-2 bg-slate-100/70 dark:bg-slate-900/40 rounded-lg border border-slate-200/70 dark:border-slate-700/50 space-y-2">
+                                {/* Pattern Density (Spacing) */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Густота / крок візерунка' : 'Pattern Density / Step'}
+                                    </span>
+                                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                                      {deepStateOccupiedConfig.patternDensity ?? 10} px
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="6"
+                                    max="24"
+                                    step="1"
+                                    value={deepStateOccupiedConfig.patternDensity ?? 10}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ patternDensity: parseInt(e.target.value, 10) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[8px] text-slate-400">
+                                    <span>{isUa ? 'Густий (6px)' : 'Dense (6px)'}</span>
+                                    <span>{isUa ? 'Рідкий (24px)' : 'Spaced (24px)'}</span>
+                                  </div>
+                                </div>
+
+                                {/* Pattern Stroke Width */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Товщина ліній штриха' : 'Hatch Line Width'}
+                                    </span>
+                                    <span className="font-mono font-bold text-slate-600 dark:text-slate-300">
+                                      {deepStateOccupiedConfig.patternStrokeWidth ?? 1.5} px
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {[1, 1.5, 2, 2.5].map((w) => (
+                                      <button
+                                        key={w}
+                                        type="button"
+                                        onClick={() => onUpdateDeepStateOccupiedConfig?.({ patternStrokeWidth: w })}
+                                        className={`py-1 text-[9px] rounded font-mono transition-all cursor-pointer ${
+                                          (deepStateOccupiedConfig.patternStrokeWidth ?? 1.5) === w
+                                            ? 'bg-rose-600 text-white font-bold'
+                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {w} px
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Under-Pattern Background Tint */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Підкладка під штрихом' : 'Under-Pattern Tint'}
+                                    </span>
+                                    <span className="font-bold text-slate-600 dark:text-slate-300">
+                                      {Math.round((deepStateOccupiedConfig.patternBgOpacity ?? 0.1) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="0.35"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.patternBgOpacity ?? 0.1}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ patternBgOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[8px] text-slate-400">
+                                    <span>{isUa ? '0% (прозоро)' : '0% (clear)'}</span>
+                                    <span>{isUa ? '35% (фон)' : '35% (tint)'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Fill Opacity Slider */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Прозорість штриха / заливки' : 'Fill / Pattern Opacity'}
+                                </span>
+                                <span className="font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                  {Math.round((deepStateOccupiedConfig.fillOpacity ?? 0.35) * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0.1"
+                                max="0.9"
+                                step="0.05"
+                                value={deepStateOccupiedConfig.fillOpacity ?? 0.35}
+                                onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ fillOpacity: parseFloat(e.target.value) })}
+                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                <span>10% ({isUa ? 'прозоро' : 'transparent'})</span>
+                                <span>90% ({isUa ? 'насичено' : 'dense'})</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB 2: ОБВОДКА ТА КОНТУР */}
+                        {deepStateSubTab === 'stroke' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Toggle Stroke On/Off */}
+                            <div className="flex items-center justify-between bg-slate-100/80 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/70 dark:border-slate-700/50">
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                                  {isUa ? 'Контурна лінія (обводка)' : 'Border Outline'}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {isUa ? 'Відображати зовнішній контур' : 'Show boundary stroke'}
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={deepStateOccupiedConfig.showStroke !== false}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ showStroke: e.target.checked })}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-rose-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-rose-600"></div>
+                              </label>
+                            </div>
+
+                            {deepStateOccupiedConfig.showStroke !== false && (
+                              <div className="space-y-3 pt-1">
+                                {/* Border Color & Match Fill Option */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Колір контуру' : 'Border Color'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeColor: deepStateOccupiedConfig.fillColor || '#b91c1c' })}
+                                      className="text-[9px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+                                      title={isUa ? 'Встановити такий самий колір, як і для заливки' : 'Set same color as fill'}
+                                    >
+                                      {isUa ? 'Як у заливки' : 'Match Fill'}
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      value={deepStateOccupiedConfig.strokeColor || '#7f1d1d'}
+                                      onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeColor: e.target.value })}
+                                      className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent p-0.5 shrink-0"
+                                      title={isUa ? 'Вибрати довільний колір контуру' : 'Choose custom stroke color'}
+                                    />
+                                    <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                                      {[
+                                        { color: '#7f1d1d', title: 'Dark Crimson' },
+                                        { color: '#b91c1c', title: 'Tactical Red' },
+                                        { color: '#450a0a', title: 'Black Red' },
+                                        { color: '#000000', title: 'Black' },
+                                        { color: '#ffffff', title: 'White' },
+                                        { color: '#f59e0b', title: 'Amber Accent' },
+                                      ].map(({ color, title }) => (
+                                        <button
+                                          key={color}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeColor: color })}
+                                          title={title}
+                                          className={`w-6 h-6 rounded-md border transition-all cursor-pointer ${
+                                            deepStateOccupiedConfig.strokeColor?.toLowerCase() === color.toLowerCase()
+                                              ? 'ring-2 ring-rose-500 scale-110 border-white shadow-xs z-10'
+                                              : 'border-black/15 dark:border-white/15 hover:scale-105'
+                                          }`}
+                                          style={{ backgroundColor: color }}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Stroke Style (Solid, Dashed, Dotted, Dash-Dot) */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Тип лінії (стиль обводки)' : 'Stroke Style'}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-400">
+                                      {deepStateOccupiedConfig.strokeStyle || 'solid'}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {[
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', strokeDash: 'none' },
+                                      { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', strokeDash: '6, 4' },
+                                      { id: 'dotted', label: isUa ? 'Крапкова' : 'Dotted', strokeDash: '2, 3' },
+                                      { id: 'dash-dot', label: isUa ? 'Штрих-пунктир' : 'Dash-Dot', strokeDash: '8, 3, 2, 3' },
+                                    ].map((style) => {
+                                      const isSelected = (deepStateOccupiedConfig.strokeStyle || 'solid') === style.id;
+                                      return (
+                                        <button
+                                          key={style.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeStyle: style.id as DeepStateStrokeStyle })}
+                                          className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col gap-1.5 ${
+                                            isSelected
+                                              ? 'bg-rose-500/15 border-rose-500 text-rose-600 dark:text-rose-400 font-bold shadow-xs'
+                                              : 'bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px]">{style.label}</span>
+                                            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />}
+                                          </div>
+                                          <svg className="w-full h-2.5" viewBox="0 0 100 10">
+                                            <line
+                                              x1="0"
+                                              y1="5"
+                                              x2="100"
+                                              y2="5"
+                                              stroke={isSelected ? '#e11d48' : '#64748b'}
+                                              strokeWidth="3"
+                                              strokeDasharray={style.strokeDash === 'none' ? undefined : style.strokeDash}
+                                              strokeLinecap="round"
+                                            />
+                                          </svg>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Stroke Width Slider */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Товщина обводки' : 'Border Width'}
+                                    </span>
+                                    <span className="font-mono font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                      {deepStateOccupiedConfig.strokeWidth ?? 1.5} px
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.5"
+                                    max="5.0"
+                                    step="0.5"
+                                    value={deepStateOccupiedConfig.strokeWidth ?? 1.5}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeWidth: parseFloat(e.target.value) })}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                    <span>0.5 px ({isUa ? 'тонка' : 'thin'})</span>
+                                    <span>5.0 px ({isUa ? 'товста' : 'thick'})</span>
+                                  </div>
+                                </div>
+
+                                {/* Stroke Opacity Slider */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                                    </span>
+                                    <span className="font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                      {Math.round((deepStateOccupiedConfig.strokeOpacity ?? 0.9) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.2"
+                                    max="1.0"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.strokeOpacity ?? 0.9}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                    <span>20% ({isUa ? 'м\'яка' : 'soft'})</span>
+                                    <span>100% ({isUa ? 'чітка' : 'solid'})</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* TAB 3: СІРА ЗОНА (СПІРНІ ДІЛЯНКИ) */}
+                        {deepStateSubTab === 'gray' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Toggle Gray Zone */}
+                            <div className="flex items-center justify-between bg-slate-100/80 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/70 dark:border-slate-700/50">
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                                  {isUa ? 'Сіра зона (статус невідомий)' : 'Gray Zone (Contested)'}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {isUa ? 'Спірні та непідтверджені ділянки фронту' : 'Contested or unverified front line areas'}
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(deepStateOccupiedConfig.includeGrayZone)}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ includeGrayZone: e.target.checked })}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-slate-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-slate-500"></div>
+                              </label>
+                            </div>
+
+                            {deepStateOccupiedConfig.includeGrayZone && (
+                              <div className="space-y-3 pt-1">
+                                {/* Gray Zone Pattern Type */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Візерунок сірої зони' : 'Gray Zone Pattern'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {[
+                                      { id: 'diagonal-right', label: isUa ? 'Штрих ///' : 'Hatch ///' },
+                                      { id: 'cross-hatch', label: isUa ? 'Сітка #' : 'Grid #' },
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid' },
+                                    ].map((pat) => {
+                                      const isSelected = (deepStateOccupiedConfig.grayZonePattern || 'diagonal-right') === pat.id;
+                                      return (
+                                        <button
+                                          key={pat.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ grayZonePattern: pat.id as DeepStatePatternType })}
+                                          className={`py-1.5 px-2 rounded-lg border text-center text-[10px] font-medium transition-all cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-xs'
+                                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {pat.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Gray Zone Stroke Style */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Контур сірої зони' : 'Gray Zone Stroke'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {[
+                                      { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed' },
+                                      { id: 'dotted', label: isUa ? 'Крапкова' : 'Dotted' },
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid' },
+                                    ].map((st) => {
+                                      const isSelected = (deepStateOccupiedConfig.grayZoneStrokeStyle || 'dashed') === st.id;
+                                      return (
+                                        <button
+                                          key={st.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ grayZoneStrokeStyle: st.id as DeepStateStrokeStyle })}
+                                          className={`py-1 px-2 rounded-lg border text-center text-[10px] font-medium transition-all cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-xs'
+                                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {st.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Gray Zone Opacity */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400">
+                                      {isUa ? 'Прозорість сірої зони' : 'Gray Zone Opacity'}
+                                    </span>
+                                    <span className="font-bold text-slate-500">
+                                      {Math.round((deepStateOccupiedConfig.grayZoneOpacity ?? 0.25) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.1"
+                                    max="0.7"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.grayZoneOpacity ?? 0.25}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ grayZoneOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Live Sync Status & Refresh Button */}
+                        <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/40 flex items-center justify-between">
+                          <div className="text-[9px] text-slate-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>{deepStateLastSync ? (isUa ? `Оновлено: ${deepStateLastSync}` : `Synced: ${deepStateLastSync}`) : 'DeepState Live'}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => onRefreshDeepState?.()}
+                            disabled={isLoadingDeepState}
+                            className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingDeepState ? 'animate-spin' : ''}`} />
+                            <span>{isLoadingDeepState ? (isUa ? 'Оновлення...' : 'Syncing...') : (isUa ? 'Оновити' : 'Refresh')}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -3019,6 +5317,180 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
               )}
+
+              {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
+              <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{isUa ? 'Умовні позначення (Легенда)' : 'Signs Legend'}</span>
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={mapLegendConfig?.enabled || false} 
+                      onChange={(e) => {
+                        if (!onUpdateMapLegendConfig) return;
+                        const isEn = e.target.checked;
+                        const cur = mapLegendConfig || {
+                          enabled: false,
+                          title: 'УМОВНІ ПОЗНАЧЕННЯ:',
+                          position: 'bottom-left',
+                          items: []
+                        };
+                        let items = cur.items;
+                        if (isEn && (!items || items.length === 0)) {
+                          items = generateLegendItemsFromMap();
+                        }
+                        onUpdateMapLegendConfig({
+                          ...cur,
+                          enabled: isEn,
+                          items
+                        });
+                      }}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
+
+                {mapLegendConfig?.enabled && (
+                  <div className="space-y-2.5 pt-1">
+                    {/* Title & Position */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Заголовок' : 'Title'}
+                        </label>
+                        <input
+                          type="text"
+                          value={mapLegendConfig.title || 'УМОВНІ ПОЗНАЧЕННЯ:'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, title: e.target.value })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Позиція' : 'Position'}
+                        </label>
+                        <select
+                          value={mapLegendConfig.position || 'bottom-left'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, position: e.target.value as any })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        >
+                          <option value="bottom-left">{isUa ? 'Знизу ліворуч' : 'Bottom-Left'}</option>
+                          <option value="bottom-right">{isUa ? 'Знизу праворуч' : 'Bottom-Right'}</option>
+                          <option value="top-left">{isUa ? 'Зверху ліворуч' : 'Top-Left'}</option>
+                          <option value="top-right">{isUa ? 'Зверху праворуч' : 'Top-Right'}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Sync button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newItems = generateLegendItemsFromMap();
+                        onUpdateMapLegendConfig?.({
+                          ...mapLegendConfig,
+                          items: newItems
+                        });
+                      }}
+                      className="w-full py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Оновити з карти (автозбір іконок)' : 'Sync from map elements'}</span>
+                    </button>
+
+                    {/* Items List */}
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                      {mapLegendConfig.items.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className={`p-2 rounded-xl border flex flex-col gap-1.5 ${
+                            theme === 'light' ? 'bg-white border-slate-200' : 'bg-black/20 border-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {/* Icon preview */}
+                            <div
+                              className="w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: `${item.color}22`, borderColor: item.color }}
+                            >
+                              {item.customIconUrl ? (
+                                <img src={item.customIconUrl} className="w-5 h-5 object-contain" alt={item.title} />
+                              ) : (
+                                <div
+                                  className="w-4 h-4"
+                                  dangerouslySetInnerHTML={{ __html: getIconSvgContent(item.iconType, item.color) }}
+                                />
+                              )}
+                            </div>
+
+                            {/* Title input */}
+                            <input
+                              type="text"
+                              value={item.name || item.title || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], name: e.target.value, title: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className={`flex-1 border px-2 py-1 rounded-lg text-xs font-semibold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28] border-white/5 text-slate-200'
+                              }`}
+                              placeholder={isUa ? 'Назва іконки' : 'Icon title'}
+                            />
+
+                            {/* Delete item */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = mapLegendConfig.items.filter((_, i) => i !== idx);
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className="text-slate-400 hover:text-red-400 p-1"
+                              title={isUa ? 'Видалити' : 'Delete'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Count input: User writes whatever count they want */}
+                          <div className="flex items-center gap-2 pl-9">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">
+                              {isUa ? 'Кількість:' : 'Count:'}
+                            </span>
+                            <input
+                              type="text"
+                              value={item.countText || item.count || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], countText: e.target.value, count: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              placeholder={isUa ? 'напр. 2 шт або 1 од' : 'e.g. 2 pcs or 1 unit'}
+                              className={`flex-1 border px-2 py-0.5 rounded-lg text-xs font-mono font-bold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-blue-600' : 'bg-[#181d28] border-white/5 text-blue-400'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      {mapLegendConfig.items.length === 0 && (
+                        <p className="text-[10px] text-slate-400 italic text-center py-2">
+                          {isUa ? 'Немає елементів у легенді. Натисніть "Оновити з карти" вище.' : 'No legend items. Click "Sync from map elements" above.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -3027,92 +5499,74 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       </div>
 
-      {/* Action panel at the bottom (Split Export: Save PNG & Telegram) */}
-      <div className={`p-3.5 border-t space-y-2.5 ${
-        theme === 'light' ? 'bg-slate-50 border-slate-200' : 'bg-[#0e1117]/80 border-[#262c38] backdrop-blur-md'
+      {/* Action panel at the bottom (Icon-only compact bar: Export PNG, Telegram, Clipboard, Undo, Clear) */}
+      <div className={`p-2.5 px-3 border-t shrink-0 ${
+        theme === 'light' ? 'bg-white/95 border-slate-200 shadow-lg' : 'bg-[#0e1117]/95 border-[#262c38] backdrop-blur-md shadow-2xl'
       }`}>
-        <div className="space-y-2">
-          {/* Row 1: Split Export Buttons (PNG & Telegram) */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Save as PNG */}
-            <button
-              type="button"
-              onClick={onExportPNG}
-              className={`w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border shadow-md ${
-                theme === 'light'
-                  ? 'bg-[#0057B7] hover:bg-[#004494] text-white border-[#0057B7]/20 shadow-[#0057B7]/10'
-                  : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500/20 shadow-blue-600/10'
-              }`}
-              title={isUa ? 'Завантажити карту як PNG файл високої роздільності' : 'Download HD PNG'}
-            >
-              <Download className="w-4 h-4 flex-shrink-0 text-white" />
-              <span className="leading-tight text-center">{t.btnSavePng}</span>
-            </button>
+        <div className="grid grid-cols-5 gap-1.5 w-full">
+          {/* 1. Save as PNG */}
+          <button
+            type="button"
+            onClick={onExportPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-blue-500/30 bg-[#0057B7] hover:bg-[#004494] text-white shadow-sm shadow-[#0057B7]/25 active:scale-95"
+            title={isUa ? 'Завантажити карту як PNG' : 'Download HD PNG'}
+            aria-label={t.btnSavePng}
+          >
+            <Download className="w-5 h-5 text-white" />
+          </button>
 
-            {/* Export to Telegram (Telegram Brand Colors & Logo) */}
-            <button
-              type="button"
-              onClick={onExportTelegram}
-              className="w-full h-[50px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-lg shadow-[#24A1DE]/25"
-              title={isUa ? 'Поділитися картою або опублікувати в Telegram-канал на вибір' : 'Share or publish map to Telegram channel'}
-            >
-              <Send className="w-4 h-4 flex-shrink-0 text-white fill-current -translate-x-0.5 translate-y-0.5" />
-              <span className="leading-tight text-center">{t.btnExportTelegram}</span>
-            </button>
-          </div>
+          {/* 2. Export to Telegram */}
+          <button
+            type="button"
+            onClick={onExportTelegram}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-sm shadow-[#24A1DE]/25 active:scale-95"
+            title={isUa ? 'Опублікувати ботом у Telegram' : 'Publish with Bot to Telegram'}
+            aria-label={t.btnExportTelegram}
+          >
+            <Send className="w-5 h-5 text-white fill-current" />
+          </button>
 
-          {/* Row 2: Share Buffer & Undo */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Share / Buffer Copy */}
-            <button
-              type="button"
-              onClick={onCopyPNG}
-              className="w-full h-[44px] px-2 font-extrabold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-[#FFD700]/30 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-md shadow-[#FFD700]/15"
-              title={isUa ? 'Скопіювати зображення в буфер обміну' : 'Copy to clipboard'}
-            >
-              <Copy className="w-4 h-4 flex-shrink-0 text-slate-950" />
-              <span className="leading-tight text-center">{t.btnShare}</span>
-            </button>
+          {/* 3. Copy to Clipboard */}
+          <button
+            type="button"
+            onClick={onCopyPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#FFD700]/40 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-sm shadow-[#FFD700]/20 active:scale-95"
+            title={isUa ? 'Скопіювати в буфер обміну' : 'Copy to clipboard'}
+            aria-label={t.btnShare}
+          >
+            <Copy className="w-5 h-5 text-slate-950" />
+          </button>
 
-            {/* Undo */}
-            <button
-              type="button"
-              onClick={onUndo}
-              className={`w-full h-[44px] px-2 font-bold text-xs rounded-xl active:scale-[0.97] hover:scale-[1.01] transition-all cursor-pointer flex items-center justify-center gap-1.5 border ${
-                theme === 'light'
-                  ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
-                  : 'bg-[#181d28] border-white/5 hover:bg-white/5 text-slate-300 hover:text-white'
-              }`}
-              title={isUa ? 'Скасувати останню дію' : 'Undo last action'}
-            >
-              <RotateCcw className="w-4 h-4 flex-shrink-0" />
-              <span className="leading-tight text-center">{t.btnUndo}</span>
-            </button>
-          </div>
+          {/* 4. Undo */}
+          <button
+            type="button"
+            onClick={onUndo}
+            className={`h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-sm active:scale-95 ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                : 'bg-white/10 hover:bg-white/15 border-white/10 text-slate-200 hover:text-white'
+            }`}
+            title={isUa ? 'Скасувати останню дію (Undo)' : 'Undo last action'}
+            aria-label={t.btnUndo}
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
 
-          {/* Row 3: Clear All */}
+          {/* 5. Clear All */}
           <button
             type="button"
             onClick={onClearMarkers}
-            className="w-full h-[36px] px-2 bg-red-600/90 hover:bg-red-600 active:scale-[0.97] hover:scale-[1.01] text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5 border border-red-500/20"
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-red-500/40 bg-red-600 hover:bg-red-500 text-white shadow-sm shadow-red-600/25 active:scale-95"
+            title={isUa ? 'Очистити всі нанесені об\'єкти' : 'Clear all markers & objects'}
+            aria-label={t.btnClearAll}
           >
-            <Trash2 className="w-3.5 h-3.5 flex-shrink-0" />
-            <span className="leading-tight text-center">{t.btnClearAll}</span>
+            <Trash2 className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        {/* Support Banner & Footer */}
-        <div className="flex items-center justify-center gap-3 pt-1.5 text-[11px] text-slate-500 font-mono">
-          <a
-            href="https://t.me/krrig_alerts"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1 bg-[#24A1DE]/10 hover:bg-[#24A1DE]/20 text-[#24A1DE] font-bold rounded-lg border border-[#24A1DE]/10 transition-all text-xs"
-          >
-            <Send className="w-3 h-3 fill-current" />
-            <span>{t.btnSupport}</span>
-          </a>
-          <span className="font-bold">v3.0</span>
+        {/* Minimal Footer */}
+        <div className="flex items-center justify-end pt-1 px-1 text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+          <span>v3.0</span>
         </div>
       </div>
 

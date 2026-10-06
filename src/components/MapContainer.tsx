@@ -1,21 +1,33 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
 import { toBlob } from 'html-to-image';
-import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw } from 'lucide-react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily } from '../types';
+import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
-import { smoothPolylinePoints, generateFadingPolylineSegments } from '../utils/smoothing';
+import { CityRulerPreset, MAJOR_CITIES_RULER, MEASURE_TRACK_COLORS, INTER_CITY_MEASURE_PRESETS } from '../data/cityRulerPresets';
+import { CityRulerModal } from './CityRulerModal';
+import {
+  smoothPolylinePoints,
+  generateFadingPolylineSegments,
+  smoothFreehandStrokeOnMap,
+  extractControlPointsFromFreehand,
+  simplifyExistingLinePoints,
+} from '../utils/smoothing';
 import { createExplosionIcon, createCustomImageIcon, createFadeGlowIcon, createArrowIcon, createDotIcon, calculateBearing } from '../utils/lineIcons';
 import { AirAlertsLayer } from './AirAlertsLayer';
-import { getMapFontFamilyCss } from '../utils/mapFonts';
+import { LiveThreatsLayer } from './LiveThreatsLayer';
+import { getMapFontFamilyCss, getFontEmbedCSS } from '../utils/mapFonts';
+import { MapLegendWidget } from './MapLegendWidget';
 
 export interface MapContainerRef {
   exportPNG: () => void;
-  copyPNG: () => void;
+  copyPNG: () => Promise<boolean>;
   getMapBlob: (mode?: 'export' | 'clipboard') => Promise<Blob>;
   centerOnLocation: (lat: number, lng: number, zoom?: number) => void;
   highlightZoneAt: (lat: number, lng: number, markerId?: string) => void;
+  clearSearchedAreas: () => void;
+  getMarkerLiveState: (id: string) => { lat: number; lng: number; trail: [number, number][] } | null;
 }
 
 interface SearchedArea {
@@ -113,8 +125,6 @@ interface MapContainerProps {
   onToggleAutoHighlightZone?: (enabled: boolean) => void;
   theme?: 'dark' | 'light';
   onUpdateMarker?: (marker: CustomMarker) => void;
-  routePlacementMarkerId?: string | null;
-  onFinishRoutePlacement?: () => void;
   watermarkType?: WatermarkType;
   watermarkText?: string;
   watermarkImageUrl?: string;
@@ -122,6 +132,7 @@ interface MapContainerProps {
   watermarkOpacity?: number;
   watermarkRotation?: number;
   showLegendOverlay?: boolean;
+  showLogoAndLegendOnMap?: boolean;
   legendOverlayText?: string;
   showRadarOverlay?: boolean;
   blurMapOnExport?: boolean;
@@ -132,9 +143,20 @@ interface MapContainerProps {
   onToggleSettlementLabels?: (show: boolean) => void;
   onSetSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
   showCityBoundary?: boolean;
+  cityBoundaryConfig?: BoundaryStyleConfig;
   showDistrictBoundary?: boolean;
+  districtBoundaryConfig?: BoundaryStyleConfig;
+  showUkraineBoundary?: boolean;
+  ukraineBoundaryConfig?: UkraineBoundaryConfig;
   showHromadaBoundaries?: boolean;
+  hromadaBoundariesConfig?: BoundaryStyleConfig;
   onToggleHromadaBoundaries?: (show: boolean) => void;
+  showQuickSettlements?: boolean;
+  onToggleQuickSettlements?: (show: boolean) => void;
+  deepStateOccupiedConfig?: DeepStateOccupiedConfig;
+  onToggleDeepStateOccupied?: (enabled: boolean) => void;
+  deepStateGeoJson?: any;
+  isLoadingDeepState?: boolean;
   customSettlements?: Settlement[];
   onAddCustomSettlementPoint?: (lat: number, lng: number) => void;
   onEditSettlement?: (settlement: Settlement) => void;
@@ -152,10 +174,20 @@ interface MapContainerProps {
   lineStartStyle?: LineEndpointType;
   lineStartCustomIcon?: string;
   lineStartIconRotation?: number;
+  lineStartIconSize?: number;
   lineEndStyle?: LineEndpointType;
   lineEndCustomIcon?: string;
   lineEndIconRotation?: number;
+  lineEndIconSize?: number;
   lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+  lineDrawMethod?: LineDrawMethod;
+  onChangeLineDrawMethod?: (method: LineDrawMethod) => void;
+  onChangeLineStartStyle?: (style: LineEndpointType) => void;
+  onChangeLineEndStyle?: (style: LineEndpointType) => void;
+
+  // Map Legend
+  mapLegendConfig?: MapLegendConfig;
+  onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -165,6 +197,12 @@ interface MapContainerProps {
   alertsOpacity?: number;
   alertsStrokeWidth?: number;
   onAlertClick?: (alert: AirAlert, lat?: number, lng?: number) => void;
+  clearAllTrigger?: number;
+
+  // Live Mode (Neptun) Props
+  isLiveMode?: boolean;
+  liveThreats?: NeptunThreat[];
+  showLiveTrails?: boolean;
 }
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
@@ -180,10 +218,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onSelectInteractionMode,
   autoHighlightZone = false,
   onToggleAutoHighlightZone,
-  theme = 'dark',
+  theme = 'light',
   onUpdateMarker,
-  routePlacementMarkerId = null,
-  onFinishRoutePlacement,
   watermarkType = 'text',
   watermarkText = 'UA Mapper',
   watermarkImageUrl = '',
@@ -191,6 +227,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   watermarkOpacity,
   watermarkRotation,
   showLegendOverlay = true,
+  showLogoAndLegendOnMap = true,
   legendOverlayText = '',
   showRadarOverlay = true,
   blurMapOnExport = false,
@@ -201,9 +238,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   onToggleSettlementLabels,
   onSetSettlementLabelMode,
   showCityBoundary = true,
+  cityBoundaryConfig,
   showDistrictBoundary = true,
+  districtBoundaryConfig,
+  showUkraineBoundary = true,
+  ukraineBoundaryConfig,
   showHromadaBoundaries = true,
+  hromadaBoundariesConfig,
   onToggleHromadaBoundaries,
+  showQuickSettlements: propShowQuickSettlements,
+  onToggleQuickSettlements,
+  deepStateOccupiedConfig,
+  onToggleDeepStateOccupied,
+  deepStateGeoJson,
+  isLoadingDeepState = false,
   customSettlements = [],
   onAddCustomSettlementPoint,
   onEditSettlement,
@@ -220,10 +268,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   lineStartStyle = 'none' as LineEndpointType,
   lineStartCustomIcon = '',
   lineStartIconRotation = 0,
+  lineStartIconSize = 32,
   lineEndStyle = 'none' as LineEndpointType,
   lineEndCustomIcon = '',
   lineEndIconRotation = 0,
+  lineEndIconSize = 32,
   lineDashStyle = 'solid' as 'solid' | 'dashed' | 'dotted',
+  lineDrawMethod = 'freehand' as LineDrawMethod,
+  onChangeLineDrawMethod,
+  onChangeLineStartStyle,
+  onChangeLineEndStyle,
+
+  // Map Legend
+  mapLegendConfig,
+  onUpdateMapLegendConfig,
 
   // Air Alerts
   activeAlerts = [],
@@ -233,6 +291,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   alertsOpacity = 0.30,
   alertsStrokeWidth = 2.5,
   onAlertClick,
+  clearAllTrigger,
+
+  // Live Mode (Neptun)
+  isLiveMode = false,
+  liveThreats = [],
+  showLiveTrails = true,
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -240,18 +304,175 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
+  const movementTrailLayersRef = useRef<{ [id: string]: L.Polyline }>({});
+  const movingMarkerIdsRef = useRef<Set<string>>(new Set());
+  const movementMarkersRef = useRef<CustomMarker[]>(markers);
+  const movementLiveStateRef = useRef<Record<string, { lat: number; lng: number; trail: [number, number][] }>>({});
+  const onUpdateMarkerMovementRef = useRef(onUpdateMarker);
+  useEffect(() => { movementMarkersRef.current = markers; }, [markers]);
+  useEffect(() => { onUpdateMarkerMovementRef.current = onUpdateMarker; }, [onUpdateMarker]);
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
-  const routeGradientRef = useRef<{ [id: string]: L.Polyline[] }>({});
+  const endEtaMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const completedMovementTargetsRef = useRef<Set<string>>(new Set());
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
   const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
+  const ukraineBoundaryLayerRef = useRef<L.GeoJSON | null>(null);
+  const ukraineBoundaryGeojsonRef = useRef<any | null>(null);
   const hromadasLayerGroupRef = useRef<L.LayerGroup | null>(null);
+  const deepStateOccupiedLayerRef = useRef<L.GeoJSON | null>(null);
+  const deepStateRendererRef = useRef<L.SVG | null>(null);
   
-  // Measurement Tool State & Refs
-  const [measurePoints, setMeasurePoints] = useState<{ lat: number; lng: number }[]>([]);
-  const measurePolylineRef = useRef<L.Polyline | null>(null);
-  const measureMarkersRef = useRef<L.Marker[]>([]);
-  const measureSegmentTooltipsRef = useRef<L.Marker[]>([]);
+  // Measurement Tool State & Refs (Multi-Track & Multi-City Support)
+  const [measureTracks, setMeasureTracks] = useState<MeasureTrack[]>([
+    { id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] },
+  ]);
+  const [activeTrackId, setActiveTrackId] = useState<string>('track_1');
+  const [isCityRulerModalOpen, setIsCityRulerModalOpen] = useState<boolean>(false);
+
+  const measureTracksRef = useRef(measureTracks);
+  useEffect(() => {
+    measureTracksRef.current = measureTracks;
+  }, [measureTracks]);
+
+  const activeTrackIdRef = useRef(activeTrackId);
+  useEffect(() => {
+    activeTrackIdRef.current = activeTrackId;
+  }, [activeTrackId]);
+
+  const activeTrack = React.useMemo(() => {
+    return (
+      measureTracks.find((t) => t.id === activeTrackId) ||
+      measureTracks[0] || { id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] }
+    );
+  }, [measureTracks, activeTrackId]);
+
+  const measurePoints = activeTrack.points;
+  const measurePointsRef = useRef(measurePoints);
+  useEffect(() => {
+    measurePointsRef.current = measurePoints;
+  }, [measurePoints]);
+
+  const setMeasurePoints = useCallback(
+    (
+      updater:
+        | { lat: number; lng: number }[]
+        | ((prev: { lat: number; lng: number }[]) => { lat: number; lng: number }[])
+    ) => {
+      setMeasureTracks((prevTracks) => {
+        const curActiveId = activeTrackIdRef.current;
+        return prevTracks.map((t) => {
+          if (t.id === curActiveId) {
+            const nextPoints = typeof updater === 'function' ? updater(t.points) : updater;
+            return { ...t, points: nextPoints };
+          }
+          return t;
+        });
+      });
+    },
+    []
+  );
+
+  const measureTrackLayersRef = useRef<{
+    [trackId: string]: {
+      polyline?: L.Polyline;
+      markers: L.Marker[];
+      segmentTooltips: L.Marker[];
+    };
+  }>({});
+
+  const handleAddTrack = useCallback(
+    (initialName?: string, initialCityCenter?: { lat: number; lng: number }) => {
+      const nextNum = measureTracksRef.current.length + 1;
+      const newId = `track_${Date.now()}`;
+      const nextColor =
+        MEASURE_TRACK_COLORS[measureTracksRef.current.length % MEASURE_TRACK_COLORS.length].hex;
+      const newTrack: MeasureTrack = {
+        id: newId,
+        name: initialName || `${language === 'uk' ? 'Вимір' : 'Measure'} ${nextNum}`,
+        color: nextColor,
+        points: initialCityCenter ? [initialCityCenter] : [],
+      };
+      setMeasureTracks((prev) => [...prev, newTrack]);
+      setActiveTrackId(newId);
+    },
+    [language]
+  );
+
+  const handleDeleteTrack = useCallback((trackId: string) => {
+    setMeasureTracks((prev) => {
+      if (prev.length <= 1) {
+        // Keep 1 empty track
+        return [{ id: 'track_1', name: 'Вимір 1', color: '#facc15', points: [] }];
+      }
+      const filtered = prev.filter((t) => t.id !== trackId);
+      if (activeTrackIdRef.current === trackId) {
+        setActiveTrackId(filtered[0].id);
+      }
+      return filtered;
+    });
+  }, []);
+
+  const handleApplyInterCityPreset = useCallback(
+    (city1: CityRulerPreset, city2: CityRulerPreset) => {
+      const trackName = `${city1.nameUa} — ${city2.nameUa}`;
+      const points = [
+        { lat: city1.lat, lng: city1.lng },
+        { lat: city2.lat, lng: city2.lng },
+      ];
+
+      setMeasureTracks((prev) => {
+        const active = prev.find((t) => t.id === activeTrackIdRef.current);
+        if (active && active.points.length === 0) {
+          return prev.map((t) =>
+            t.id === activeTrackIdRef.current ? { ...t, name: trackName, points } : t
+          );
+        } else {
+          const nextColor =
+            MEASURE_TRACK_COLORS[prev.length % MEASURE_TRACK_COLORS.length].hex;
+          const newTrack: MeasureTrack = {
+            id: `track_${Date.now()}`,
+            name: trackName,
+            color: nextColor,
+            points,
+          };
+          setActiveTrackId(newTrack.id);
+          return [...prev, newTrack];
+        }
+      });
+
+      const map = mapInstanceRef.current;
+      if (map) {
+        const bounds = L.latLngBounds([
+          [city1.lat, city1.lng],
+          [city2.lat, city2.lng],
+        ]);
+        map.fitBounds(bounds, { padding: [70, 70], maxZoom: 12 });
+      }
+    },
+    []
+  );
+
+  const handleJumpToCity = useCallback(
+    (city: CityRulerPreset, createNewTrack = false) => {
+      const map = mapInstanceRef.current;
+      if (map) {
+        map.flyTo([city.lat, city.lng], 13, { duration: 1.2 });
+      }
+      if (createNewTrack) {
+        handleAddTrack(city.nameUa, { lat: city.lat, lng: city.lng });
+      }
+    },
+    [handleAddTrack]
+  );
+
+  const handleAddCityPointToActive = useCallback((city: CityRulerPreset) => {
+    setMeasurePoints((prev) => [...prev, { lat: city.lat, lng: city.lng }]);
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.panTo([city.lat, city.lng]);
+    }
+  }, [setMeasurePoints]);
 
   // Line Drawing Mode State & Refs
   const [draftLinePoints, setDraftLinePoints] = useState<[number, number][]>([]);
@@ -301,18 +522,233 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       startPointStyle: lineStartStyle,
       startCustomIconUrl: lineStartCustomIcon,
       startIconRotation: lineStartIconRotation,
+      startIconSize: lineStartIconSize,
       endPointStyle: lineEndStyle,
       endCustomIconUrl: lineEndCustomIcon,
       endIconRotation: lineEndIconRotation,
+      endIconSize: lineEndIconSize,
     };
     onAddDrawnLine(newLine);
     setDraftLinePoints([]);
-  }, [draftLinePoints, lineColor, lineWeight, lineSmoothed, lineDashStyle, lineStartStyle, lineStartCustomIcon, lineStartIconRotation, lineEndStyle, lineEndCustomIcon, lineEndIconRotation, onAddDrawnLine]);
+  }, [
+    draftLinePoints,
+    lineColor,
+    lineWeight,
+    lineSmoothed,
+    lineDashStyle,
+    lineStartStyle,
+    lineStartCustomIcon,
+    lineStartIconRotation,
+    lineStartIconSize,
+    lineEndStyle,
+    lineEndCustomIcon,
+    lineEndIconRotation,
+    lineEndIconSize,
+    onAddDrawnLine,
+  ]);
 
   const handleFinishDraftLineRef = useRef(handleFinishDraftLine);
   useEffect(() => {
     handleFinishDraftLineRef.current = handleFinishDraftLine;
   }, [handleFinishDraftLine]);
+
+  // Freehand (Paint-style) drawing states and refs
+  const [justSmoothedNotice, setJustSmoothedNotice] = useState(false);
+  const justSmoothedNoticeTimerRef = useRef<number | null>(null);
+  const isDrawingFreehandRef = useRef(false);
+  const freehandRawPointsRef = useRef<[number, number][]>([]);
+  const freehandPointerIdRef = useRef<number | null>(null);
+  const freehandStartClientRef = useRef<{ x: number; y: number } | null>(null);
+  const isSpacePressedRef = useRef(false);
+
+  // Live Freehand Drawing Layer Refs
+  const liveFreehandPolylineRef = useRef<L.Polyline | null>(null);
+  const liveFreehandStartMarkerRef = useRef<L.Marker | null>(null);
+  const liveFreehandEndMarkerRef = useRef<L.Marker | null>(null);
+
+  // Synchronized prop refs for pointer events and callbacks
+  const lineDrawMethodRef = useRef(lineDrawMethod);
+  useEffect(() => { lineDrawMethodRef.current = lineDrawMethod; }, [lineDrawMethod]);
+
+  const lineColorRef = useRef(lineColor);
+  useEffect(() => { lineColorRef.current = lineColor; }, [lineColor]);
+
+  const lineWeightRef = useRef(lineWeight);
+  useEffect(() => { lineWeightRef.current = lineWeight; }, [lineWeight]);
+
+  const lineDashStyleRef = useRef(lineDashStyle);
+  useEffect(() => { lineDashStyleRef.current = lineDashStyle; }, [lineDashStyle]);
+
+  const lineStartStyleRef = useRef(lineStartStyle);
+  useEffect(() => { lineStartStyleRef.current = lineStartStyle; }, [lineStartStyle]);
+
+  const lineStartCustomIconRef = useRef(lineStartCustomIcon);
+  useEffect(() => { lineStartCustomIconRef.current = lineStartCustomIcon; }, [lineStartCustomIcon]);
+
+  const lineStartIconRotationRef = useRef(lineStartIconRotation);
+  useEffect(() => { lineStartIconRotationRef.current = lineStartIconRotation; }, [lineStartIconRotation]);
+
+  const lineStartIconSizeRef = useRef(lineStartIconSize);
+  useEffect(() => { lineStartIconSizeRef.current = lineStartIconSize; }, [lineStartIconSize]);
+
+  const lineEndStyleRef = useRef(lineEndStyle);
+  useEffect(() => { lineEndStyleRef.current = lineEndStyle; }, [lineEndStyle]);
+
+  const lineEndCustomIconRef = useRef(lineEndCustomIcon);
+  useEffect(() => { lineEndCustomIconRef.current = lineEndCustomIcon; }, [lineEndCustomIcon]);
+
+  const lineEndIconRotationRef = useRef(lineEndIconRotation);
+  useEffect(() => { lineEndIconRotationRef.current = lineEndIconRotation; }, [lineEndIconRotation]);
+
+  const lineEndIconSizeRef = useRef(lineEndIconSize);
+  useEffect(() => { lineEndIconSizeRef.current = lineEndIconSize; }, [lineEndIconSize]);
+
+  const onAddDrawnLineRef = useRef(onAddDrawnLine);
+  useEffect(() => { onAddDrawnLineRef.current = onAddDrawnLine; }, [onAddDrawnLine]);
+
+  // Currently selected drawn line and optimization helper
+  const selectedDrawnLine = drawnLines.find((l) => l.id === selectedLineId) || null;
+
+  const handleOptimizeLinePoints = useCallback(
+    (targetCount = 16) => {
+      if (!selectedDrawnLine) return;
+      const map = mapInstanceRef.current;
+      const optimized = simplifyExistingLinePoints(map, selectedDrawnLine.points, targetCount);
+      onUpdateDrawnLine({
+        ...selectedDrawnLine,
+        points: optimized,
+        smoothed: true,
+      });
+      setJustSmoothedNotice(true);
+      if (justSmoothedNoticeTimerRef.current) clearTimeout(justSmoothedNoticeTimerRef.current);
+      justSmoothedNoticeTimerRef.current = window.setTimeout(() => {
+        setJustSmoothedNotice(false);
+      }, 2400);
+    },
+    [selectedDrawnLine, onUpdateDrawnLine]
+  );
+
+  // Helper to cleanly remove live freehand preview layers
+  const cleanLiveFreehandLayers = useCallback(() => {
+    if (liveFreehandPolylineRef.current) {
+      liveFreehandPolylineRef.current.remove();
+      liveFreehandPolylineRef.current = null;
+    }
+    if (liveFreehandStartMarkerRef.current) {
+      liveFreehandStartMarkerRef.current.remove();
+      liveFreehandStartMarkerRef.current = null;
+    }
+    if (liveFreehandEndMarkerRef.current) {
+      liveFreehandEndMarkerRef.current.remove();
+      liveFreehandEndMarkerRef.current = null;
+    }
+  }, []);
+
+  // Update or render live freehand preview while user moves mouse or finger
+  const renderLiveFreehandPreview = useCallback((pts: [number, number][]) => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    if (pts.length < 1) {
+      cleanLiveFreehandLayers();
+      return;
+    }
+
+    let dashArray: string | undefined = undefined;
+    if (lineDashStyleRef.current === 'dashed') dashArray = '12, 8';
+    if (lineDashStyleRef.current === 'dotted') dashArray = '3, 6';
+
+    const color = lineColorRef.current;
+    const weight = lineWeightRef.current;
+
+    if (!liveFreehandPolylineRef.current) {
+      liveFreehandPolylineRef.current = L.polyline(pts, {
+        color,
+        weight,
+        dashArray,
+        opacity: 0.92,
+        lineCap: 'round',
+        lineJoin: 'round',
+        pane: 'drawnLinesPane',
+      }).addTo(map);
+    } else {
+      liveFreehandPolylineRef.current.setLatLngs(pts);
+      liveFreehandPolylineRef.current.setStyle({
+        color,
+        weight,
+        dashArray,
+      });
+    }
+
+    // Dynamic endpoint previews while drawing
+    if (pts.length >= 2) {
+      const startCoord = pts[0];
+      const secondCoord = pts[1] || startCoord;
+      const endCoord = pts[pts.length - 1];
+      const prevEndCoord = pts[pts.length - 2] || endCoord;
+
+      const startStyle = lineStartStyleRef.current;
+      const startCustomIcon = lineStartCustomIconRef.current;
+      const startRotation = lineStartIconRotationRef.current;
+      const startIconSize = lineStartIconSizeRef.current;
+
+      const endStyle = lineEndStyleRef.current;
+      const endCustomIcon = lineEndCustomIconRef.current;
+      const endRotation = lineEndIconRotationRef.current;
+      const endIconSize = lineEndIconSizeRef.current;
+
+      // Start Marker
+      if (startStyle !== 'none' && startStyle !== 'fade') {
+        const startBearing = calculateBearing(startCoord, secondCoord) + (startRotation || 0);
+        let startIcon: L.DivIcon | null = null;
+        if (startStyle === 'explosion') startIcon = createExplosionIcon(color, weight, startIconSize);
+        if (startStyle === 'custom_icon') startIcon = createCustomImageIcon(startCustomIcon, color, weight, startBearing, startIconSize);
+        if (startStyle === 'arrow') startIcon = createArrowIcon(color, startBearing, weight, startIconSize);
+        if (startStyle === 'dot') startIcon = createDotIcon(color, weight, startIconSize);
+
+        if (startIcon) {
+          if (!liveFreehandStartMarkerRef.current) {
+            liveFreehandStartMarkerRef.current = L.marker(startCoord, {
+              icon: startIcon,
+              interactive: false,
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+          } else {
+            liveFreehandStartMarkerRef.current.setLatLng(startCoord);
+            liveFreehandStartMarkerRef.current.setIcon(startIcon);
+          }
+        }
+      } else if (liveFreehandStartMarkerRef.current) {
+        liveFreehandStartMarkerRef.current.remove();
+        liveFreehandStartMarkerRef.current = null;
+      }
+
+      // End Marker (moves dynamically with cursor or finger)
+      if (endStyle !== 'none' && endStyle !== 'fade') {
+        const endBearing = calculateBearing(prevEndCoord, endCoord) + (endRotation || 0);
+        let endIcon: L.DivIcon | null = null;
+        if (endStyle === 'explosion') endIcon = createExplosionIcon(color, weight, endIconSize);
+        if (endStyle === 'custom_icon') endIcon = createCustomImageIcon(endCustomIcon, color, weight, endBearing, endIconSize);
+        if (endStyle === 'arrow') endIcon = createArrowIcon(color, endBearing, weight, endIconSize);
+        if (endStyle === 'dot') endIcon = createDotIcon(color, weight, endIconSize);
+
+        if (endIcon) {
+          if (!liveFreehandEndMarkerRef.current) {
+            liveFreehandEndMarkerRef.current = L.marker(endCoord, {
+              icon: endIcon,
+              interactive: false,
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+          } else {
+            liveFreehandEndMarkerRef.current.setLatLng(endCoord);
+            liveFreehandEndMarkerRef.current.setIcon(endIcon);
+          }
+        }
+      } else if (liveFreehandEndMarkerRef.current) {
+        liveFreehandEndMarkerRef.current.remove();
+        liveFreehandEndMarkerRef.current = null;
+      }
+    }
+  }, [cleanLiveFreehandLayers]);
 
   // Map Readiness State
   const [isMapReady, setIsMapReady] = useState(false);
@@ -413,8 +849,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   // Handle Auto-highlight Zone creation at coordinates (highlights the hromada/district polygon where the point is located)
   const handleAutoHighlightZoneAt = (lat: number, lng: number, markerId?: string) => {
     if (!autoHighlightZoneRef.current) return;
+    if (lat === undefined || lng === undefined || isNaN(Number(lat)) || isNaN(Number(lng))) return;
 
-    const cacheKey = `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+    const cacheKey = `${Number(lat).toFixed(3)}_${Number(lng).toFixed(3)}`;
 
     // 1. Check if cached result exists
     if (nominatimCacheRef.current.has(cacheKey)) {
@@ -612,6 +1049,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       return [];
     }
   });
+
+  // Toggle to show/hide quick settlement buttons (leaving only search & district buttons)
+  const [localShowQuickSettlements, setLocalShowQuickSettlements] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('uamapper_show_quick_settlements');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const showQuickSettlements = propShowQuickSettlements !== undefined ? propShowQuickSettlements : localShowQuickSettlements;
+
+  const handleToggleQuickSettlements = (val: boolean) => {
+    setLocalShowQuickSettlements(val);
+    onToggleQuickSettlements?.(val);
+    try {
+      localStorage.setItem('uamapper_show_quick_settlements', String(val));
+    } catch (e) {
+      console.warn('Failed to save showQuickSettlements state:', e);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -1078,20 +1537,30 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         return [...prev, newArea];
       });
 
+      const parsedLat = parseFloat(item.lat);
+      const parsedLon = parseFloat(item.lon);
+      const hasValidCoords = !isNaN(parsedLat) && !isNaN(parsedLon);
+
       try {
         const tempLayer = L.geoJSON(item.geojson);
         const bounds = tempLayer.getBounds();
         if (bounds.isValid()) {
           map.fitBounds(bounds, { maxZoom: 14, animate: true, padding: [20, 20] });
-        } else {
-          map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+        } else if (hasValidCoords) {
+          map.setView([parsedLat, parsedLon], 12);
         }
       } catch (e) {
-        map.setView([parseFloat(item.lat), parseFloat(item.lon)], 12);
+        if (hasValidCoords) {
+          map.setView([parsedLat, parsedLon], 12);
+        }
       }
     } else {
-      await handleAutoHighlightZoneAt(parseFloat(item.lat), parseFloat(item.lon));
-      map.setView([parseFloat(item.lat), parseFloat(item.lon)], 13, { animate: true });
+      const parsedLat = parseFloat(item.lat);
+      const parsedLon = parseFloat(item.lon);
+      if (!isNaN(parsedLat) && !isNaN(parsedLon)) {
+        await handleAutoHighlightZoneAt(parsedLat, parsedLon);
+        map.setView([parsedLat, parsedLon], 13, { animate: true });
+      }
     }
 
     setSearchQuery('');
@@ -1144,9 +1613,44 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     setSearchedAreas((prev) => prev.filter((area) => area.id !== id));
   };
 
-  const handleClearAllAreas = () => {
+  const handleClearAllAreas = useCallback(() => {
+    // 1. Immediately remove all Leaflet geojson polygon layers
+    Object.keys(geojsonLayersRef.current).forEach((id) => {
+      try {
+        geojsonLayersRef.current[id]?.layer?.remove();
+      } catch (err) {
+        console.error('Error removing geojson layer:', err);
+      }
+      delete geojsonLayersRef.current[id];
+    });
+
+    // 2. Clear state for searched & highlighted areas
     setSearchedAreas([]);
-  };
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowDropdown(false);
+    setMeasurePoints([]);
+    setDraftLinePoints([]);
+
+    // 3. Remove from persistence
+    try {
+      localStorage.removeItem('visicom_searched_areas');
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 4. Close any open leaflet popups
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.closePopup();
+    }
+  }, []);
+
+  // Listen to clearAllTrigger from App.tsx ("Очистити все")
+  useEffect(() => {
+    if (clearAllTrigger && clearAllTrigger > 0) {
+      handleClearAllAreas();
+    }
+  }, [clearAllTrigger, handleClearAllAreas]);
 
   const formatDisplayName = (fullName: string) => {
     const parts = fullName.split(',');
@@ -1258,6 +1762,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const allSettlements = customSettlements.filter(s => !(s as any).isDeleted);
 
     allSettlements.forEach((item) => {
+      if (!item || isNaN(Number(item.lat)) || isNaN(Number(item.lng))) {
+        return;
+      }
       const category = getSettlementCategory(item);
       if (disabledSettlementCategories.includes(category)) {
         return;
@@ -1402,21 +1909,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const onSelectLineRef = useRef(onSelectLine);
   const onAddCustomSettlementPointRef = useRef(onAddCustomSettlementPoint);
   const onEditSettlementRef = useRef(onEditSettlement);
-  const routePlacementMarkerIdRef = useRef(routePlacementMarkerId);
-  const markerDataRef = useRef<CustomMarker[]>(markers);
-  const onUpdateMarkerRef = useRef(onUpdateMarker);
-  const onFinishRoutePlacementRef = useRef(onFinishRoutePlacement);
 
   useEffect(() => {
     onAddMarkerRef.current = onAddMarker;
   }, [onAddMarker]);
-
-  useEffect(() => {
-    routePlacementMarkerIdRef.current = routePlacementMarkerId;
-    markerDataRef.current = markers;
-    onUpdateMarkerRef.current = onUpdateMarker;
-    onFinishRoutePlacementRef.current = onFinishRoutePlacement;
-  }, [routePlacementMarkerId, onUpdateMarker, onFinishRoutePlacement, markers]);
 
   useEffect(() => {
     onSelectMarkerRef.current = onSelectMarker;
@@ -1447,17 +1943,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const map = L.map(mapContainerRef.current, {
         center: defaultCenter,
         zoom: defaultZoom,
+        minZoom: 2,
+        maxZoom: 19,
         zoomControl: false, // We'll add our own styled zoom control or position it beautifully
         zoomSnap: 1, // Integer zoom levels guarantee 1:1 crisp raster tiles without CSS scale blur
         zoomDelta: 1,
         wheelPxPerZoomLevel: 60,
+        inertia: false, // Prevents sudden unpredictable acceleration and jumping across the globe
+        worldCopyJump: false,
       });
 
       // Add a styled zoom control at top-right
       L.control.zoom({ position: 'topright' }).addTo(map);
 
       // Create custom Leaflet panes to control z-index layer ordering:
-      // Air alerts background (230) < Air alert ambient markers (240) < Red danger zones (320) < Boundaries & raions (340) < Settlements (380) < Drawn lines (480) < User markers/tactical icons (600)
+      // Air alerts background (230) < Air alert ambient markers (240) < DeepState occupied zones (310) < Red danger zones (320) < Boundaries & raions (340) < Settlements (380) < Drawn lines (480) < User markers/tactical icons (600)
       if (!map.getPane('airAlertsPolygonsPane')) {
         const p = map.createPane('airAlertsPolygonsPane');
         p.style.zIndex = '230';
@@ -1466,6 +1966,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (!map.getPane('airAlertsMarkersPane')) {
         const p = map.createPane('airAlertsMarkersPane');
         p.style.zIndex = '240';
+      }
+      if (!map.getPane('deepStatePane')) {
+        const p = map.createPane('deepStatePane');
+        p.style.zIndex = '310';
       }
       if (!map.getPane('redZonePane')) {
         const p = map.createPane('redZonePane');
@@ -1487,67 +1991,101 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const p = map.createPane('userMarkersPane');
         p.style.zIndex = '600';
       }
+      if (!map.getPane('liveThreatsTrailsPane')) {
+        const p = map.createPane('liveThreatsTrailsPane');
+        p.style.zIndex = '620';
+        p.style.pointerEvents = 'none';
+      }
+      if (!map.getPane('liveThreatsMarkersPane')) {
+        const p = map.createPane('liveThreatsMarkersPane');
+        p.style.zIndex = '650';
+      }
 
       // Handle map clicks based on active interaction mode
       map.on('click', (e: L.LeafletMouseEvent) => {
         const originalEvent = e.originalEvent;
-        let target = originalEvent.target as HTMLElement;
-        let clickedMarker = false;
-        while (target && target !== mapContainerRef.current) {
+        let target = originalEvent?.target as HTMLElement;
+        let clickedInteractive = false;
+        const isDeepStatePolygon = Boolean(
+          target?.classList?.contains('deepstate-tactical-polygon') ||
+          target?.closest?.('.deepstate-tactical-polygon') ||
+          target?.closest?.('.leaflet-deepStatePane-pane')
+        );
+
+        if (!isDeepStatePolygon) {
           if (
-            target.classList.contains('leaflet-marker-icon') ||
-            target.classList.contains('measure-node-icon')
+            target?.classList?.contains('leaflet-marker-icon') ||
+            target?.classList?.contains('measure-node-icon') ||
+            target?.classList?.contains('measure-badge-icon') ||
+            target?.classList?.contains('drawn-polyline-interactive') ||
+            target?.classList?.contains('leaflet-interactive') ||
+            Boolean(target?.closest?.('.leaflet-marker-icon')) ||
+            Boolean(target?.closest?.('.custom-marker-wrapper')) ||
+            Boolean(target?.closest?.('.user-marker-container')) ||
+            Boolean(target?.closest?.('.line-vertex-edit-handle')) ||
+            Boolean(target?.closest?.('.custom-end-handle')) ||
+            Boolean(target?.closest?.('.custom-end-explosion')) ||
+            Boolean(target?.closest?.('.drawn-polyline-interactive')) ||
+            Boolean(target?.closest?.('path.leaflet-interactive:not(.deepstate-tactical-polygon)')) ||
+            Boolean(target?.closest?.('.leaflet-popup')) ||
+            Boolean(target?.closest?.('.leaflet-popup-content')) ||
+            Boolean(target?.closest?.('.measure-node-icon')) ||
+            Boolean(target?.closest?.('.measure-badge-icon')) ||
+            Boolean(target?.closest?.('.measure-point-popup'))
           ) {
-            clickedMarker = true;
-            break;
+            clickedInteractive = true;
+          } else {
+            let curr: HTMLElement | null = target;
+            while (curr && curr !== mapContainerRef.current) {
+              if (curr.classList?.contains('deepstate-tactical-polygon')) {
+                break;
+              }
+              if (
+                curr.classList?.contains('leaflet-marker-icon') ||
+                curr.classList?.contains('measure-node-icon') ||
+                curr.classList?.contains('measure-badge-icon') ||
+                curr.classList?.contains('drawn-polyline-interactive') ||
+                curr.classList?.contains('leaflet-interactive')
+              ) {
+                clickedInteractive = true;
+                break;
+              }
+              curr = curr.parentElement;
+            }
           }
-          target = target.parentElement as HTMLElement;
         }
 
-        if (!clickedMarker) {
-          const mode = interactionModeRef.current;
-          if (routePlacementMarkerIdRef.current) {
-            const routeMarker = markerDataRef.current.find((m) => m.id === routePlacementMarkerIdRef.current);
-            if (routeMarker && onUpdateMarkerRef.current) {
-              const dy = e.latlng.lat - routeMarker.lat;
-              const dx = e.latlng.lng - routeMarker.lng;
-              let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
-              if (angleDeg < 0) angleDeg += 360;
-              onUpdateMarkerRef.current({
-                ...routeMarker,
-                endLat: e.latlng.lat,
-                endLng: e.latlng.lng,
-                rotation: Math.round(angleDeg) % 360,
-                endPointStyle: routeMarker.endPointStyle === 'none' ? 'line' : routeMarker.endPointStyle,
-              });
-              onFinishRoutePlacementRef.current?.();
-              onSelectMarker(routeMarker.id);
-            }
-          } else if (mode === 'line') {
-            setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
-          } else if (mode === 'measure') {
-            setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
-          } else if (mode === 'redzone') {
-            handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
-          } else if (mode === 'settlement') {
-            onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
-          } else if (mode === 'draw') {
-            onSelectMarkerRef.current(null);
-            onSelectLineRef.current(null);
-            const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
-            if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
-              handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
+        if (clickedInteractive) {
+          return;
+        }
 
-              // Auto-highlight direction end point for the new marker
-              const angleRad = 0; // default initial rotation is 0deg
-              const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
-              const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
-              handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
-            }
-          } else {
-            onSelectMarkerRef.current(null);
-            onSelectLineRef.current(null);
+        const mode = interactionModeRef.current;
+        if (mode === 'line') {
+          if (lineDrawMethodRef.current === 'points') {
+            setDraftLinePoints((prev) => [...prev, [e.latlng.lat, e.latlng.lng]]);
           }
+        } else if (mode === 'measure') {
+          setMeasurePoints((prev) => [...prev, { lat: e.latlng.lat, lng: e.latlng.lng }]);
+        } else if (mode === 'redzone') {
+          handleCreateRedZoneAt(e.latlng.lat, e.latlng.lng);
+        } else if (mode === 'settlement') {
+          onAddCustomSettlementPointRef.current?.(e.latlng.lat, e.latlng.lng);
+        } else if (mode === 'draw') {
+          onSelectMarkerRef.current(null);
+          onSelectLineRef.current(null);
+          const newMarkerId = onAddMarkerRef.current(e.latlng.lat, e.latlng.lng);
+          if (autoHighlightZoneRef.current && typeof newMarkerId === 'string') {
+            handleAutoHighlightZoneAt(e.latlng.lat, e.latlng.lng, newMarkerId);
+
+            // Auto-highlight direction end point for the new marker
+            const angleRad = 0; // default initial rotation is 0deg
+            const endLat = e.latlng.lat + Math.cos(angleRad) * 0.003;
+            const endLng = e.latlng.lng + Math.sin(angleRad) * 0.005;
+            handleAutoHighlightZoneAt(endLat, endLng, `${newMarkerId}_end`);
+          }
+        } else {
+          onSelectMarkerRef.current(null);
+          onSelectLineRef.current(null);
         }
       });
 
@@ -1572,16 +2110,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Attach ResizeObserver to map container element to automatically handle sidebar/theme layout changes
     let resizeObserver: ResizeObserver | null = null;
+    let resizeTimer: any = null;
     if (mapContainerRef.current) {
       resizeObserver = new ResizeObserver(() => {
         if (mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize();
+          clearTimeout(resizeTimer);
+          resizeTimer = setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize({ debounceMoveend: true });
+            }
+          }, 60);
         }
       });
       resizeObserver.observe(mapContainerRef.current);
     }
 
     return () => {
+      if (resizeTimer) {
+        clearTimeout(resizeTimer);
+      }
       if (resizeObserver) {
         resizeObserver.disconnect();
       }
@@ -1595,6 +2142,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   // Helper to keep Kryvyi Rih Raion & City outlines always on top of Hromada boundaries
   const bringDistrictAndCityToFront = () => {
+    if (ukraineBoundaryLayerRef.current) {
+      ukraineBoundaryLayerRef.current.bringToFront();
+    }
     if (kryvyiRihRaionLayerRef.current) {
       kryvyiRihRaionLayerRef.current.bringToFront();
     }
@@ -1602,6 +2152,138 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       kryvyiRihCityLayerRef.current.bringToFront();
     }
   };
+
+  // State Border of Ukraine (Державний кордон України 1991 - виключно зовнішній контур)
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    let isMounted = true;
+
+    // Purge legacy obsolete cache from older versions that might contain separate oblasts
+    try {
+      localStorage.removeItem('uamapper_ukraine_boundary');
+    } catch (e) {}
+
+    const loadUkraineBoundary = async () => {
+      const isEnabled = showUkraineBoundary && (ukraineBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
+        if (ukraineBoundaryLayerRef.current) {
+          ukraineBoundaryLayerRef.current.remove();
+          ukraineBoundaryLayerRef.current = null;
+        }
+        return;
+      }
+
+      // Sanitize GeoJSON so it STRICTLY contains only exterior perimeter rings (no internal lines or holes)
+      const sanitizeToOuterPerimeterOnly = (data: any) => {
+        if (!data) return data;
+        const features = data.features ? data.features : [data];
+        const cleanFeatures = features.map((feat: any) => {
+          if (!feat || !feat.geometry) return feat;
+          const geom = feat.geometry;
+          if (geom.type === 'Polygon' && geom.coordinates && geom.coordinates.length > 0) {
+            return {
+              ...feat,
+              geometry: {
+                type: 'Polygon',
+                coordinates: [geom.coordinates[0]], // ONLY outer ring
+              },
+            };
+          }
+          if (geom.type === 'MultiPolygon' && geom.coordinates && geom.coordinates.length > 0) {
+            return {
+              ...feat,
+              geometry: {
+                type: 'MultiPolygon',
+                coordinates: geom.coordinates.map((poly: any[]) => [poly[0]]), // ONLY outer ring of each polygon part
+              },
+            };
+          }
+          return feat;
+        });
+        return {
+          type: 'FeatureCollection',
+          features: cleanFeatures,
+        };
+      };
+
+      try {
+        let geojson = ukraineBoundaryGeojsonRef.current;
+        if (!geojson) {
+          const cached = localStorage.getItem('uamapper_ukraine_boundary_clean_v3');
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              // Ensure cached data is valid single country boundary, not obsolete 27 oblasts
+              if (parsed && parsed.features && parsed.features.length === 1) {
+                geojson = sanitizeToOuterPerimeterOnly(parsed);
+                ukraineBoundaryGeojsonRef.current = geojson;
+              } else {
+                localStorage.removeItem('uamapper_ukraine_boundary_clean_v3');
+              }
+            } catch (e) {}
+          }
+        }
+
+        if (!geojson) {
+          const res = await fetch('/data/ukraine_boundary.geojson?v=3');
+          if (res.ok) {
+            const rawData = await res.json();
+            geojson = sanitizeToOuterPerimeterOnly(rawData);
+            ukraineBoundaryGeojsonRef.current = geojson;
+            try {
+              localStorage.setItem('uamapper_ukraine_boundary_clean_v3', JSON.stringify(geojson));
+            } catch (e) {}
+          }
+        }
+
+        if (geojson && isMounted && mapInstanceRef.current && (showUkraineBoundary && (ukraineBoundaryConfig?.enabled ?? true))) {
+          if (ukraineBoundaryLayerRef.current) {
+            ukraineBoundaryLayerRef.current.remove();
+          }
+
+          const strokeColor = ukraineBoundaryConfig?.color || '#f59e0b';
+          const strokeWidth = ukraineBoundaryConfig?.weight ?? 2.8;
+          const strokeOpacity = ukraineBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = ukraineBoundaryConfig?.strokeStyle || 'solid';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '8, 5';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '10, 4, 2, 4';
+
+          ukraineBoundaryLayerRef.current = L.geoJSON(geojson, {
+            pane: 'boundariesPane',
+            style: {
+              className: 'clean-ukraine-outline',
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
+              fill: false,
+              fillOpacity: 0,
+              interactive: false,
+            } as L.PathOptions
+          }).addTo(mapInstanceRef.current);
+
+          bringDistrictAndCityToFront();
+        }
+      } catch (err) {
+        console.error('Error loading Ukraine border boundary:', err);
+      }
+    };
+
+    loadUkraineBoundary();
+
+    return () => {
+      isMounted = false;
+      if (ukraineBoundaryLayerRef.current) {
+        ukraineBoundaryLayerRef.current.remove();
+        ukraineBoundaryLayerRef.current = null;
+      }
+    };
+  }, [isMapReady, showUkraineBoundary, ukraineBoundaryConfig]);
 
   // Permanent boundary layers for Kryvyi Rih Raion (thin line, no neon) & Kryvyi Rih City
   useEffect(() => {
@@ -1612,7 +2294,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Load Kryvyi Rih Raion boundary (thin line without neon effect)
     const loadKryvyiRihRaionBoundary = async () => {
-      if (!showDistrictBoundary) {
+      const isEnabled = showDistrictBoundary && (districtBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
         if (kryvyiRihRaionLayerRef.current) {
           kryvyiRihRaionLayerRef.current.remove();
           kryvyiRihRaionLayerRef.current = null;
@@ -1646,16 +2329,27 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             kryvyiRihRaionLayerRef.current.remove();
           }
 
+          const strokeColor = districtBoundaryConfig?.color || '#10b981';
+          const strokeWidth = districtBoundaryConfig?.weight ?? 2.2;
+          const strokeOpacity = districtBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = districtBoundaryConfig?.strokeStyle || 'solid';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '6, 5';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
+
           kryvyiRihRaionLayerRef.current = L.geoJSON(geojson, {
             pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
-              color: '#10b981',      // Clean green stroke
-              weight: 2.2,           // Clean visible district line
-              opacity: 0.95,         // High visibility above alert highlights
-              fill: false,           // No fill
-              fillOpacity: 0,        // Completely transparent inside
-              interactive: false,    // Clicks pass through to map
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
+              fill: false,
+              fillOpacity: 0,
+              interactive: false,
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
 
@@ -1668,7 +2362,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Load Kryvyi Rih City (місто Кривий Ріг) boundary
     const loadKryvyiRihCityBoundary = async () => {
-      if (!showCityBoundary) {
+      const isEnabled = showCityBoundary && (cityBoundaryConfig?.enabled ?? true);
+      if (!isEnabled) {
         if (kryvyiRihCityLayerRef.current) {
           kryvyiRihCityLayerRef.current.remove();
           kryvyiRihCityLayerRef.current = null;
@@ -1702,18 +2397,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             kryvyiRihCityLayerRef.current.remove();
           }
 
+          const strokeColor = cityBoundaryConfig?.color || '#38bdf8';
+          const strokeWidth = cityBoundaryConfig?.weight ?? 2.0;
+          const strokeOpacity = cityBoundaryConfig?.opacity ?? 0.95;
+          const strokeStyle = cityBoundaryConfig?.strokeStyle || 'dashed';
+
+          let dashArray: string | undefined = undefined;
+          if (strokeStyle === 'dashed') dashArray = '4, 4';
+          else if (strokeStyle === 'dotted') dashArray = '3, 4';
+          else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
+
           kryvyiRihCityLayerRef.current = L.geoJSON(geojson, {
             pane: 'boundariesPane',
             style: {
               className: 'clean-district-outline',
-              color: '#38bdf8',      // Sky blue thin outline for Kryvyi Rih City
-              weight: 2.0,           // Slightly thicker crisp line
-              dashArray: '4, 4',     // Dotted/dashed border
-              opacity: 0.95,
+              color: strokeColor,
+              weight: strokeWidth,
+              dashArray,
+              opacity: strokeOpacity,
               fill: true,
-              fillColor: '#38bdf8',
-              fillOpacity: 0.06,     // Subtle light fill for city bounds
-              interactive: false,    // Clicks pass through to map
+              fillColor: strokeColor,
+              fillOpacity: 0.05,
+              interactive: false,
             } as L.PathOptions
           }).addTo(mapInstanceRef.current);
 
@@ -1738,7 +2443,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         kryvyiRihCityLayerRef.current = null;
       }
     };
-  }, [isMapReady, showCityBoundary, showDistrictBoundary]);
+  }, [isMapReady, showCityBoundary, cityBoundaryConfig, showDistrictBoundary, districtBoundaryConfig]);
 
   // Permanent & Toggleable Dark Gray Boundary Lines for Hromadas (Межі громад - темно-сірі)
   useEffect(() => {
@@ -1751,7 +2456,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       hromadasLayerGroupRef.current.clearLayers();
     }
 
-    if (!showHromadaBoundaries) return;
+    const isEnabled = showHromadaBoundaries && (hromadaBoundariesConfig?.enabled ?? true);
+    if (!isEnabled) return;
 
     let isMounted = true;
 
@@ -1769,6 +2475,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       { id: 'hromada_karpivka', name: 'Карпівська ОТГ', query: 'Карпівська сільська громада, Дніпропетровська область' },
       { id: 'hromada_nyvatrudivska', name: 'Нива Трудівська ОТГ', query: 'Нива Трудівська сільська громада, Дніпропетровська область' },
     ];
+
+    const strokeColor = hromadaBoundariesConfig?.color || '#475569';
+    const strokeWidth = hromadaBoundariesConfig?.weight ?? 1.4;
+    const strokeOpacity = hromadaBoundariesConfig?.opacity ?? 0.85;
+    const strokeStyle = hromadaBoundariesConfig?.strokeStyle || 'dashed';
+
+    let dashArray: string | undefined = undefined;
+    if (strokeStyle === 'dashed') dashArray = '4, 4';
+    else if (strokeStyle === 'dotted') dashArray = '3, 4';
+    else if (strokeStyle === 'dash-dot') dashArray = '8, 4, 2, 4';
 
     const loadHromadaBoundaries = async () => {
       for (const item of HROMADAS_LIST) {
@@ -1796,14 +2512,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               pane: 'boundariesPane',
               style: {
                 className: 'clean-hromada-outline',
-                color: '#374151',        // Dark gray demarcation line (Slate 700)
-                weight: 1.4,             // Crisp thin boundary stroke
-                dashArray: '4, 4',       // Dashed border line for communities
-                opacity: 0.85,           // Clear dark gray visibility
+                color: strokeColor,
+                weight: strokeWidth,
+                dashArray,
+                opacity: strokeOpacity,
                 fill: true,
-                fillColor: '#4b5563',    // Dark gray tint
-                fillOpacity: 0.02,       // Very faint transparent fill
-                interactive: false,      // Clicks pass through to map
+                fillColor: strokeColor,
+                fillOpacity: 0.02,
+                interactive: false,
               } as L.PathOptions
             });
             layer.addTo(hromadasLayerGroupRef.current);
@@ -1827,92 +2543,531 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         hromadasLayerGroupRef.current.clearLayers();
       }
     };
-  }, [showHromadaBoundaries, isMapReady]);
+  }, [showHromadaBoundaries, hromadaBoundariesConfig, isMapReady]);
 
-  // Synchronize Measurement Tool Graphics on Map
+  // Synchronize DeepStateMap Occupied Territories & Gray Zones Layer
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    if (deepStateOccupiedLayerRef.current) {
+      map.removeLayer(deepStateOccupiedLayerRef.current);
+      deepStateOccupiedLayerRef.current = null;
+    }
+
+    if (!deepStateOccupiedConfig?.enabled || !deepStateGeoJson?.features?.length) {
+      return;
+    }
+
+    // Ensure pane exists with non-blocking pointer events
+    if (!map.getPane('deepStatePane')) {
+      const p = map.createPane('deepStatePane');
+      p.style.zIndex = '310';
+    }
+
+    // Helper to generate SVG patterns for Leaflet SVG renderer (valid across WebKit, Safari iOS, Chrome, Firefox)
+    const generateSvgPatternsHtml = (config: DeepStateOccupiedConfig) => {
+      const occPattern = config.fillPattern || 'solid';
+      const occColor = config.fillColor || '#b91c1c';
+      const occOpacity = config.fillOpacity ?? 0.35;
+      const occDensity = config.patternDensity || 10;
+      const occStrokeWidth = config.patternStrokeWidth || 1.5;
+      const occBgOpacity = config.patternBgOpacity ?? 0.1;
+
+      const grayPattern = config.grayZonePattern || 'diagonal-right';
+      const grayColor = config.grayZoneFillColor || '#6b7280';
+      const grayOpacity = config.grayZoneOpacity ?? 0.25;
+
+      const renderSinglePattern = (
+        id: string,
+        type: DeepStatePatternType,
+        color: string,
+        opacity: number,
+        density: number,
+        strokeWidth: number,
+        bgOpacity: number
+      ) => {
+        if (type === 'solid') return '';
+        const s = Math.max(6, Math.min(36, density));
+        const sw = Math.max(0.75, Math.min(4, strokeWidth));
+        const bg = bgOpacity > 0 ? `<rect width="${s}" height="${s}" fill="${color}" fill-opacity="${bgOpacity}" />` : '';
+
+        if (type === 'diagonal-right') {
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+        }
+        if (type === 'diagonal-left') {
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" stroke-linecap="square" /></pattern>`;
+        }
+        if (type === 'cross-hatch') {
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /><line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'dots') {
+          const r = Math.max(1, sw * 0.9);
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<circle cx="${s / 2}" cy="${s / 2}" r="${r}" fill="${color}" fill-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'horizontal') {
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="0" y1="${s / 2}" x2="${s}" y2="${s / 2}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        if (type === 'vertical') {
+          return `<pattern id="${id}" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" patternUnits="userSpaceOnUse">${bg}<line x1="${s / 2}" y1="0" x2="${s / 2}" y2="${s}" stroke="${color}" stroke-width="${sw}" stroke-opacity="${opacity}" /></pattern>`;
+        }
+        return '';
+      };
+
+      return [
+        renderSinglePattern('ds-pattern-occ', occPattern, occColor, occOpacity, occDensity, occStrokeWidth, occBgOpacity),
+        renderSinglePattern('ds-pattern-gray', grayPattern, grayColor, grayOpacity, 10, 1.2, 0.08)
+      ].filter(Boolean).join('\n');
+    };
+
+    // Dedicated SVG renderer ensures all paths are in deepStatePane and share a local SVG container
+    let dsRenderer = deepStateRendererRef.current;
+    if (!dsRenderer) {
+      dsRenderer = L.svg({ pane: 'deepStatePane', padding: 0.5 });
+      deepStateRendererRef.current = dsRenderer;
+    }
+
+    const syncDefsToDom = (patternsHtml: string) => {
+      // 1. Global document SVG defs container
+      let globalSvg = document.getElementById('ds-svg-defs-global') as unknown as SVGSVGElement | null;
+      if (!globalSvg) {
+        globalSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        globalSvg.id = 'ds-svg-defs-global';
+        globalSvg.setAttribute('style', 'position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none;');
+        document.body.appendChild(globalSvg);
+      }
+      globalSvg.innerHTML = `<defs>${patternsHtml}</defs>`;
+
+      // 2. Leaflet Pane's SVG container(s) - crucial for WebKit / Safari iOS / iPadOS
+      const pane = map.getPane('deepStatePane');
+      const allSvgs = [
+        pane?.querySelector('svg'),
+        (dsRenderer as any)?._container,
+        map.getContainer()?.querySelector('.leaflet-deepStatePane-pane svg'),
+        map.getContainer()?.querySelector('.leaflet-overlay-pane svg'),
+      ].filter((el): el is SVGSVGElement => Boolean(el));
+
+      const uniqueSvgs = Array.from(new Set(allSvgs));
+
+      uniqueSvgs.forEach((svgEl) => {
+        let paneDefs = svgEl.querySelector('defs#ds-pane-defs') as SVGDefsElement | null;
+        if (!paneDefs) {
+          paneDefs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+          paneDefs.id = 'ds-pane-defs';
+          svgEl.insertBefore(paneDefs, svgEl.firstChild);
+        }
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(
+            `<svg xmlns="http://www.w3.org/2000/svg"><defs>${patternsHtml}</defs></svg>`,
+            'image/svg+xml'
+          );
+          const parsedDefs = doc.querySelector('defs');
+          if (parsedDefs) {
+            paneDefs.innerHTML = '';
+            Array.from(parsedDefs.children).forEach((child) => {
+              paneDefs?.appendChild(document.importNode(child, true));
+            });
+          } else {
+            paneDefs.innerHTML = patternsHtml;
+          }
+        } catch {
+          paneDefs.innerHTML = patternsHtml;
+        }
+      });
+    };
+
+    const patternsHtml = generateSvgPatternsHtml(deepStateOccupiedConfig);
+
+    // Detect touch / mobile devices for non-blocking gestures
+    const isTouchDevice = typeof window !== 'undefined' && 
+      (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || Boolean((navigator as any).msMaxTouchPoints));
+    
+    // On touch devices or when in drawing/measurement modes, always use interactive: false
+    // On desktop mouse when in pan mode, allow hover tooltips without blocking clicks
+    const isInteractive = !isTouchDevice && interactionMode === 'pan';
+
+    try {
+      const geoLayer = L.geoJSON(deepStateGeoJson, {
+        pane: 'deepStatePane',
+        interactive: isInteractive,
+        filter: (feature: any) => {
+          if (feature?.properties?.zoneType === 'gray') {
+            return Boolean(deepStateOccupiedConfig.includeGrayZone);
+          }
+          return true;
+        },
+        style: (feature: any) => {
+          const isGray = feature?.properties?.zoneType === 'gray';
+          if (isGray) {
+            const pattern = deepStateOccupiedConfig.grayZonePattern || 'diagonal-right';
+            const isPat = pattern !== 'solid';
+
+            const strokeColor = deepStateOccupiedConfig.grayZoneStrokeColor || '#4b5563';
+            const strokeWidth = deepStateOccupiedConfig.grayZoneStrokeWidth ?? 1.2;
+            const style = deepStateOccupiedConfig.grayZoneStrokeStyle || 'dashed';
+            let dash: string | undefined = undefined;
+            if (style === 'dashed') dash = '4, 4';
+            else if (style === 'dotted') dash = '2, 3';
+            else if (style === 'dash-dot') dash = '7, 3, 2, 3';
+
+            return {
+              renderer: dsRenderer,
+              className: 'deepstate-tactical-polygon',
+              fillColor: isPat ? 'url(#ds-pattern-gray)' : (deepStateOccupiedConfig.grayZoneFillColor || '#6b7280'),
+              fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.grayZoneOpacity ?? 0.25),
+              color: strokeColor,
+              weight: strokeWidth,
+              opacity: 0.85,
+              dashArray: dash,
+              lineCap: 'round',
+              lineJoin: 'round',
+              interactive: isInteractive,
+            } as L.PathOptions;
+          }
+
+          const pattern = deepStateOccupiedConfig.fillPattern || 'solid';
+          const isPat = pattern !== 'solid';
+
+          let strokeColor = deepStateOccupiedConfig.strokeColor || '#7f1d1d';
+          let strokeWidth = deepStateOccupiedConfig.strokeWidth ?? 1.5;
+          let strokeOpacity = deepStateOccupiedConfig.strokeOpacity ?? 0.9;
+          let dash: string | undefined = undefined;
+
+          if (deepStateOccupiedConfig.showStroke === false || strokeWidth <= 0) {
+            strokeWidth = 0;
+            strokeOpacity = 0;
+          } else {
+            const style = deepStateOccupiedConfig.strokeStyle || 'solid';
+            if (style === 'dashed') dash = '6, 4';
+            else if (style === 'dotted') dash = '2, 3';
+            else if (style === 'dash-dot') dash = '8, 3, 2, 3';
+          }
+
+          return {
+            renderer: dsRenderer,
+            className: 'deepstate-tactical-polygon',
+            fillColor: isPat ? 'url(#ds-pattern-occ)' : (deepStateOccupiedConfig.fillColor || '#b91c1c'),
+            fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.fillOpacity ?? 0.35),
+            color: strokeColor,
+            weight: strokeWidth,
+            opacity: strokeOpacity,
+            dashArray: dash,
+            lineCap: 'round',
+            lineJoin: 'round',
+            interactive: isInteractive,
+          } as L.PathOptions;
+        },
+        onEachFeature: (feature: any, layer: any) => {
+          if (!isInteractive) return;
+
+          const isGray = feature?.properties?.zoneType === 'gray';
+          const name = language === 'en' ? (feature?.properties?.nameEn || feature?.properties?.name) : feature?.properties?.name;
+          const statusLabel = isGray
+            ? (language === 'en' ? 'Contested / Gray Zone' : 'Сіра зона (статус невідомий)')
+            : (language === 'en' ? 'Temporarily Occupied Territory' : 'Тимчасово окупована територія');
+          
+          const tooltipContent = `
+            <div style="font-family: inherit;" class="p-1 min-w-[140px]">
+              <div class="text-[12px] font-black ${isGray ? 'text-slate-200' : 'text-rose-400'} leading-tight">${name || statusLabel}</div>
+              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${statusLabel}</div>
+              <div class="text-[9px] text-slate-400 mt-1 flex items-center gap-1 border-t border-slate-700/60 pt-1">
+                <span>🇺🇦 DeepStateMap Live</span>
+              </div>
+            </div>
+          `;
+          layer.bindTooltip(tooltipContent, {
+            sticky: true,
+            className: 'deepstate-tactical-tooltip bg-slate-900/95 text-white border border-slate-700/80 shadow-2xl rounded-lg backdrop-blur-md',
+          });
+        },
+      });
+
+      geoLayer.addTo(map);
+      syncDefsToDom(patternsHtml);
+      deepStateOccupiedLayerRef.current = geoLayer;
+    } catch (err) {
+      console.warn('Error rendering DeepState occupied GeoJSON layer:', err);
+    }
+
+    const onMapChange = () => {
+      syncDefsToDom(patternsHtml);
+    };
+    map.on('zoomend moveend viewreset', onMapChange);
+
+    return () => {
+      map.off('zoomend moveend viewreset', onMapChange);
+      if (deepStateOccupiedLayerRef.current && mapInstanceRef.current) {
+        mapInstanceRef.current.removeLayer(deepStateOccupiedLayerRef.current);
+        deepStateOccupiedLayerRef.current = null;
+      }
+    };
+  }, [
+    isMapReady,
+    deepStateOccupiedConfig,
+    deepStateGeoJson,
+    language,
+    interactionMode,
+  ]);
+
+  // Synchronize Measurement Tool Graphics on Map (Multi-Track & Multi-City Support)
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    // Clear old graphics
-    if (measurePolylineRef.current) {
-      measurePolylineRef.current.remove();
-      measurePolylineRef.current = null;
-    }
-    measureMarkersRef.current.forEach((m) => m.remove());
-    measureMarkersRef.current = [];
-    measureSegmentTooltipsRef.current.forEach((m) => m.remove());
-    measureSegmentTooltipsRef.current = [];
+    // Remove layers for deleted tracks
+    const existingTrackIds = new Set(measureTracks.map((t) => t.id));
+    Object.keys(measureTrackLayersRef.current).forEach((trackId) => {
+      if (!existingTrackIds.has(trackId)) {
+        const layers = measureTrackLayersRef.current[trackId];
+        if (layers) {
+          if (layers.polyline) layers.polyline.remove();
+          layers.markers.forEach((m) => m.remove());
+          layers.segmentTooltips.forEach((m) => m.remove());
+        }
+        delete measureTrackLayersRef.current[trackId];
+      }
+    });
 
-    if (measurePoints.length === 0) return;
+    // Render or update each track
+    measureTracks.forEach((track) => {
+      const isActive = track.id === activeTrackId;
+      const trackId = track.id;
 
-    const latLngs = measurePoints.map((p) => [p.lat, p.lng] as [number, number]);
+      // Clear previous layers for this track
+      if (measureTrackLayersRef.current[trackId]) {
+        const old = measureTrackLayersRef.current[trackId];
+        if (old.polyline) old.polyline.remove();
+        old.markers.forEach((m) => m.remove());
+        old.segmentTooltips.forEach((m) => m.remove());
+      }
 
-    // Draw connecting polyline
-    if (latLngs.length >= 2) {
-      measurePolylineRef.current = L.polyline(latLngs, {
-        color: '#facc15', // Bright yellow ruler line
-        weight: 3.5,
-        dashArray: '6, 6',
-        opacity: 0.95,
-        lineCap: 'round',
-        lineJoin: 'round',
-        pane: 'drawnLinesPane',
-      }).addTo(map);
+      measureTrackLayersRef.current[trackId] = {
+        markers: [],
+        segmentTooltips: [],
+      };
 
-      // Render segment distance badges
-      for (let i = 0; i < measurePoints.length - 1; i++) {
-        const p1 = measurePoints[i];
-        const p2 = measurePoints[i + 1];
-        const dist = calculateDistanceMeters(p1, p2);
-        const midLat = (p1.lat + p2.lat) / 2;
-        const midLng = (p1.lng + p2.lng) / 2;
+      const points = track.points;
+      if (points.length === 0) return;
 
-        const badgeHtml = `<div class="bg-slate-900/95 text-yellow-400 font-mono font-bold text-[10px] px-2 py-0.5 rounded-full border border-yellow-400/50 shadow-md whitespace-nowrap">${formatDistance(dist)}</div>`;
+      const latLngs = points.map((p) => [p.lat, p.lng] as [number, number]);
 
-        const badgeIcon = L.divIcon({
-          className: 'measure-badge-icon',
-          html: badgeHtml,
-          iconSize: [60, 20],
-          iconAnchor: [30, 10],
-        });
-
-        const badgeMarker = L.marker([midLat, midLng], {
-          icon: badgeIcon,
-          interactive: false,
-          pane: 'userMarkersPane',
-          zIndexOffset: 1200,
+      // Draw connecting polyline
+      if (latLngs.length >= 2) {
+        const polyline = L.polyline(latLngs, {
+          color: track.color || '#facc15',
+          weight: isActive ? 4 : 3,
+          dashArray: isActive ? '6, 6' : '4, 4',
+          opacity: isActive ? 0.95 : 0.7,
+          lineCap: 'round',
+          lineJoin: 'round',
+          pane: 'drawnLinesPane',
         }).addTo(map);
 
-        measureSegmentTooltipsRef.current.push(badgeMarker);
+        polyline.on('click', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          setActiveTrackId(trackId);
+        });
+
+        measureTrackLayersRef.current[trackId].polyline = polyline;
+
+        // Render segment distance badges
+        for (let i = 0; i < points.length - 1; i++) {
+          const p1 = points[i];
+          const p2 = points[i + 1];
+          const dist = calculateDistanceMeters(p1, p2);
+          const midLat = (p1.lat + p2.lat) / 2;
+          const midLng = (p1.lng + p2.lng) / 2;
+
+          const badgeHtml = `<div class="bg-slate-900/95 font-mono font-bold text-[10px] px-2 py-0.5 rounded-full border shadow-md whitespace-nowrap" style="color: ${track.color}; border-color: ${track.color}80">${formatDistance(dist)}</div>`;
+
+          const badgeIcon = L.divIcon({
+            className: 'measure-badge-icon',
+            html: badgeHtml,
+            iconSize: [60, 20],
+            iconAnchor: [30, 10],
+          });
+
+          const badgeMarker = L.marker([midLat, midLng], {
+            icon: badgeIcon,
+            interactive: false,
+            pane: 'userMarkersPane',
+            zIndexOffset: isActive ? 1200 : 1000,
+          }).addTo(map);
+
+          measureTrackLayersRef.current[trackId].segmentTooltips.push(badgeMarker);
+        }
       }
-    }
 
-    // Render node markers
-    measurePoints.forEach((pt, index) => {
-      const isLast = index === measurePoints.length - 1;
-      const nodeHtml = `
-        <div class="w-6 h-6 rounded-full ${isLast ? 'bg-amber-500 ring-4 ring-amber-500/30' : 'bg-slate-900'} border-2 border-yellow-400 text-yellow-400 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg">
-          ${index + 1}
-        </div>
-      `;
+      // Render node markers
+      points.forEach((pt, index) => {
+        const isLast = index === points.length - 1;
+        const nodeHtml = `
+          <div class="measure-node-inner w-6 h-6 rounded-full bg-slate-900 border-2 font-mono font-bold text-[11px] flex items-center justify-center shadow-lg hover:scale-110 transition-transform ${isActive ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} select-none" style="color: ${track.color}; border-color: ${track.color}; ${isLast && isActive ? `box-shadow: 0 0 0 4px ${track.color}40;` : ''}" title="${track.name} - ${language === 'uk' ? `Точка ${index + 1}` : `Point ${index + 1}`}">
+            ${index + 1}
+          </div>
+        `;
 
-      const nodeIcon = L.divIcon({
-        className: 'measure-node-icon',
-        html: nodeHtml,
-        iconSize: [24, 24],
-        iconAnchor: [12, 12],
+        const nodeIcon = L.divIcon({
+          className: 'measure-node-icon cursor-grab',
+          html: nodeHtml,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        });
+
+        const marker = L.marker([pt.lat, pt.lng], {
+          icon: nodeIcon,
+          interactive: true,
+          draggable: isActive,
+          zIndexOffset: (isActive ? 1500 : 1300) + index,
+        }).addTo(map);
+
+        // Stop clicks from bubbling to map
+        marker.on('click', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          if (!isActive) {
+            setActiveTrackId(trackId);
+          }
+        });
+        marker.on('mousedown', (e: any) => {
+          if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+          if (!isActive) {
+            setActiveTrackId(trackId);
+          }
+        });
+
+        if (isActive) {
+          marker.on('dragstart', (e: any) => {
+            if (e.originalEvent) L.DomEvent.stopPropagation(e.originalEvent);
+            marker.closePopup();
+          });
+
+          marker.on('drag', () => {
+            const trackLayers = measureTrackLayersRef.current[trackId];
+            if (!trackLayers) return;
+            const curLatLngs = trackLayers.markers.map((m) => m.getLatLng());
+            if (trackLayers.polyline) {
+              trackLayers.polyline.setLatLngs(curLatLngs);
+            }
+
+            // Live update segment badge before (index - 1)
+            if (index > 0 && trackLayers.segmentTooltips[index - 1]) {
+              const prevPos = trackLayers.markers[index - 1].getLatLng();
+              const curPos = marker.getLatLng();
+              const dist = calculateDistanceMeters(
+                { lat: prevPos.lat, lng: prevPos.lng },
+                { lat: curPos.lat, lng: curPos.lng }
+              );
+              const mid = L.latLng((prevPos.lat + curPos.lat) / 2, (prevPos.lng + curPos.lng) / 2);
+              trackLayers.segmentTooltips[index - 1].setLatLng(mid);
+              const el = trackLayers.segmentTooltips[index - 1].getElement();
+              if (el) {
+                const inner = el.querySelector('div');
+                if (inner) inner.textContent = formatDistance(dist);
+              }
+            }
+
+            // Live update segment badge after (index)
+            if (index < trackLayers.markers.length - 1 && trackLayers.segmentTooltips[index]) {
+              const nextPos = trackLayers.markers[index + 1].getLatLng();
+              const curPos = marker.getLatLng();
+              const dist = calculateDistanceMeters(
+                { lat: curPos.lat, lng: curPos.lng },
+                { lat: nextPos.lat, lng: nextPos.lng }
+              );
+              const mid = L.latLng((curPos.lat + nextPos.lat) / 2, (curPos.lng + nextPos.lng) / 2);
+              trackLayers.segmentTooltips[index].setLatLng(mid);
+              const el = trackLayers.segmentTooltips[index].getElement();
+              if (el) {
+                const inner = el.querySelector('div');
+                if (inner) inner.textContent = formatDistance(dist);
+              }
+            }
+          });
+
+          marker.on('dragend', () => {
+            const newPos = marker.getLatLng();
+            setMeasureTracks((prev) =>
+              prev.map((t) => {
+                if (t.id === trackId) {
+                  const nextPts = [...t.points];
+                  if (nextPts[index]) {
+                    nextPts[index] = { lat: newPos.lat, lng: newPos.lng };
+                  }
+                  return { ...t, points: nextPts };
+                }
+                return t;
+              })
+            );
+          });
+
+          // Right-click to instantly delete this point
+          marker.on('contextmenu', (e: any) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+              L.DomEvent.preventDefault(e.originalEvent);
+            }
+            setMeasureTracks((prev) =>
+              prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+            );
+          });
+
+          // Double-click to delete point
+          marker.on('dblclick', (e: any) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+              L.DomEvent.preventDefault(e.originalEvent);
+            }
+            setMeasureTracks((prev) =>
+              prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+            );
+          });
+
+          // Interactive popup with coordinate info and delete button
+          const popupEl = document.createElement('div');
+          popupEl.className = 'p-1 text-center select-none font-sans min-w-[140px]';
+          popupEl.innerHTML = `
+            <div class="flex items-center justify-between gap-2 mb-1.5 pb-1 border-b border-slate-200">
+              <span class="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <span class="w-4 h-4 rounded-full text-slate-950 text-[10px] font-mono font-black flex items-center justify-center" style="background: ${track.color};">${index + 1}</span>
+                <span>${track.name} (${language === 'uk' ? `Точка №${index + 1}` : `Point #${index + 1}`})</span>
+              </span>
+            </div>
+            <div class="text-[10px] text-slate-500 font-mono mb-1">
+              ${pt.lat.toFixed(5)}, ${pt.lng.toFixed(5)}
+            </div>
+            <div class="text-[10px] text-amber-600 font-medium mb-2">
+              ${language === 'uk' ? '✋ Перетягуйте для зміни' : '✋ Drag to move'}
+            </div>
+            <button type="button" class="del-ruler-pt-btn w-full py-1.5 px-2 rounded-lg bg-rose-500 hover:bg-rose-600 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer active:scale-95">
+              <span>🗑️</span>
+              <span>${language === 'uk' ? 'Видалити точку' : 'Delete Point'}</span>
+            </button>
+          `;
+
+          const delBtn = popupEl.querySelector('.del-ruler-pt-btn');
+          if (delBtn) {
+            delBtn.addEventListener('click', (ev) => {
+              ev.stopPropagation();
+              ev.preventDefault();
+              map.closePopup();
+              setMeasureTracks((prev) =>
+                prev.map((t) => (t.id === trackId ? { ...t, points: t.points.filter((_, i) => i !== index) } : t))
+              );
+            });
+          }
+
+          marker.bindPopup(popupEl, {
+            offset: [0, -12],
+            closeButton: true,
+            className: 'measure-point-popup',
+          });
+        }
+
+        measureTrackLayersRef.current[trackId].markers.push(marker);
       });
-
-      const marker = L.marker([pt.lat, pt.lng], {
-        icon: nodeIcon,
-        interactive: false,
-        zIndexOffset: 1500,
-      }).addTo(map);
-
-      measureMarkersRef.current.push(marker);
     });
-  }, [measurePoints, isMapReady]);
+  }, [measureTracks, activeTrackId, isMapReady, language]);
 
 
   // Handle Tile Layer changes
@@ -1932,6 +3087,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Format tile URL and retina parameters
     let url = activeTileLayer.url;
+    if (activeTileLayer.id === 'deepstatemap') {
+      const langSuffix = language === 'en' ? 'En' : 'Uk';
+      const themeSuffix = theme === 'dark' ? 'Dark' : '';
+      url = `https://st1.deepstatemap.live/styles/DSUkraine${langSuffix}${themeSuffix}/{z}/{x}/{y}{r}.webp`;
+    }
     if (activeTileLayer.requiresKey) {
       url = url.replace('{key}', visicomKey || '');
     }
@@ -1942,28 +3102,30 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Create Leaflet TileLayer with crisp 1:1 pixel rendering
     const tileLayer = L.tileLayer(url, {
       tms: activeTileLayer.tms,
+      minZoom: activeTileLayer.minZoom || 2,
       maxZoom: activeTileLayer.maxZoom,
       maxNativeZoom: activeTileLayer.maxZoom || 19,
       attribution: activeTileLayer.attribution,
       subdomains: activeTileLayer.subdomains || 'abc',
-      crossOrigin: 'anonymous',
+      crossOrigin: activeTileLayer.id.startsWith('apple_maps') ? false : 'anonymous',
       detectRetina: false, // Prevent artificial 200% scale stretching that blurs non-retina raster tiles
       tileSize: 256,
       keepBuffer: 6,
       updateWhenIdle: false,
-      updateWhenZooming: false,
+      updateWhenZooming: true,
     });
 
     tileLayer.addTo(map);
     tileLayerInstanceRef.current = tileLayer;
 
-    // Optional reference overlay layer (e.g. Esri Dark Gray Reference for oblasts/hromadas/settlements)
+    // Optional reference overlay layer (e.g. Ukrainian settlement names and roads overlay)
     if (activeTileLayer.overlayUrl) {
       let overlayUrl = activeTileLayer.overlayUrl;
       if (overlayUrl.includes('{r}')) {
         overlayUrl = overlayUrl.replace('{r}', L.Browser.retina ? '@2x' : '');
       }
       const overlayLayer = L.tileLayer(overlayUrl, {
+        minZoom: activeTileLayer.minZoom || 2,
         maxZoom: activeTileLayer.maxZoom,
         maxNativeZoom: activeTileLayer.maxZoom || 19,
         subdomains: activeTileLayer.subdomains || 'abc',
@@ -1971,6 +3133,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         detectRetina: false,
         tileSize: 256,
         keepBuffer: 6,
+        updateWhenIdle: false,
+        updateWhenZooming: true,
         zIndex: 250, // Render on top of base tiles
       });
       overlayLayer.addTo(map);
@@ -1980,7 +3144,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Force tile layer redraw and map size update immediately
     map.invalidateSize();
     tileLayer.redraw();
-  }, [activeTileLayer, visicomKey, isMapReady]);
+  }, [activeTileLayer, visicomKey, isMapReady, language, theme]);
 
   // Handle Theme changes & recalculate map layout
   useEffect(() => {
@@ -2002,53 +3166,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map) return;
 
-    const updateRouteGradient = (
-      id: string,
-      coords: [number, number][],
-      color: string,
-      weight: number,
-      dashArray?: string,
-    ) => {
-      const oldLayers = routeGradientRef.current[id] || [];
-      oldLayers.forEach((layer) => layer.remove());
-      if (coords.length < 2) {
-        delete routeGradientRef.current[id];
-        return;
-      }
-
-      const layers: L.Polyline[] = [];
-      const steps = 9;
-      for (let i = 0; i < steps; i++) {
-        const startT = i / steps;
-        const endT = (i + 1) / steps;
-        const a = coords[0];
-        const b = coords[coords.length - 1];
-        const p1: [number, number] = [
-          a[0] + (b[0] - a[0]) * startT,
-          a[1] + (b[1] - a[1]) * startT,
-        ];
-        const p2: [number, number] = [
-          a[0] + (b[0] - a[0]) * endT,
-          a[1] + (b[1] - a[1]) * endT,
-        ];
-        const progress = (i + 1) / steps;
-        const opacity = 0.06 + progress * 0.86;
-        const segmentWeight = Math.max(1, weight * (0.55 + progress * 0.45));
-        const layer = L.polyline([p1, p2], {
-          color,
-          weight: segmentWeight,
-          opacity,
-          dashArray,
-          lineCap: 'round',
-          lineJoin: 'round',
-          pane: 'drawnLinesPane',
-          interactive: false,
-        }).addTo(map);
-        layers.push(layer);
-      }
-      routeGradientRef.current[id] = layers;
-    };
-
     // 1. Identify and remove deleted markers, lines, and handles
     const currentMarkerIds = new Set(markers.map((m) => m.id));
     Object.keys(markersRef.current).forEach((id) => {
@@ -2063,10 +3180,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (endMarkersRef.current[id]) {
           endMarkersRef.current[id].remove();
           delete endMarkersRef.current[id];
-        }
-        if (routeGradientRef.current[id]) {
-          routeGradientRef.current[id].forEach((layer) => layer.remove());
-          delete routeGradientRef.current[id];
         }
       }
     });
@@ -2093,13 +3206,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       return filtered;
     });
 
+
     // 2. Add or update current markers
     markers.forEach((markerData) => {
+      if (!markerData || isNaN(Number(markerData.lat)) || isNaN(Number(markerData.lng))) {
+        return;
+      }
       const { 
-        id, lat, lng, title, color, borderColor, endPointStyle, size, rotation, 
+        id, title, color, borderColor, endPointStyle, size, 
         iconType, draggable, labelVisible, customIconUrl, hasZone, zoneColor, zoneSize,
-        endLat, endLng
+        labelFontSize, labelOrientation
       } = markerData;
+      const lat = Number(markerData.lat);
+      const lng = Number(markerData.lng);
+      const rotation = isNaN(Number(markerData.rotation)) ? 0 : Number(markerData.rotation);
+      let endLat = markerData.endLat !== undefined && !isNaN(Number(markerData.endLat)) ? Number(markerData.endLat) : undefined;
+      let endLng = markerData.endLng !== undefined && !isNaN(Number(markerData.endLng)) ? Number(markerData.endLng) : undefined;
+
       const isSelected = id === selectedMarkerId;
 
       // Generate the custom HTML/SVG string
@@ -2116,7 +3239,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endPointStyle || 'none',
         hasZone,
         zoneColor,
-        zoneSize
+        zoneSize,
+        labelFontSize,
+        labelOrientation
       );
 
       // Create a Leaflet custom DivIcon
@@ -2133,7 +3258,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (existingMarker) {
         const isDragging = (existingMarker as any)._isDragging || (existingMarker.dragging as any)?._draggable?._moving;
         if (!isDragging) {
-          existingMarker.setLatLng([lat, lng]);
+          if (!movingMarkerIdsRef.current.has(id)) {
+            existingMarker.setLatLng([lat, lng]);
+          }
           existingMarker.setIcon(customIcon);
         }
         if (draggable) {
@@ -2155,11 +3282,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           zIndexOffset: isSelected ? 1000 : 0,
         }).addTo(map);
 
-        newMarker.on('click', (e) => {
-          L.DomEvent.stopPropagation(e);
-          onSelectMarker(id);
-        });
-
         markersRef.current[id] = newMarker;
         markerInstance = newMarker;
 
@@ -2168,52 +3290,61 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
           let effectiveTargetEndLat = endLat;
           let effectiveTargetEndLng = endLng;
-          if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
-            const angleRad = (((rotation || 0)) * Math.PI) / 180;
-            effectiveTargetEndLat = lat + Math.cos(angleRad) * 0.003;
-            effectiveTargetEndLng = lng + Math.sin(angleRad) * 0.005;
+          if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
+            [effectiveTargetEndLat, effectiveTargetEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
           handleAutoHighlightZoneAt(effectiveTargetEndLat, effectiveTargetEndLng, `${id}_end`);
         }
       }
 
+      // Re-bind click event on marker dynamically so clicking on the map marker always selects it
+      markerInstance.off('click');
+      markerInstance.on('click', (e) => {
+        if (e.originalEvent) {
+          L.DomEvent.stopPropagation(e.originalEvent);
+        }
+        L.DomEvent.stopPropagation(e);
+        onSelectMarker(id);
+      });
+
       // Re-bind drag events dynamically to capture correct markerData variables
       markerInstance.off('dragstart drag dragend');
 
       const hasEndPoint = endPointStyle && endPointStyle !== 'none';
-      const hasEndHandle = isSelected || endPointStyle === 'explosion' || !!markerData.hasZone;
+      // A moving marker always gets a separate, editable destination handle in front of it.
+      // This keeps the route target visible instead of hiding it under the icon.
+      const hasEndHandle = isSelected || markerData.movementEnabled === true || endPointStyle === 'explosion' || !!markerData.hasZone;
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
 
       markerInstance.on('dragstart', (e) => {
         dragStartLatLng = e.target.getLatLng();
-        originalEndLat = markerData.endLat;
-        originalEndLng = markerData.endLng;
+        originalEndLat = markerData.endLat !== undefined && !isNaN(Number(markerData.endLat)) ? Number(markerData.endLat) : undefined;
+        originalEndLng = markerData.endLng !== undefined && !isNaN(Number(markerData.endLng)) ? Number(markerData.endLng) : undefined;
       });
 
       markerInstance.on('drag', (e) => {
         const currentLatLng = e.target.getLatLng();
+        if (!currentLatLng || isNaN(currentLatLng.lat) || isNaN(currentLatLng.lng)) return;
         if (hasEndPoint || hasEndHandle) {
-          let finalEndLat = originalEndLat;
-          let finalEndLng = originalEndLng;
-          if (finalEndLat === undefined || finalEndLng === undefined) {
-            const angleRad = (rotation * Math.PI) / 180;
-            finalEndLat = lat + Math.cos(angleRad) * 0.003;
-            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+          let curEndLat = originalEndLat;
+          let curEndLng = originalEndLng;
+          if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
+            [curEndLat, curEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
-          if (dragStartLatLng) {
+          if (dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
             const dLat = currentLatLng.lat - dragStartLatLng.lat;
             const dLng = currentLatLng.lng - dragStartLatLng.lng;
-            const tempEndLat = finalEndLat + dLat;
-            const tempEndLng = finalEndLng + dLng;
-            if (hasEndPoint && linesRef.current[id]) {
-              const routeCoords: [number, number][] = [[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]];
-              linesRef.current[id].setLatLngs(routeCoords);
-              updateRouteGradient(id, routeCoords, color === 'transparent' || color === 'none' ? '#ef4444' : color, markerData.lineWidth !== undefined ? markerData.lineWidth : 3, '10, 5, 2, 5');
-            }
-            if (endMarkersRef.current[id]) {
-              endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
+            const tempEndLat = curEndLat + dLat;
+            const tempEndLng = curEndLng + dLng;
+            if (!isNaN(tempEndLat) && !isNaN(tempEndLng)) {
+              if (hasEndPoint && linesRef.current[id]) {
+                linesRef.current[id].setLatLngs([[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]]);
+              }
+              if (endMarkersRef.current[id]) {
+                endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
+              }
             }
           }
         }
@@ -2221,21 +3352,24 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
       markerInstance.on('dragend', (e) => {
         const position = e.target.getLatLng();
+        if (!position || isNaN(position.lat) || isNaN(position.lng)) return;
         let updatedEndLat: number | undefined;
         let updatedEndLng: number | undefined;
 
-        if ((hasEndPoint || hasEndHandle) && dragStartLatLng) {
-          let finalEndLat = originalEndLat;
-          let finalEndLng = originalEndLng;
-          if (finalEndLat === undefined || finalEndLng === undefined) {
-            const angleRad = (rotation * Math.PI) / 180;
-            finalEndLat = lat + Math.cos(angleRad) * 0.003;
-            finalEndLng = lng + Math.sin(angleRad) * 0.005;
+        if ((hasEndPoint || hasEndHandle) && dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
+          let curEndLat = originalEndLat;
+          let curEndLng = originalEndLng;
+          if (curEndLat === undefined || curEndLng === undefined || isNaN(curEndLat) || isNaN(curEndLng)) {
+            [curEndLat, curEndLng] = getMovementEndpoint(lat, lng, rotation);
           }
           const dLat = position.lat - dragStartLatLng.lat;
           const dLng = position.lng - dragStartLatLng.lng;
-          updatedEndLat = finalEndLat + dLat;
-          updatedEndLng = finalEndLng + dLng;
+          updatedEndLat = curEndLat + dLat;
+          updatedEndLng = curEndLng + dLng;
+
+          if (isNaN(updatedEndLat) || isNaN(updatedEndLng)) {
+            [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
+          }
 
           if (onUpdateMarker) {
             onUpdateMarker({
@@ -2254,16 +3388,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (onUpdateMarker) {
             updatedEndLat = originalEndLat;
             updatedEndLng = originalEndLng;
-            if (updatedEndLat !== undefined && updatedEndLng !== undefined && dragStartLatLng) {
+            if (updatedEndLat !== undefined && updatedEndLng !== undefined && !isNaN(updatedEndLat) && !isNaN(updatedEndLng) && dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
               const dLat = position.lat - dragStartLatLng.lat;
               const dLng = position.lng - dragStartLatLng.lng;
               updatedEndLat = updatedEndLat + dLat;
               updatedEndLng = updatedEndLng + dLng;
             } else {
               // Calculate default offset end position if none exists
-              const angleRad = (rotation * Math.PI) / 180;
-              updatedEndLat = position.lat + Math.cos(angleRad) * 0.003;
-              updatedEndLng = position.lng + Math.sin(angleRad) * 0.005;
+              [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
             }
             onUpdateMarker({
               ...markerData,
@@ -2279,10 +3411,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         let effectiveTargetEndLat = updatedEndLat;
         let effectiveTargetEndLng = updatedEndLng;
-        if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined) {
-          const angleRad = (rotation * Math.PI) / 180;
-          effectiveTargetEndLat = position.lat + Math.cos(angleRad) * 0.003;
-          effectiveTargetEndLng = position.lng + Math.sin(angleRad) * 0.005;
+        if (effectiveTargetEndLat === undefined || effectiveTargetEndLng === undefined || isNaN(effectiveTargetEndLat) || isNaN(effectiveTargetEndLng)) {
+          [effectiveTargetEndLat, effectiveTargetEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
         }
 
         if (autoHighlightZoneRef.current) {
@@ -2307,10 +3437,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLat = endLat;
         let finalEndLng = endLng;
 
-        if (finalEndLat === undefined || finalEndLng === undefined) {
-          const angleRad = (rotation * Math.PI) / 180;
-          finalEndLat = lat + Math.cos(angleRad) * 0.003;
-          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+        if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
+          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
         }
 
         const lineCoords: [number, number][] = [[lat, lng], [finalEndLat, finalEndLng]];
@@ -2325,19 +3453,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (linesRef.current[id]) {
           linesRef.current[id].setLatLngs(lineCoords);
-          linesRef.current[id].setStyle({ ...lineStyle, opacity: 0.10 });
+          linesRef.current[id].setStyle(lineStyle);
         } else {
-          linesRef.current[id] = L.polyline(lineCoords, { ...lineStyle, opacity: 0.10 }).addTo(map);
+          linesRef.current[id] = L.polyline(lineCoords, lineStyle).addTo(map);
         }
-        updateRouteGradient(id, lineCoords, polylineColor, lineStyle.weight, lineStyle.dashArray);
+
+        linesRef.current[id].off('click');
+        linesRef.current[id].on('click', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectMarker(id);
+        });
       } else {
         if (linesRef.current[id]) {
           linesRef.current[id].remove();
           delete linesRef.current[id];
-        }
-        if (routeGradientRef.current[id]) {
-          routeGradientRef.current[id].forEach((layer) => layer.remove());
-          delete routeGradientRef.current[id];
         }
       }
 
@@ -2346,10 +3478,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLat = endLat;
         let finalEndLng = endLng;
 
-        if (finalEndLat === undefined || finalEndLng === undefined) {
-          const angleRad = (rotation * Math.PI) / 180;
-          finalEndLat = lat + Math.cos(angleRad) * 0.003;
-          finalEndLng = lng + Math.sin(angleRad) * 0.005;
+        if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
+          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
         }
 
         const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
@@ -2379,24 +3509,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           endMarkerIcon = L.divIcon({
             className: 'custom-end-handle screenshot-exclude',
             html: `
-              <div class="route-control-handle" style="
-                width: 24px;
-                height: 24px;
-                background: rgba(255,255,255,0.96);
+              <div class="flex items-center justify-center" style="
+                width: 14px;
+                height: 14px;
+                background: #ffffff;
                 border: 3px solid ${polylineColor};
                 border-radius: 50%;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.45), 0 0 0 5px rgba(255,255,255,0.16);
-                cursor: grab;
-                display:flex;
-                align-items:center;
-                justify-content:center;
-                font-size: 12px;
-                font-weight: 900;
-                color: ${polylineColor};
-              ">×</div>
-                        `,
-            iconSize: [24, 24],
-            iconAnchor: [12, 12],
+                box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+                cursor: move;
+              "></div>
+            `,
+            iconSize: [14, 14],
+            iconAnchor: [7, 7],
           });
         }
 
@@ -2408,7 +3532,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
             endMarkerInstance.setIcon(endMarkerIcon);
           }
-          if (isSelected) {
+          if (isSelected || markerData.movementEnabled === true) {
             endMarkerInstance.dragging?.enable();
           } else {
             endMarkerInstance.dragging?.disable();
@@ -2419,7 +3543,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         } else {
           endMarkerInstance = L.marker([finalEndLat, finalEndLng], {
             icon: endMarkerIcon,
-            draggable: isSelected,
+            draggable: isSelected || markerData.movementEnabled === true,
             pane: 'userMarkersPane',
             zIndexOffset: 1100,
           }).addTo(map);
@@ -2427,19 +3551,28 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         // Re-bind end marker drag events dynamically on every render
-        endMarkerInstance.off('drag dragend');
+        endMarkerInstance.off('drag dragend click');
+
+        endMarkerInstance.on('click', (e) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectMarker(id);
+        });
 
         endMarkerInstance.on('drag', (e) => {
           const endPosition = e.target.getLatLng();
-          const dy = endPosition.lat - lat;
-          const dx = endPosition.lng - lng;
+          if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
+          const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          const dy = endPosition.lat - liveAnchor.lat;
+          const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
 
           if (linesRef.current[id]) {
-            const routeCoords: [number, number][] = [[lat, lng], [endPosition.lat, endPosition.lng]];
-            linesRef.current[id].setLatLngs(routeCoords);
-            updateRouteGradient(id, routeCoords, polylineColor, markerData.lineWidth !== undefined ? markerData.lineWidth : 3, '10, 5, 2, 5');
+            linesRef.current[id].setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           }
 
           // Update rotation real-time inside DOM
@@ -2447,16 +3580,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (mainMarkerEl) {
             const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]');
             if (rotatingDiv) {
-              (rotatingDiv as HTMLElement).style.transform = `rotate(${angleDeg % 360}deg)`;
+              (rotatingDiv as HTMLElement).style.transform = `rotate(${Math.round(angleDeg % 360)}deg)`;
             }
           }
         });
 
         endMarkerInstance.on('dragend', (e) => {
           const endPosition = e.target.getLatLng();
-          const dy = endPosition.lat - lat;
-          const dx = endPosition.lng - lng;
+          if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
+          const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          const dy = endPosition.lat - liveAnchor.lat;
+          const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
           angleDeg = Math.round(angleDeg);
 
@@ -2496,10 +3632,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           linesRef.current[id].remove();
           delete linesRef.current[id];
         }
-        if (routeGradientRef.current[id]) {
-          routeGradientRef.current[id].forEach((layer) => layer.remove());
-          delete routeGradientRef.current[id];
-        }
+      }
+    });
+
+    Object.keys(endEtaMarkersRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      const shouldShowEta = marker && marker.movementEnabled === true && Number(marker.movementSpeedKmh ?? 0) > 0 && marker.endLat !== undefined && marker.endLng !== undefined;
+      if (!shouldShowEta) {
+        endEtaMarkersRef.current[id]?.remove();
+        delete endEtaMarkersRef.current[id];
+      }
+    });
+
+    Object.keys(movementTrailLayersRef.current).forEach((id) => {
+      const marker = markers.find((m) => m.id === id);
+      if (!marker || marker.movementTrailEnabled !== true) {
+        movementTrailLayersRef.current[id]?.remove();
+        delete movementTrailLayersRef.current[id];
       }
     });
 
@@ -2508,6 +3657,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const isSelected = id === selectedMarkerId;
       const hasEndHandle = marker && (
         isSelected ||
+        marker.movementEnabled === true ||
         (marker.endPointStyle && marker.endPointStyle !== 'none') ||
         !!marker.hasZone
       );
@@ -2519,6 +3669,345 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
     });
   }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady]);
+
+  const getMovementEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+    const earthRadiusKm = 6371.0088;
+    const distanceKm = 1;
+    const angularDistance = distanceKm / earthRadiusKm;
+    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const lat1 = (lat * Math.PI) / 180;
+    const lng1 = (lng * Math.PI) / 180;
+    const sinLat1 = Math.sin(lat1);
+    const cosLat1 = Math.cos(lat1);
+    const sinAngular = Math.sin(angularDistance);
+    const cosAngular = Math.cos(angularDistance);
+    const lat2 = Math.asin(Math.min(1, Math.max(-1,
+      sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)
+    )));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * Math.sin(lat2)
+    );
+    return [
+      (lat2 * 180) / Math.PI,
+      ((lng2 * 180) / Math.PI + 540) % 360 - 180,
+    ];
+  };
+
+  const movementConfigKey = markers
+    .map((m) => [
+      m.id,
+      m.movementEnabled === true ? '1' : '0',
+      Number(m.movementSpeedKmh ?? 0),
+      Number(m.rotation ?? 0),
+      Number.isFinite(Number(m.endLat)) ? Number(m.endLat).toFixed(7) : '',
+      Number.isFinite(Number(m.endLng)) ? Number(m.endLng).toFixed(7) : '',
+      m.movementTrailEnabled === true ? '1' : '0',
+      m.movementTrailColor || '',
+      Number(m.movementTrailWidth ?? 3),
+      m.movementTrailDashStyle || 'solid',
+    ].join(':'))
+    .join('|');
+
+  // Animate moving markers in real geographic distance (km/h), independent of
+  // the current map zoom. Rotation uses the existing marker heading:
+  // 0° = north, 90° = east, 180° = south, 270° = west.
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    completedMovementTargetsRef.current.clear();
+    let frameId = 0;
+    let lastFrame = performance.now();
+    let lastPersistAt = lastFrame;
+    let cancelled = false;
+
+    const trailByMarker = new Map<string, [number, number][]>();
+
+    const destination = (lat: number, lng: number, distanceKm: number, bearingDeg: number): [number, number] => {
+      const earthRadiusKm = 6371.0088;
+      const angularDistance = distanceKm / earthRadiusKm;
+      const bearing = bearingDeg * Math.PI / 180;
+      const lat1 = lat * Math.PI / 180;
+      const lng1 = lng * Math.PI / 180;
+
+      const sinLat1 = Math.sin(lat1);
+      const cosLat1 = Math.cos(lat1);
+      const sinAngular = Math.sin(angularDistance);
+      const cosAngular = Math.cos(angularDistance);
+
+      const lat2 = Math.asin(
+        Math.min(1, Math.max(-1, sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)))
+      );
+      const lng2 = lng1 + Math.atan2(
+        Math.sin(bearing) * sinAngular * cosLat1,
+        cosAngular - sinLat1 * Math.sin(lat2)
+      );
+
+      const normalizedLng = ((lng2 * 180 / Math.PI + 540) % 360) - 180;
+      return [lat2 * 180 / Math.PI, normalizedLng];
+    };
+
+    const updateTrailStyle = (polyline: L.Polyline, marker: CustomMarker) => {
+      let dashArray: string | undefined;
+      if (marker.movementTrailDashStyle === 'dashed') dashArray = '12, 8';
+      if (marker.movementTrailDashStyle === 'dotted') dashArray = '3, 6';
+
+      polyline.setStyle({
+        color: marker.movementTrailColor || marker.color || '#ef4444',
+        weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+        dashArray,
+        opacity: 0.9,
+        lineCap: 'round',
+        lineJoin: 'round',
+        pane: 'drawnLinesPane',
+      });
+    };
+
+    const removeTrail = (id: string) => {
+      const layer = movementTrailLayersRef.current[id];
+      if (layer) {
+        layer.remove();
+        delete movementTrailLayersRef.current[id];
+      }
+      trailByMarker.delete(id);
+    };
+
+    const persistMarker = (marker: CustomMarker, lat: number, lng: number, trail: [number, number][]) => {
+      if (cancelled || !onUpdateMarker) return;
+      onUpdateMarkerMovementRef.current({
+        ...marker,
+        lat,
+        lng,
+        movementTrail: marker.movementTrailEnabled ? trail.slice(-5000) : marker.movementTrail,
+      });
+    };
+
+    const tick = (now: number) => {
+      if (cancelled) return;
+
+      const dtSeconds = Math.min(0.25, Math.max(0, (now - lastFrame) / 1000));
+      lastFrame = now;
+      let hasMovingMarkers = false;
+
+      const currentMarkers = movementMarkersRef.current;
+      const currentIds = new Set(currentMarkers.map((m) => m.id));
+
+      Object.keys(movementTrailLayersRef.current).forEach((id) => {
+        if (!currentIds.has(id)) removeTrail(id);
+      });
+
+      movementMarkersRef.current.forEach((marker) => {
+        const markerInstance = markersRef.current[marker.id];
+        if (!markerInstance) return;
+
+        const trailEnabled = marker.movementTrailEnabled === true;
+
+        if (trailEnabled) {
+          const stored = Array.isArray(marker.movementTrail)
+            ? marker.movementTrail.filter((pt) => Array.isArray(pt) && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])))
+                .map((pt) => [Number(pt[0]), Number(pt[1])] as [number, number])
+            : [];
+          const localTrail = trailByMarker.get(marker.id);
+          if (!localTrail) {
+            trailByMarker.set(marker.id, stored.length ? stored.slice(-5000) : [[marker.lat, marker.lng]]);
+          }
+        } else {
+          removeTrail(marker.id);
+        }
+
+        if (marker.movementEnabled !== true || Number(marker.movementSpeedKmh ?? 0) <= 0) {
+          movingMarkerIdsRef.current.delete(marker.id);
+          if (trailEnabled) {
+            const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];
+            let layer = movementTrailLayersRef.current[marker.id];
+            if (!layer) {
+              layer = L.polyline(trail, {
+                color: marker.movementTrailColor || marker.color || '#ef4444',
+                weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+                opacity: 0.9,
+                lineCap: 'round',
+                lineJoin: 'round',
+                pane: 'drawnLinesPane',
+              }).addTo(map);
+              movementTrailLayersRef.current[marker.id] = layer;
+            }
+            updateTrailStyle(layer, marker);
+            layer.setLatLngs(trail);
+          }
+          return;
+        }
+
+        if (completedMovementTargetsRef.current.has(marker.id) && Number.isFinite(Number(marker.endLat)) && Number.isFinite(Number(marker.endLng))) {
+          movingMarkerIdsRef.current.delete(marker.id);
+          return;
+        }
+
+        hasMovingMarkers = true;
+        movingMarkerIdsRef.current.add(marker.id);
+
+        const speedKmh = Math.max(0, Number(marker.movementSpeedKmh));
+        const speedKmPerSecond = speedKmh / 3600;
+        const current = markerInstance.getLatLng();
+        if (!current || !Number.isFinite(current.lat) || !Number.isFinite(current.lng)) return;
+
+        let targetLat = Number(marker.endLat);
+        let targetLng = Number(marker.endLng);
+        const hasDestination = Number.isFinite(targetLat) && Number.isFinite(targetLng);
+        if (!hasDestination) {
+          [targetLat, targetLng] = getMovementEndpoint(current.lat, current.lng, Number(marker.rotation || 0));
+        }
+
+        const distanceToTargetKm = map.distance(current, L.latLng(targetLat, targetLng)) / 1000;
+        const stepKm = speedKmPerSecond * dtSeconds;
+        let nextLat = current.lat;
+        let nextLng = current.lng;
+        let movementBearing = Number(marker.rotation || 0);
+
+        if (distanceToTargetKm > 0.001 && stepKm > 0) {
+          const target = L.latLng(targetLat, targetLng);
+          const dy = target.lat - current.lat;
+          const dx = target.lng - current.lng;
+          movementBearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+          const travelKm = Math.min(stepKm, distanceToTargetKm);
+          [nextLat, nextLng] = destination(current.lat, current.lng, travelKm, movementBearing);
+        } else if (hasDestination) {
+          nextLat = targetLat;
+          nextLng = targetLng;
+          completedMovementTargetsRef.current.add(marker.id);
+        }
+
+        markerInstance.setLatLng([nextLat, nextLng]);
+
+        // Keep the direction of the icon aligned with the actual route to the destination.
+        const mainMarkerEl = markerInstance.getElement();
+        if (mainMarkerEl) {
+          const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]') as HTMLElement | null;
+          if (rotatingDiv) rotatingDiv.style.transform = `rotate(${Math.round(movementBearing % 360)}deg)`;
+        }
+
+        // Update the route line continuously while the icon is moving.
+        if (hasDestination && linesRef.current[marker.id]) {
+          linesRef.current[marker.id].setLatLngs([[nextLat, nextLng], [targetLat, targetLng]]);
+        }
+
+        // Live ETA label at the destination point.
+        if (hasDestination) {
+          const remainingKm = map.distance(L.latLng(nextLat, nextLng), L.latLng(targetLat, targetLng)) / 1000;
+          const totalMinutes = remainingKm > 0 && speedKmh > 0 ? (remainingKm / speedKmh) * 60 : 0;
+          let etaText = '≈ 0 с';
+          if (totalMinutes >= 60) {
+            const hours = Math.floor(totalMinutes / 60);
+            const minutes = Math.round(totalMinutes - hours * 60);
+            etaText = minutes > 0 ? `≈ ${hours} год ${minutes} хв` : `≈ ${hours} год`;
+          } else if (totalMinutes >= 1) {
+            etaText = `≈ ${Math.max(1, Math.round(totalMinutes))} хв`;
+          } else {
+            etaText = `≈ ${Math.max(1, Math.round(totalMinutes * 60))} с`;
+          }
+
+          let etaMarker = endEtaMarkersRef.current[marker.id];
+          if (!etaMarker) {
+            const etaIcon = L.divIcon({
+              className: 'movement-eta-label',
+              html: `<div style="
+                transform: translate(0, -24px);
+                white-space: nowrap;
+                background: rgba(15,23,42,.92);
+                color: #fff;
+                border: 1px solid rgba(255,255,255,.35);
+                border-radius: 999px;
+                padding: 3px 7px;
+                font: 700 11px/1.1 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                box-shadow: 0 2px 7px rgba(0,0,0,.35);
+                pointer-events: none;
+              " data-eta="${etaText}">${etaText}</div>`,
+              iconSize: [1, 1],
+              iconAnchor: [0, 0],
+            });
+            etaMarker = L.marker([targetLat, targetLng], {
+              icon: etaIcon,
+              interactive: false,
+              pane: 'userMarkersPane',
+              zIndexOffset: 1250,
+            }).addTo(map);
+            endEtaMarkersRef.current[marker.id] = etaMarker;
+          } else {
+            etaMarker.setLatLng([targetLat, targetLng]);
+            const etaElement = etaMarker.getElement()?.querySelector('[data-eta]') as HTMLElement | null;
+            if (etaElement && etaElement.dataset.eta !== etaText) {
+              etaElement.dataset.eta = etaText;
+              etaElement.textContent = etaText;
+            }
+            if (!map.hasLayer(etaMarker)) etaMarker.addTo(map);
+          }
+        }
+
+        if (trailEnabled) {
+          const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];
+          const last = trail[trail.length - 1];
+          const movedEnough = !last ||
+            Math.abs(last[0] - nextLat) > 0.00001 ||
+            Math.abs(last[1] - nextLng) > 0.00001;
+
+          if (movedEnough) {
+            trail.push([nextLat, nextLng]);
+            if (trail.length > 5000) trail.splice(0, trail.length - 5000);
+          }
+
+          let layer = movementTrailLayersRef.current[marker.id];
+          if (!layer) {
+            layer = L.polyline(trail, {
+              color: marker.movementTrailColor || marker.color || '#ef4444',
+              weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
+              opacity: 0.9,
+              lineCap: 'round',
+              lineJoin: 'round',
+              pane: 'drawnLinesPane',
+            }).addTo(map);
+            movementTrailLayersRef.current[marker.id] = layer;
+          }
+          updateTrailStyle(layer, marker);
+          layer.setLatLngs(trail);
+        }
+
+        movementLiveStateRef.current[marker.id] = {
+          lat: nextLat,
+          lng: nextLng,
+          trail: (trailByMarker.get(marker.id) || marker.movementTrail || []).slice(-5000),
+        };
+
+        if (now - lastPersistAt >= 500) {
+          const trail = trailByMarker.get(marker.id) || [];
+          persistMarker(marker, nextLat, nextLng, trail);
+        }
+      });
+
+      if (now - lastPersistAt >= 500) {
+        lastPersistAt = now;
+      }
+
+      frameId = hasMovingMarkers ? requestAnimationFrame(tick) : 0;
+    };
+
+    const anyMoving = movementMarkersRef.current.some(
+      (marker) => marker.movementEnabled === true && Number(marker.movementSpeedKmh ?? 0) > 0
+    );
+
+    if (anyMoving) {
+      frameId = requestAnimationFrame(tick);
+    } else {
+      // Still render/update trails when the map or style changes while stopped.
+      tick(performance.now());
+    }
+
+    return () => {
+      cancelled = true;
+      if (frameId) cancelAnimationFrame(frameId);
+    };
+  }, [isMapReady, movementConfigKey]);
+
+
 
   // Render drawn lines on map
   useEffect(() => {
@@ -2543,13 +4032,17 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Render each line
     drawnLines.forEach((line) => {
       if (!line.points || line.points.length < 2) return;
+      const validPoints = line.points.filter((pt) => pt && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])));
+      if (validPoints.length < 2) return;
 
       const isSelected = selectedLineId === line.id;
 
       // Smooth points if line.smoothed is true
-      const displayPoints: [number, number][] = line.smoothed
-        ? smoothPolylinePoints(line.points, 4)
-        : line.points;
+      const rawPoints: [number, number][] = line.smoothed
+        ? smoothPolylinePoints(validPoints, 4)
+        : validPoints;
+      const displayPoints = rawPoints.filter((pt) => pt && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])));
+      if (displayPoints.length < 2) return;
 
       // Dash style
       let dashArray: string | undefined = undefined;
@@ -2566,6 +4059,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (isSelected) {
         if (!existing.halo) {
           existing.halo = L.polyline(displayPoints, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: '#3b82f6',
             weight: line.weight + 8,
             opacity: 0.5,
@@ -2577,6 +4071,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           existing.halo.setLatLngs(displayPoints);
           existing.halo.setStyle({ weight: line.weight + 8 });
         }
+
+        existing.halo.off('click');
+        existing.halo.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.halo) {
         existing.halo.remove();
         existing.halo = undefined;
@@ -2606,6 +4109,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         existing.fadingPolylines = fadingSegments.map((seg) => {
           const poly = L.polyline(seg.points, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: line.color,
             weight: line.weight,
             opacity: seg.opacity,
@@ -2615,7 +4119,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
           }).addTo(map);
 
+          poly.off('click');
           poly.on('click', (e: L.LeafletMouseEvent) => {
+            if (e.originalEvent) {
+              L.DomEvent.stopPropagation(e.originalEvent);
+            }
             L.DomEvent.stopPropagation(e);
             onSelectLine(line.id);
           });
@@ -2630,6 +4138,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (!existing.polyline) {
           existing.polyline = L.polyline(displayPoints, {
+            className: 'cursor-pointer drawn-polyline-interactive',
             color: line.color,
             weight: line.weight,
             opacity: 0.9,
@@ -2638,11 +4147,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             lineJoin: 'round',
             pane: 'drawnLinesPane',
           }).addTo(map);
-
-          existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.polyline.setLatLngs(displayPoints);
           existing.polyline.setStyle({
@@ -2652,6 +4156,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             dashArray: dashArray,
           });
         }
+
+        existing.polyline.off('click');
+        existing.polyline.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       }
 
       // 3. Endpoint markers
@@ -2665,18 +4178,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (style === 'none' || style === 'fade') return null;
         const rotOffset = isEnd ? (line.endIconRotation || 0) : (line.startIconRotation || 0);
         const bearing = calculateBearing(p1, p2) + rotOffset;
+        const explicitSize = isEnd ? line.endIconSize : line.startIconSize;
 
         if (style === 'explosion') {
-          return createExplosionIcon(line.color, line.weight);
+          return createExplosionIcon(line.color, line.weight, explicitSize);
         }
         if (style === 'custom_icon') {
-          return createCustomImageIcon(customIconUrl || '', line.color, line.weight, bearing);
+          return createCustomImageIcon(customIconUrl || '', line.color, line.weight, bearing, explicitSize);
         }
         if (style === 'arrow') {
-          return createArrowIcon(line.color, bearing, line.weight);
+          return createArrowIcon(line.color, bearing, line.weight, explicitSize);
         }
         if (style === 'dot') {
-          return createDotIcon(line.color, line.weight);
+          return createDotIcon(line.color, line.weight, explicitSize);
         }
         return null;
       };
@@ -2704,14 +4218,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
-          existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.startMarker.setLatLng(startCoord);
           existing.startMarker.setIcon(startIcon);
         }
+        existing.startMarker.off('click');
+        existing.startMarker.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.startMarker) {
         existing.startMarker.remove();
         existing.startMarker = undefined;
@@ -2734,14 +4252,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             pane: 'drawnLinesPane',
             zIndexOffset: 500,
           }).addTo(map);
-          existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
-            L.DomEvent.stopPropagation(e);
-            onSelectLine(line.id);
-          });
         } else {
           existing.endMarker.setLatLng(endCoord);
           existing.endMarker.setIcon(endIcon);
         }
+        existing.endMarker.off('click');
+        existing.endMarker.on('click', (e: L.LeafletMouseEvent) => {
+          if (e.originalEvent) {
+            L.DomEvent.stopPropagation(e.originalEvent);
+          }
+          L.DomEvent.stopPropagation(e);
+          onSelectLine(line.id);
+        });
       } else if (existing.endMarker) {
         existing.endMarker.remove();
         existing.endMarker = undefined;
@@ -2999,10 +4521,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (lineStartStyle !== 'none' && lineStartStyle !== 'fade') {
         let startIcon: L.DivIcon | null = null;
         const startBearing = calculateBearing(startCoord, secondCoord) + (lineStartIconRotation || 0);
-        if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineColor, lineWeight, startBearing);
-        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, startBearing, lineWeight);
-        if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight);
+        if (lineStartStyle === 'explosion') startIcon = createExplosionIcon(lineColor, lineWeight, lineStartIconSize);
+        if (lineStartStyle === 'custom_icon') startIcon = createCustomImageIcon(lineStartCustomIcon, lineColor, lineWeight, startBearing, lineStartIconSize);
+        if (lineStartStyle === 'arrow') startIcon = createArrowIcon(lineColor, startBearing, lineWeight, lineStartIconSize);
+        if (lineStartStyle === 'dot') startIcon = createDotIcon(lineColor, lineWeight, lineStartIconSize);
 
         if (startIcon) {
           if (!layers.startMarker) {
@@ -3020,10 +4542,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       if (lineEndStyle !== 'none' && lineEndStyle !== 'fade') {
         let endIcon: L.DivIcon | null = null;
         const endBearing = calculateBearing(prevEndCoord, endCoord) + (lineEndIconRotation || 0);
-        if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight);
-        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineColor, lineWeight, endBearing);
-        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, endBearing, lineWeight);
-        if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight);
+        if (lineEndStyle === 'explosion') endIcon = createExplosionIcon(lineColor, lineWeight, lineEndIconSize);
+        if (lineEndStyle === 'custom_icon') endIcon = createCustomImageIcon(lineEndCustomIcon, lineColor, lineWeight, endBearing, lineEndIconSize);
+        if (lineEndStyle === 'arrow') endIcon = createArrowIcon(lineColor, endBearing, lineWeight, lineEndIconSize);
+        if (lineEndStyle === 'dot') endIcon = createDotIcon(lineColor, lineWeight, lineEndIconSize);
 
         if (endIcon) {
           if (!layers.endMarker) {
@@ -3061,14 +4583,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   }, [interactionMode, draftLinePoints.length]);
 
-  // Keyboard shortcut listener for line drawing
+  // Keyboard shortcut listener for line drawing & ruler measuring
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea') return;
+
       if (interactionModeRef.current === 'line' && draftLinePoints.length >= 2) {
         if (e.key === 'Enter') {
           handleFinishDraftLine();
         } else if (e.key === 'Escape') {
           setDraftLinePoints([]);
+        }
+      }
+
+      if (interactionModeRef.current === 'measure' && measurePointsRef.current.length > 0) {
+        if (e.key === 'Escape') {
+          setMeasurePoints([]);
+        } else if (e.key === 'Backspace' || e.key === 'Delete') {
+          setMeasurePoints((prev) => prev.slice(0, -1));
         }
       }
     };
@@ -3087,6 +4620,211 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   }, [interactionMode, isMapReady]);
 
+  // Keyboard spacebar listener to toggle panning while in freehand line mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && !e.repeat) {
+        const target = e.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+        isSpacePressedRef.current = true;
+        const map = mapInstanceRef.current;
+        if (map && interactionModeRef.current === 'line' && lineDrawMethodRef.current === 'freehand') {
+          map.dragging.enable();
+          if (mapContainerRef.current) {
+            mapContainerRef.current.style.cursor = 'grab';
+          }
+        }
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        isSpacePressedRef.current = false;
+        const map = mapInstanceRef.current;
+        if (map && interactionModeRef.current === 'line' && lineDrawMethodRef.current === 'freehand') {
+          map.dragging.disable();
+          if (mapContainerRef.current) {
+            mapContainerRef.current.style.cursor = 'crosshair';
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, []);
+
+  // Manage map dragging and touch zooming based on interactionMode and lineDrawMethod
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    const container = mapContainerRef.current;
+    if (!map || !isMapReady) return;
+
+    if (interactionMode === 'line' && lineDrawMethod === 'freehand') {
+      map.dragging.disable();
+      map.touchZoom.disable();
+      if (container) {
+        container.style.cursor = 'crosshair';
+        container.style.touchAction = 'none';
+      }
+    } else {
+      map.dragging.enable();
+      map.touchZoom.enable();
+      if (container) {
+        container.style.cursor = '';
+        container.style.touchAction = '';
+      }
+    }
+  }, [interactionMode, lineDrawMethod, isMapReady]);
+
+  // Freehand pointer event listeners on map container
+  useEffect(() => {
+    const container = mapContainerRef.current;
+    const map = mapInstanceRef.current;
+    if (!container || !map || !isMapReady) return;
+
+    if (interactionMode !== 'line' || lineDrawMethod !== 'freehand') {
+      cleanLiveFreehandLayers();
+      return;
+    }
+
+    const onPointerDown = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (isSpacePressedRef.current) return;
+
+      const target = e.target as HTMLElement;
+      if (
+        target.closest('.leaflet-control') ||
+        target.closest('.pointer-events-auto') ||
+        target.closest('.tactical-logo-container-outer') ||
+        target.closest('.leaflet-popup') ||
+        target.closest('.leaflet-marker-icon') ||
+        target.closest('.measure-node-icon') ||
+        target.closest('.draft-line-node') ||
+        target.closest('.line-vertex-marker') ||
+        target.closest('button') ||
+        target.closest('input')
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      isDrawingFreehandRef.current = true;
+      freehandPointerIdRef.current = e.pointerId;
+
+      try {
+        container.setPointerCapture(e.pointerId);
+      } catch {}
+
+      const latlng = map.mouseEventToLatLng(e);
+      const startPt: [number, number] = [latlng.lat, latlng.lng];
+      freehandRawPointsRef.current = [startPt];
+      freehandStartClientRef.current = { x: e.clientX, y: e.clientY };
+
+      renderLiveFreehandPreview([startPt]);
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      if (freehandPointerIdRef.current !== null && e.pointerId !== freehandPointerIdRef.current) return;
+
+      e.preventDefault();
+      const latlng = map.mouseEventToLatLng(e);
+      const rawPoints = freehandRawPointsRef.current;
+      const lastPt = rawPoints[rawPoints.length - 1];
+
+      if (lastPt) {
+        const lastPointPix = map.latLngToContainerPoint(L.latLng(lastPt[0], lastPt[1]));
+        const currPointPix = map.latLngToContainerPoint(latlng);
+        const distSq = (currPointPix.x - lastPointPix.x) ** 2 + (currPointPix.y - lastPointPix.y) ** 2;
+        // Jitter filter: 2.5px threshold
+        if (distSq < 6.25) {
+          return;
+        }
+      }
+
+      rawPoints.push([latlng.lat, latlng.lng]);
+      renderLiveFreehandPreview(rawPoints);
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      if (freehandPointerIdRef.current !== null && e.pointerId !== freehandPointerIdRef.current) return;
+
+      isDrawingFreehandRef.current = false;
+      try {
+        container.releasePointerCapture(e.pointerId);
+      } catch {}
+
+      const rawPoints = [...freehandRawPointsRef.current];
+      freehandRawPointsRef.current = [];
+      cleanLiveFreehandLayers();
+
+      const startClient = freehandStartClientRef.current;
+      const totalDistPx = startClient ? Math.hypot(e.clientX - startClient.x, e.clientY - startClient.y) : 0;
+
+      if (rawPoints.length >= 2 && totalDistPx >= 8) {
+        // Extract clean, compact key control points (6-18 points) instead of saving hundreds of dense raw points!
+        // When rendered with smoothed: true, it draws a silky-smooth spline while giving the user only 6-18 comfortable drag handles.
+        const controlPoints = extractControlPointsFromFreehand(map, rawPoints, 36, 18);
+
+        const newLine: DrawnLine = {
+          id: `line_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          points: controlPoints,
+          color: lineColorRef.current,
+          weight: lineWeightRef.current,
+          smoothed: true, // Auto smoothed!
+          dashStyle: lineDashStyleRef.current,
+          startPointStyle: lineStartStyleRef.current,
+          startCustomIconUrl: lineStartCustomIconRef.current,
+          startIconRotation: lineStartIconRotationRef.current,
+          startIconSize: lineStartIconSizeRef.current,
+          endPointStyle: lineEndStyleRef.current,
+          endCustomIconUrl: lineEndCustomIconRef.current,
+          endIconRotation: lineEndIconRotationRef.current,
+          endIconSize: lineEndIconSizeRef.current,
+        };
+
+        onAddDrawnLineRef.current(newLine);
+        onSelectLineRef.current(newLine.id);
+
+        setJustSmoothedNotice(true);
+        if (justSmoothedNoticeTimerRef.current) clearTimeout(justSmoothedNoticeTimerRef.current);
+        justSmoothedNoticeTimerRef.current = window.setTimeout(() => {
+          setJustSmoothedNotice(false);
+        }, 2400);
+      }
+    };
+
+    const onPointerCancel = (e: PointerEvent) => {
+      if (!isDrawingFreehandRef.current) return;
+      isDrawingFreehandRef.current = false;
+      try {
+        container.releasePointerCapture(e.pointerId);
+      } catch {}
+      freehandRawPointsRef.current = [];
+      cleanLiveFreehandLayers();
+    };
+
+    container.addEventListener('pointerdown', onPointerDown, { passive: false });
+    container.addEventListener('pointermove', onPointerMove, { passive: false });
+    container.addEventListener('pointerup', onPointerUp, { passive: false });
+    container.addEventListener('pointercancel', onPointerCancel, { passive: false });
+
+    return () => {
+      container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('pointermove', onPointerMove);
+      container.removeEventListener('pointerup', onPointerUp);
+      container.removeEventListener('pointercancel', onPointerCancel);
+      cleanLiveFreehandLayers();
+    };
+  }, [interactionMode, lineDrawMethod, isMapReady, renderLiveFreehandPreview, cleanLiveFreehandLayers]);
+
   // Center map on selected marker when it changes (or coordinates manual edits)
   const lastSelectedIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3099,7 +4837,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     // Only auto-pan to marker if the selectedMarkerId actually changed
     if (selectedMarkerId !== lastSelectedIdRef.current) {
       const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
-      if (selectedMarker) {
+      if (
+        selectedMarker &&
+        typeof selectedMarker.lat === 'number' &&
+        typeof selectedMarker.lng === 'number' &&
+        !isNaN(selectedMarker.lat) &&
+        !isNaN(selectedMarker.lng)
+      ) {
         map.panTo([selectedMarker.lat, selectedMarker.lng], { animate: true });
       }
       lastSelectedIdRef.current = selectedMarkerId;
@@ -3125,7 +4869,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
    * Visicom high-resolution export background.
    *
    * Leaflet displays Visicom as 256x256 raster tiles. Enlarging those tiles
-   * cannot recover detail. For export we therefore request Visicom tiles
+   * cannot recover detail. For export we therefore request Visicom fragments
    * directly. A fragment is a native map image/vector document centred on a
    * coordinate; SVG is used here because it stays sharp when html-to-image
    * rasterizes the final composition at 2-3x.
@@ -3140,21 +4884,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     return 'https://tms.visicom.ua/2.0.0/planet3/base';
   }, [activeTileLayer.id, visicomKey]);
 
-  const getFragmentUrl = useCallback((
-    center: L.LatLng,
-    width: number,
-    height: number,
-    dpr = 1,
-    sourceZoom?: number,
-  ) => {
+  const getFragmentUrl = useCallback((center: L.LatLng, width: number, height: number, dpr = 1) => {
     const base = getVisicomFragmentBaseUrl();
     if (!base) return null;
     const lang = language === 'uk' ? '?lang=uk' : '?lang=en';
     const separator = lang.includes('?') ? '&' : '?';
     const reqWidth = Math.round(width * dpr);
     const reqHeight = Math.round(height * dpr);
-    const zoom = sourceZoom ?? mapInstanceRef.current?.getZoom() ?? 13;
-    return `${base}/${zoom}/${center.lng},${center.lat}/${reqWidth}/${reqHeight}.svg${lang}${separator}key=${encodeURIComponent(visicomKey)}`;
+    return `${base}/${mapInstanceRef.current?.getZoom() ?? 13}/${center.lng},${center.lat}/${reqWidth}/${reqHeight}.svg${lang}${separator}key=${encodeURIComponent(visicomKey)}`;
   }, [getVisicomFragmentBaseUrl, language, visicomKey]);
 
   const waitForImageDecode = async (img: HTMLImageElement) => {
@@ -3174,173 +4911,120 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  /**
-   * Build a high-resolution Visicom background from server-proxied fragments.
-   *
-   * Visicom's fragment API renders the map natively and supports a maximum
-   * fragment size of 2048x2048. Instead of downloading 100+ 256px tiles from
-   * the browser (slow and CORS-sensitive), we split the export viewport into
-   * a small grid of native fragments and stitch them in one canvas.
-   */
-  const installVisicomHQBackground = async (mapElement: HTMLElement, exportScale = 2.5) => {
+  const installVisicomHQBackground = async (mapElement: HTMLElement, exportScale = 2) => {
     const map = mapInstanceRef.current;
-    if (!map || activeTileLayer.id !== 'visicom' || !visicomKey) return null;
+    if (!map || !getVisicomFragmentBaseUrl()) return null;
 
     const width = Math.max(1, Math.round(mapElement.clientWidth));
     const height = Math.max(1, Math.round(mapElement.clientHeight));
-    const interactiveZoom = Math.round(map.getZoom());
-    const maxSourceZoom = Math.min(Number(activeTileLayer.maxZoom || 19), 19);
-
-    // Two extra native zoom levels give materially more detail while keeping
-    // the number of 2048px fragments small. The final PNG is rasterized once
-    // by html-to-image, so we do not upscale individual 256px tiles.
-    const zoomBoost = Math.max(0, Math.min(2, maxSourceZoom - interactiveZoom));
-    const sourceZoom = interactiveZoom + zoomBoost;
-    const sourceScale = 2 ** zoomBoost;
-    const sourceWidth = Math.ceil(width * sourceScale);
-    const sourceHeight = Math.ceil(height * sourceScale);
-    const maxFragment = 2048;
-
-    const centerPoint = map.project(map.getCenter(), sourceZoom);
-    const leftPx = centerPoint.x - sourceWidth / 2;
-    const topPx = centerPoint.y - sourceHeight / 2;
-
-    const cols = Math.ceil(sourceWidth / maxFragment);
-    const rows = Math.ceil(sourceHeight / maxFragment);
-    const jobs: Array<{ col: number; row: number; sx: number; sy: number; sw: number; sh: number }> = [];
-
-    for (let row = 0; row < rows; row++) {
-      for (let col = 0; col < cols; col++) {
-        const sx = col * maxFragment;
-        const sy = row * maxFragment;
-        jobs.push({
-          col,
-          row,
-          sx,
-          sy,
-          sw: Math.min(maxFragment, sourceWidth - sx),
-          sh: Math.min(maxFragment, sourceHeight - sy),
-        });
-      }
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = sourceWidth;
-    canvas.height = sourceHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('HD export canvas is unavailable');
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-
-    const loadFragment = async (job: typeof jobs[number]) => {
-      // Fragment centre in the same Web Mercator pixel coordinate system as
-      // Leaflet. The fragment endpoint returns exactly sw x sh pixels.
-      const px = leftPx + job.sx + job.sw / 2;
-      const py = topPx + job.sy + job.sh / 2;
-      const center = map.unproject(L.point(px, py), sourceZoom);
-
-      const params = new URLSearchParams({
-        z: String(sourceZoom),
-        lng: center.lng.toFixed(8),
-        lat: center.lat.toFixed(8),
-        width: String(job.sw),
-        height: String(job.sh),
-        lang: language === 'uk' ? 'uk' : 'en',
-        key: visicomKey,
-        format: 'png',
-      });
-
-      // Same-origin proxy avoids browser CORS restrictions and keeps the
-      // Visicom response available to createImageBitmap/html-to-image.
-      const response = await fetch(`/api/visicom-fragment?${params.toString()}`, {
-        method: 'GET',
-        credentials: 'same-origin',
-        cache: 'no-store',
-      });
-      if (!response.ok) {
-        const detail = await response.text().catch(() => '');
-        throw new Error(`Visicom fragment HTTP ${response.status}${detail ? `: ${detail.slice(0, 180)}` : ''}`);
-      }
-      const blob = await response.blob();
-      if (!blob.size) throw new Error('Empty Visicom fragment response');
-      const bitmap = await createImageBitmap(blob);
-      return { bitmap, sx: job.sx, sy: job.sy, sw: job.sw, sh: job.sh };
-    };
-
-    const concurrency = 4;
-    const loaded: Array<{ bitmap: ImageBitmap; sx: number; sy: number; sw: number; sh: number }> = [];
-    for (let i = 0; i < jobs.length; i += concurrency) {
-      loaded.push(...await Promise.all(jobs.slice(i, i + concurrency).map(loadFragment)));
-    }
-
-    for (const fragment of loaded) {
-      ctx.drawImage(fragment.bitmap, fragment.sx, fragment.sy, fragment.sw, fragment.sh);
-      fragment.bitmap.close();
-    }
-
-    const dataUrl = canvas.toDataURL('image/png');
+    const zoom = map.getZoom();
+    const mapPixelOrigin = map.project(map.getCenter(), zoom);
 
     const background = document.createElement('div');
     background.className = 'visicom-hq-export-background';
-    Object.assign(background.style, {
-      position: 'absolute', inset: '0', width: `${width}px`, height: `${height}px`,
-      overflow: 'hidden', pointerEvents: 'none', zIndex: '0', background: 'transparent',
-    });
+    background.style.position = 'absolute';
+    background.style.inset = '0';
+    background.style.width = `${width}px`;
+    background.style.height = `${height}px`;
+    background.style.overflow = 'hidden';
+    background.style.pointerEvents = 'none';
+    background.style.zIndex = '0';
+    background.style.imageRendering = 'auto';
+    background.style.transform = 'translateZ(0)';
+    background.style.willChange = 'transform';
+    if (blurMapOnExport) {
+      background.style.filter = 'blur(2px) brightness(0.95) contrast(1.05)';
+      background.style.transform = 'scale(1.004)';
+    }
     background.setAttribute('aria-hidden', 'true');
 
-    const image = document.createElement('img');
-    image.className = 'visicom-hq-export-mosaic';
-    image.alt = '';
-    image.decoding = 'async';
-    image.draggable = false;
-    Object.assign(image.style, {
-      position: 'absolute', inset: '0', width: `${width}px`, height: `${height}px`,
-      maxWidth: 'none', display: 'block', pointerEvents: 'none', userSelect: 'none',
-    });
-    image.src = dataUrl;
-
-    await new Promise<void>((resolve, reject) => {
-      if (image.complete && image.naturalWidth > 0) return resolve();
-      image.addEventListener('load', () => resolve(), { once: true });
-      image.addEventListener('error', () => reject(new Error('HD mosaic image failed to decode')), { once: true });
-    });
-
-    background.appendChild(image);
-
+    // Keep the original Leaflet map above the temporary background, but hide
+    // only its raster tile images. Vector overlays/markers remain available
+    // for the final html-to-image capture.
     const tilePane = mapElement.querySelector('.leaflet-tile-pane') as HTMLElement | null;
     const previousTilePaneOpacity = tilePane?.style.opacity ?? '';
-
-    mapElement.insertBefore(background, mapElement.firstChild);
     if (tilePane) tilePane.style.opacity = '0';
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-    background.dataset.uamapperHd = 'true';
-    background.dataset.uamapperSourceZoom = String(sourceZoom);
-    background.dataset.uamapperTileCount = String(jobs.length);
-    background.dataset.uamapperSourcePixels = `${sourceWidth}x${sourceHeight}`;
+    const urls: string[] = [];
+    const objectUrls: string[] = [];
 
-    console.info('[UAMapper HD Export] Visicom fragment mosaic ready', {
-      interactiveZoom,
-      sourceZoom,
-      zoomBoost,
-      sourceWidth,
-      sourceHeight,
-      fragments: jobs.length,
-      grid: `${cols}x${rows}`,
-      exportScale,
-    });
+    // Visicom's fragment endpoint has an official 2048x2048 maximum.
+    // Keep the fragment itself at 1:1 CSS pixels and let html-to-image
+    // rasterize the SVG at the final export pixel ratio. Requesting
+    // 3.5x/4x fragments exceeds the API limit and silently caused the code
+    // to fall back to Leaflet's 256px raster tiles — the source of the blur.
+    const fragmentDpr = 1;
 
-    return {
-      background,
-      sourceZoom,
-      sourceWidth,
-      sourceHeight,
-      fragmentCount: jobs.length,
-      restore: () => {
-        if (tilePane) tilePane.style.opacity = previousTilePaneOpacity;
-        background.remove();
-      },
-    };
+    try {
+      // Build all fragments first, then fetch them concurrently.
+      const jobs: Array<{ left: number; top: number; width: number; height: number; url: string }> = [];
+      for (let top = 0; top < height; top += VISICOM_FRAGMENT_MAX) {
+        for (let left = 0; left < width; left += VISICOM_FRAGMENT_MAX) {
+          const fragmentWidth = Math.min(VISICOM_FRAGMENT_MAX, width - left);
+          const fragmentHeight = Math.min(VISICOM_FRAGMENT_MAX, height - top);
+          const globalX = mapPixelOrigin.x + left - width / 2 + fragmentWidth / 2;
+          const globalY = mapPixelOrigin.y + top - height / 2 + fragmentHeight / 2;
+          const fragmentCenter = map.unproject(L.point(globalX, globalY), zoom);
+          const url = getFragmentUrl(fragmentCenter, fragmentWidth, fragmentHeight, fragmentDpr);
+          if (!url) throw new Error('Visicom fragment URL unavailable');
+          urls.push(url);
+          jobs.push({ left, top, width: fragmentWidth, height: fragmentHeight, url });
+        }
+      }
+
+      const results = await Promise.all(jobs.map(async (job) => {
+        const response = await fetch(job.url, { mode: 'cors', credentials: 'omit' });
+        if (!response.ok) throw new Error(`Visicom fragment HTTP ${response.status}`);
+        const svgText = await response.text();
+        if (!svgText || !svgText.includes('<svg')) throw new Error('Invalid Visicom SVG fragment response');
+        return { ...job, svgText };
+      }));
+
+      for (const { left, top, width: fragmentWidth, height: fragmentHeight, svgText } of results) {
+        const fragmentDiv = document.createElement('div');
+        fragmentDiv.className = 'visicom-svg-fragment';
+        fragmentDiv.style.position = 'absolute';
+        fragmentDiv.style.left = `${left}px`;
+        fragmentDiv.style.top = `${top}px`;
+        fragmentDiv.style.width = `${fragmentWidth}px`;
+        fragmentDiv.style.height = `${fragmentHeight}px`;
+        fragmentDiv.style.overflow = 'hidden';
+        fragmentDiv.style.pointerEvents = 'none';
+        fragmentDiv.innerHTML = svgText;
+
+        const innerSvg = fragmentDiv.querySelector('svg');
+        if (innerSvg) {
+          innerSvg.style.width = '100%';
+          innerSvg.style.height = '100%';
+          innerSvg.style.display = 'block';
+          innerSvg.style.pointerEvents = 'none';
+          innerSvg.setAttribute('shape-rendering', 'geometricPrecision');
+          innerSvg.setAttribute('text-rendering', 'geometricPrecision');
+          innerSvg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+        }
+        background.appendChild(fragmentDiv);
+      }
+
+      mapElement.insertBefore(background, mapElement.firstChild);
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+      );
+
+      return {
+        background,
+        restore: () => {
+          if (tilePane) tilePane.style.opacity = previousTilePaneOpacity;
+          background.remove();
+          objectUrls.forEach((url) => URL.revokeObjectURL(url));
+        },
+      };
+    } catch (error) {
+      if (tilePane) tilePane.style.opacity = previousTilePaneOpacity;
+      background.remove();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+      console.warn('Visicom HQ fragment export unavailable; using normal Leaflet capture.', error);
+      throw error;
+    }
   };
 
   /**
@@ -3387,9 +5071,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       mapInstanceRef.current?.invalidateSize({ animate: false });
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
-      // PNG export must use the native Visicom fragment when Visicom is the
-      // active provider. Falling back to 256px Leaflet tiles would silently
-      // produce the exact blurry result this exporter is designed to avoid.
+      // Prefer the native Visicom fragment background. If the API key, CORS,
+      // network, or account restrictions prevent it, fall back to the normal
+      // Leaflet capture instead of breaking export altogether.
       const width = mapElement.clientWidth;
       const height = mapElement.clientHeight;
       const maxOutputDimension = 8000;
@@ -3403,20 +5087,19 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const capturePixelRatio = mode === 'clipboard'
         ? Math.max(1, Math.min(browserPixelRatio, 2))
         : (() => {
-            const minTargetWidth = 4096;
+            const minTargetWidth = 3600;
             const mobileWidthRatio = minTargetWidth / Math.max(width, 1);
-            const desiredRatio = Math.max(2.5, browserPixelRatio * 1.5, mobileWidthRatio);
+            const desiredRatio = Math.max(3.5, browserPixelRatio * 2, mobileWidthRatio);
             const sizeCapRatio = maxOutputDimension / Math.max(width, height, 1);
             return Math.max(2, Math.min(desiredRatio, sizeCapRatio));
           })();
 
-      if (mode === 'export' && activeTileLayer.id === 'visicom' && visicomKey) {
-        hqBackground = await installVisicomHQBackground(mapElement, capturePixelRatio);
-        setScreenshotStatus(
-          language === 'uk'
-            ? `HD Visicom: zoom +${Math.max(0, (hqBackground?.sourceZoom ?? 0) - Math.round(mapInstanceRef.current?.getZoom() ?? 0))}, ${hqBackground?.fragmentCount ?? 0} PNG-фрагментів.`
-            : `HD Visicom: source zoom +${Math.max(0, (hqBackground?.sourceZoom ?? 0) - Math.round(mapInstanceRef.current?.getZoom() ?? 0))}, ${hqBackground?.fragmentCount ?? 0} PNG fragments`,
-        );
+      if (mode === 'export' && getVisicomFragmentBaseUrl()) {
+        try {
+          hqBackground = await installVisicomHQBackground(mapElement, capturePixelRatio);
+        } catch {
+          hqBackground = null;
+        }
       }
 
       if (!hqBackground) {
@@ -3438,12 +5121,22 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         );
       };
 
+      // Prepare embedded font CSS with base64 web fonts for 100% accurate text rendering in buffer/PNG
+      const fontEmbedCSS = await getFontEmbedCSS(mapFont);
+
+      // Ensure browser document fonts have settled
+      if (typeof document !== 'undefined' && (document as any).fonts?.ready) {
+        try {
+          await (document as any).fonts.ready;
+        } catch (_) {}
+      }
+
       const captureOptions = {
         cacheBust: false,
         backgroundColor: theme === 'light' ? '#f8fafc' : '#020617',
         pixelRatio: capturePixelRatio,
         quality: 1,
-        skipFonts: true,
+        fontEmbedCSS: fontEmbedCSS,
         filter: filterNode as any,
       };
 
@@ -3465,7 +5158,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const mapElement = document.getElementById('map-stage-wrapper');
     if (!mapElement) return null;
     mapElement.classList.add('exporting-map');
-    if (theme === 'dark' && !activeTileLayer.isDark) mapElement.classList.add('exporting-dark-map');
+    if (theme === 'dark' && !activeTileLayer.isDark && activeTileLayer.id !== 'deepstatemap') mapElement.classList.add('exporting-dark-map');
     if (blurMapOnExport) mapElement.classList.add('exporting-map-blur');
     return mapElement;
   };
@@ -3515,11 +5208,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       setScreenshotStatus(language === 'uk' ? 'Зображення завантажено!' : 'Map downloaded successfully!');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } catch (err) {
-      console.error('[UAMapper HD Export] Export error', err);
-      const message = err instanceof Error ? err.message : String(err);
-      setScreenshotStatus(
-        language === 'uk' ? `HD експорт не вдався: ${message}` : `HD export failed: ${message}`,
-      );
+      console.error('Export error', err);
+      setScreenshotStatus(language === 'uk' ? 'Помилка експорту' : 'Export failed');
       setTimeout(() => setScreenshotStatus(null), 2500);
     } finally {
       cleanupExportState(mapElement);
@@ -3527,56 +5217,99 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
   };
 
-  const handleCopyPNG = async () => {
+  const handleCopyPNG = async (): Promise<boolean> => {
     const mapElement = prepareExportState();
-    if (!mapElement) return;
+    if (!mapElement) return false;
     setIsCopying(true);
-    setScreenshotStatus(language === 'uk' ? 'Копіювання в буфер (HD)...' : 'Copying to clipboard (HD)...');
+    setScreenshotStatus(language === 'uk' ? 'Створення знімка...' : 'Capturing map...');
     let blob: Blob | null = null;
     try {
-      // Clipboard is intentionally captured at native browser scale.
-      // This matches what Lightshot sees and avoids making Leaflet's raster
-      // tiles look soft by enlarging them 3.5x+ before copying.
       blob = await captureMapBlob('clipboard');
-      if (!navigator.clipboard || typeof window.ClipboardItem === 'undefined') {
-        throw new Error('Clipboard image API is unavailable');
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано!' : 'Map copied to clipboard!');
-      setTimeout(() => setScreenshotStatus(null), 2500);
-    } catch (err) {
-      console.warn('Clipboard write failed, using Web Share / download fallback:', err);
+    } catch (captureErr) {
+      console.warn('Clipboard mode capture failed, falling back to standard capture:', captureErr);
       try {
-        if (!blob) throw new Error('PNG blob was not created');
-        const filename = `tactical_map_${Date.now()}.png`;
-        const file = new File([blob], filename, { type: 'image/png' });
-        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+        blob = await captureMapBlob('export');
+      } catch (retryErr) {
+        console.error('All capture attempts failed:', retryErr);
+      }
+    }
 
-        if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+    if (!blob) {
+      cleanupExportState(mapElement);
+      setIsCopying(false);
+      setScreenshotStatus(language === 'uk' ? 'Помилка знімка карти' : 'Map capture failed');
+      setTimeout(() => setScreenshotStatus(null), 2500);
+      return false;
+    }
+
+    try {
+      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
+      const filename = `tactical_map_${Date.now()}.png`;
+      const file = new File([blob], filename, { type: 'image/png' });
+
+      // 1. On desktop devices, try standard clipboard API first
+      if (!isMobile && navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return true;
+        } catch (clipErr) {
+          console.warn('Desktop clipboard write failed:', clipErr);
+        }
+      }
+
+      // 2. On mobile devices, attempt Web Share API if supported
+      if (isMobile && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+        try {
           await navigator.share({
             files: [file],
             title: language === 'uk' ? 'Тактична карта (UA Mapper)' : 'Tactical Map (UA Mapper)',
           });
           setScreenshotStatus(language === 'uk' ? 'Зображення збережено / поширено!' : 'Map saved / shared!');
           setTimeout(() => setScreenshotStatus(null), 2500);
-          return;
+          return true;
+        } catch (shareErr: any) {
+          if (shareErr?.name === 'AbortError') {
+            // User voluntarily dismissed the share dialog
+            setScreenshotStatus(null);
+            return true;
+          }
+          console.warn('Web Share failed (transient activation or permission), falling back to download:', shareErr);
         }
-
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.download = filename;
-        link.href = url;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        setScreenshotStatus(language === 'uk' ? 'Збережено як файл (буфер заблоковано)' : 'Downloaded as file (clipboard restricted)');
-        setTimeout(() => setScreenshotStatus(null), 2500);
-      } catch (fallbackErr) {
-        console.error('Clipboard fallback failed:', fallbackErr);
-        setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
-        setTimeout(() => setScreenshotStatus(null), 2500);
       }
+
+      // 3. Try mobile clipboard if browser supports it
+      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
+          setTimeout(() => setScreenshotStatus(null), 2500);
+          return true;
+        } catch (_) {}
+      }
+
+      // 4. Universal 100% reliable fallback for all devices: direct file download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setScreenshotStatus(
+        language === 'uk'
+          ? (isMobile ? 'Карту завантажено на телефон!' : 'Карту завантажено як файл!')
+          : 'Map downloaded!'
+      );
+      setTimeout(() => setScreenshotStatus(null), 3000);
+      return true;
+    } catch (fallbackErr) {
+      console.error('Clipboard / download fallback failed:', fallbackErr);
+      setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
+      setTimeout(() => setScreenshotStatus(null), 2500);
+      return false;
     } finally {
       cleanupExportState(mapElement);
       setIsCopying(false);
@@ -3605,6 +5338,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     },
     highlightZoneAt: (lat: number, lng: number, markerId?: string) => {
       handleAutoHighlightZoneAt(lat, lng, markerId);
+    },
+    clearSearchedAreas: () => {
+      handleClearAllAreas();
+    },
+    getMarkerLiveState: (id: string) => {
+      const marker = markersRef.current[id];
+      const live = movementLiveStateRef.current[id];
+      if (!marker && !live) return null;
+      const pos = marker ? marker.getLatLng() : { lat: live!.lat, lng: live!.lng };
+      return {
+        lat: pos.lat,
+        lng: pos.lng,
+        trail: live?.trail?.slice(-5000) || [],
+      };
     }
   }));
 
@@ -3648,12 +5395,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   return (
     <div className="relative w-full h-full" style={{ '--map-font-family': fontCssValue } as React.CSSProperties}>
-      <div id="map-stage-wrapper" className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'}`}>
+      <div 
+        id="map-stage-wrapper" 
+        className={`relative w-full h-full overflow-hidden ${theme === 'light' ? 'bg-slate-50' : 'bg-slate-950'} ${!showLogoAndLegendOnMap ? 'hide-map-branding' : ''}`} 
+        style={{ fontFamily: fontCssValue }}
+      >
         {/* Actual Map Container */}
         <div 
           id="visicom-leaflet-map"
           ref={mapContainerRef} 
-          className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark ? 'dark-map' : ''}`}
+          className={`w-full h-full z-10 ${theme === 'dark' && !activeTileLayer.isDark && activeTileLayer.id !== 'deepstatemap' ? 'dark-map' : ''}`}
           style={{ fontFamily: fontCssValue }}
         />
 
@@ -3662,10 +5413,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           <div ref={searchContainerRef} className="absolute top-4 left-4 z-20 w-72 sm:w-88 flex flex-col gap-2">
             
             {/* Search Input Bar */}
-            <form onSubmit={handleFormSubmitSearch} className={`relative flex items-center border rounded-2xl shadow-xl transition-all ${
+            <form onSubmit={handleFormSubmitSearch} className={`relative flex items-center border rounded-2xl shadow-[0_8px_32px_0_rgba(0,0,0,0.28)] backdrop-blur-2xl backdrop-saturate-150 transition-all ${
               theme === 'light' 
-                ? 'bg-white/95 border-slate-200 text-slate-800' 
-                : 'bg-slate-950/90 border-white/10 text-slate-200'
+                ? 'bg-white/70 border-white/80 text-slate-800 ring-1 ring-black/5' 
+                : 'bg-slate-900/65 border-white/15 text-slate-100 ring-1 ring-white/10'
             }`}>
               <Search className="absolute left-3.5 w-4 h-4 text-slate-400" />
               <input
@@ -3695,13 +5446,48 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
             {/* Quick District & Settlement Buttons */}
             <div className="space-y-2 py-1 max-h-36 overflow-y-auto pr-1">
-              {/* Urban Districts of Kryvyi Rih (Circular Buttons with Initial Letter) */}
+              {/* Urban Districts of Kryvyi Rih & Settlement Toggle */}
               <div className="space-y-1">
-                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider px-0.5">
-                  <span>{language === 'uk' ? 'Райони м. Кривий Ріг' : 'Kryvyi Rih Districts'}</span>
-                  <span className="text-[9px] font-normal text-slate-400 dark:text-slate-500">
-                    {language === 'uk' ? '(натисніть для виділення)' : '(click to highlight)'}
-                  </span>
+                <div className="flex items-center justify-between px-0.5 min-h-[24px]">
+                  {/* Toggle quick settlement buttons */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleQuickSettlements(!showQuickSettlements)}
+                    className={`h-6 px-2.5 rounded-full text-[10px] flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer border whitespace-nowrap ${
+                      showQuickSettlements
+                        ? theme === 'light'
+                          ? 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-300 font-extrabold'
+                          : 'bg-blue-950/60 hover:bg-blue-900/60 text-blue-300 border-blue-500/40 font-extrabold'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white text-slate-700 hover:text-slate-900 border-slate-300/90 font-bold'
+                          : 'bg-slate-900/90 hover:bg-slate-800 text-slate-200 hover:text-white border-white/15 font-bold'
+                    }`}
+                    title={showQuickSettlements ? (language === 'uk' ? 'Приховати кнопки населених пунктів' : 'Hide settlement buttons') : (language === 'uk' ? 'Показати кнопки населених пунктів' : 'Show settlement buttons')}
+                  >
+                    {showQuickSettlements ? (
+                      <>
+                        <ChevronUp className="w-3 h-3 text-blue-500" />
+                        <span>{language === 'uk' ? 'Населені пункти' : 'Settlements'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown className="w-3 h-3 text-slate-400" />
+                        <span>{language === 'uk' ? 'Населені пункти' : 'Settlements'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {searchedAreas.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleClearAllAreas}
+                      className="h-6 px-2.5 rounded-full bg-red-600/90 hover:bg-red-600 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                      title={language === 'uk' ? 'Прибрати всі виділені зони та населені пункти' : 'Clear all highlighted zones & settlements'}
+                    >
+                      <Trash2 className="w-2.5 h-2.5" />
+                      <span>{language === 'uk' ? `Очистити (${searchedAreas.length})` : `Clear (${searchedAreas.length})`}</span>
+                    </button>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {QUICK_DISTRICTS.filter((d) => d.category === 'urban_district').map((dist) => {
@@ -3717,12 +5503,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                         onClick={() => !isLoading && handleToggleDistrict(dist)}
                         disabled={isLoading}
                         title={dist.fullName || dist.label}
-                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-black text-xs sm:text-sm transition-all duration-200 cursor-pointer flex items-center justify-center relative shadow-sm ${
+                        className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full font-black text-xs sm:text-sm backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center justify-center relative shadow-md active:scale-95 ${
                           isHighlighted
-                            ? 'bg-red-500 hover:bg-red-600 text-white shadow-md ring-2 ring-red-400/80 scale-105'
+                            ? 'bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/40 ring-2 ring-red-400 font-black scale-105'
                             : theme === 'light'
-                              ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300/80 hover:border-slate-400'
-                              : 'bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-white/10 hover:border-white/20'
+                              ? 'bg-white hover:bg-slate-100 text-slate-950 border border-slate-300/90 font-black shadow-sm'
+                              : 'bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700/80 font-black shadow-sm'
                         }`}
                       >
                         {isLoading ? (
@@ -3737,79 +5523,104 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               </div>
 
               {/* Other Boundaries, Settlements & Custom Saved Quick Zones */}
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                {/* Toggle for Dark Gray Hromada Demarcation Lines */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    onToggleHromadaBoundaries?.(!showHromadaBoundaries);
-                  }}
-                  title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
-                  className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
-                    showHromadaBoundaries
-                      ? 'bg-slate-700 hover:bg-slate-800 border-slate-600 text-white shadow-sm ring-1 ring-slate-500/50 font-extrabold'
-                      : theme === 'light'
-                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
-                        : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-400'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
-                  <span>{language === 'uk' ? 'Межі громад (темно-сірі)' : 'Hromada Boundaries (Dark Gray)'}</span>
-                </button>
+              {showQuickSettlements && (
+                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                  {/* Toggle for DeepStateMap Occupied Territories */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleDeepStateOccupied?.(!deepStateOccupiedConfig?.enabled);
+                    }}
+                    title={language === 'uk' ? 'Окуповані території та сірі зони (DeepStateMap)' : 'Occupied territories and gray zones (DeepStateMap)'}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1.5 shadow-md active:scale-95 ${
+                      deepStateOccupiedConfig?.enabled
+                        ? 'bg-rose-950/90 hover:bg-rose-900 border-rose-500 text-rose-100 shadow-md ring-1 ring-rose-400 font-black'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                    }`}
+                  >
+                    {isLoadingDeepState ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin text-rose-400" />
+                    ) : (
+                      <span className={`w-1.5 h-1.5 rounded-full border ${deepStateOccupiedConfig?.enabled ? 'bg-rose-500 border-rose-200 animate-pulse' : 'bg-slate-400 border-transparent'}`}></span>
+                    )}
+                    <span>{language === 'uk' ? 'Окуповані території (DeepState)' : 'Occupied (DeepState)'}</span>
+                  </button>
 
-                {allQuickZones.map((dist) => {
-                  const isHighlighted = searchedAreas.some(
-                    (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
-                  );
-                  const isLoading = loadingDistrict === dist.id;
-                  const isCustom = dist.id.startsWith('custom_') || dist.category === 'custom';
+                  {/* Toggle for Dark Gray Hromada Demarcation Lines */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleHromadaBoundaries?.(!showHromadaBoundaries);
+                    }}
+                    title={language === 'uk' ? 'Відображення темно-сірих ліній розмежування по громадам' : 'Toggle dark gray hromada boundaries'}
+                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                      showHromadaBoundaries
+                        ? 'bg-slate-800 hover:bg-slate-900 border-slate-500 text-white shadow-md ring-1 ring-slate-400 font-black'
+                        : theme === 'light'
+                          ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                          : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full border ${showHromadaBoundaries ? 'bg-emerald-400 border-white' : 'bg-slate-400 border-transparent'}`}></span>
+                    <span>{language === 'uk' ? 'Межі громад (темно-сірі)' : 'Hromada Boundaries (Dark Gray)'}</span>
+                  </button>
 
-                  return (
-                    <div key={dist.id} className="relative group inline-flex items-center">
-                      <button
-                        type="button"
-                        onClick={() => !isLoading && handleToggleDistrict(dist)}
-                        disabled={isLoading}
-                        title={dist.fullName || dist.label}
-                        className={`px-2 py-0.5 text-[10px] font-bold rounded-full border transition-all duration-200 cursor-pointer flex items-center gap-1 ${
-                          isHighlighted
-                            ? 'bg-red-500 hover:bg-red-600 border-red-500 text-white shadow-sm ring-1 ring-red-400/50'
-                            : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
-                              ? 'bg-blue-500/15 hover:bg-blue-500/25 border-blue-500/30 text-blue-600 dark:text-blue-300 font-extrabold'
-                              : theme === 'light'
-                                ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-                                : 'bg-slate-900 hover:bg-slate-800 border-white/5 text-slate-300'
-                        }`}
-                      >
-                        {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
-                        <span>{dist.label}</span>
-                      </button>
-                      {isCustom && (
+                  {allQuickZones.map((dist) => {
+                    const isHighlighted = searchedAreas.some(
+                      (area) => area.districtId === dist.id || area.name === dist.label || area.name === dist.fullName
+                    );
+                    const isLoading = loadingDistrict === dist.id;
+                    const isCustom = dist.id.startsWith('custom_') || dist.category === 'custom';
+
+                    return (
+                      <div key={dist.id} className="relative group inline-flex items-center">
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleRemoveCustomQuickZone(dist.id);
-                          }}
-                          title={language === 'uk' ? 'Видалити зі швидких зон' : 'Remove from quick zones'}
-                          className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+                          onClick={() => !isLoading && handleToggleDistrict(dist)}
+                          disabled={isLoading}
+                          title={dist.fullName || dist.label}
+                          className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border backdrop-blur-xl transition-all duration-200 cursor-pointer flex items-center gap-1 shadow-md active:scale-95 ${
+                            isHighlighted
+                              ? 'bg-red-600 hover:bg-red-700 border-red-400 text-white shadow-lg ring-2 ring-red-400/60 font-black'
+                              : dist.id === 'kryvorizkyi_raion' || dist.id === 'kryvyi_rih_city'
+                                ? 'bg-blue-600 hover:bg-blue-700 border-blue-400 text-white font-black shadow-md'
+                                : theme === 'light'
+                                  ? 'bg-white/90 hover:bg-white border-slate-300 text-slate-900 font-bold shadow-xs'
+                                  : 'bg-slate-900/90 hover:bg-slate-800 border-white/20 text-slate-100 font-bold shadow-xs'
+                          }`}
                         >
-                          <X className="w-2.5 h-2.5" />
+                          {isLoading && <Loader2 className="w-2.5 h-2.5 animate-spin text-current" />}
+                          <span>{dist.label}</span>
                         </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                        {isCustom && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveCustomQuickZone(dist.id);
+                            }}
+                            title={language === 'uk' ? 'Видалити зі швидких зон' : 'Remove from quick zones'}
+                            className="ml-0.5 p-0.5 rounded-full hover:bg-red-500/20 text-slate-400 hover:text-red-500 cursor-pointer transition-colors"
+                          >
+                            <X className="w-2.5 h-2.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
 
             {/* Suggestions Dropdown */}
             {showDropdown && (searchQuery.trim().length >= 2 || isSearching || searchResults.length > 0) && (
-              <div className={`border rounded-2xl shadow-2xl max-h-64 overflow-y-auto z-30 transition-all ${
+              <div className={`border rounded-2xl shadow-[0_16px_40px_rgba(0,0,0,0.35)] backdrop-blur-2xl backdrop-saturate-150 max-h-64 overflow-y-auto z-30 transition-all ${
                 theme === 'light' 
-                  ? 'bg-white/95 border-slate-200 text-slate-800' 
-                  : 'bg-slate-950/95 border-white/10 text-slate-200'
+                  ? 'bg-white/80 border-white/80 text-slate-800 ring-1 ring-black/5' 
+                  : 'bg-slate-950/80 border-white/15 text-slate-200 ring-1 ring-white/10'
               }`}>
                 {/* Quick direct zone action */}
                 {searchQuery.trim().length >= 2 && (
@@ -3876,7 +5687,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
                               className="px-2 py-1 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white font-bold text-[10px] flex items-center gap-1 transition-all cursor-pointer shadow-xs"
                               title={language === 'uk' ? 'Виділити зону на карті' : 'Highlight zone on map'}
                             >
-                              <Plus className="w-3 h-3" />
+                              <Plus className="w-3.5 h-3.5" />
                               <span>{language === 'uk' ? 'Виділити' : 'Highlight'}</span>
                             </button>
 
@@ -3908,59 +5719,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               </div>
             )}
 
-            {/* List of active highlighted areas */}
-            {searchedAreas.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto py-1">
-                {searchedAreas.map((area) => {
-                  const isSavedInCustom = customQuickZones.some(
-                    (q) => q.label.toLowerCase() === area.name.trim().toLowerCase() || q.fullName.toLowerCase() === area.name.trim().toLowerCase()
-                  );
-                  return (
-                    <div
-                      key={area.id}
-                      className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold rounded-full border bg-red-500/10 border-red-500/30 text-red-400 shadow-sm"
-                    >
-                      <span>{area.name}</span>
-                      
-                      {/* Button to add active zone to favorites */}
-                      <button
-                        type="button"
-                        onClick={() => addZoneToQuickButtons(area.name, area.geojson, area.lat, area.lon)}
-                        disabled={isSavedInCustom}
-                        title={isSavedInCustom ? (language === 'uk' ? 'Уже в обраному' : 'Already in favorites') : (language === 'uk' ? 'Додати в обране' : 'Add to favorites')}
-                        className={`p-0.5 rounded transition-colors ${
-                          isSavedInCustom ? 'text-amber-400 cursor-default' : 'text-slate-400 hover:text-amber-400 cursor-pointer'
-                        }`}
-                      >
-                        <Star className={`w-2.5 h-2.5 ${isSavedInCustom ? 'fill-amber-400 text-amber-400' : ''}`} />
-                      </button>
-
-                      <button
-                        onClick={() => handleRemoveArea(area.id)}
-                        className="hover:text-red-200 transition-colors cursor-pointer"
-                        title={language === 'uk' ? 'Прибрати виділення' : 'Remove highlight'}
-                      >
-                        <X className="w-2.5 h-2.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-                
-                {/* Clear All pill */}
-                {searchedAreas.length > 1 && (
-                  <button
-                    onClick={handleClearAllAreas}
-                    className={`px-2.5 py-1 text-[10px] font-extrabold rounded-full border transition-all cursor-pointer ${
-                      theme === 'light'
-                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600'
-                        : 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-300'
-                    }`}
-                  >
-                    {language === 'uk' ? 'Очистити все' : 'Clear all'}
-                  </button>
-                )}
-              </div>
-            )}
+            {/* List of active highlighted areas removed as per user request */}
           </div>
         )}
 
@@ -3974,18 +5733,36 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }} 
         />
 
+        {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
+        {mapLegendConfig && mapLegendConfig.enabled && (
+          <MapLegendWidget
+            config={mapLegendConfig}
+            onUpdateConfig={(cfg) => onUpdateMapLegendConfig?.(cfg)}
+            language={language}
+            theme={theme || 'dark'}
+            fontFamily={fontCssValue}
+          />
+        )}
+
         {/* Tactical Legend Box - captured in PNG */}
-        {showLegendOverlay && (
-          <div className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
-            (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
-          }`}>
-            <div className={`tactical-legend-wrapper px-4 py-2 md:px-6 md:py-1.5 border rounded-2xl md:rounded-full shadow-2xl transition-all flex items-center justify-center max-w-[92vw] sm:max-w-[85vw] pointer-events-auto ${
-              theme === 'light' 
-                ? 'bg-slate-950/50 border-slate-900/30 text-slate-100' 
-                : 'bg-white/50 border-white/20 text-slate-950'
-            }`}>
+        {(showLegendOverlay || isExporting || isCopying) && (
+          <div 
+            className={`tactical-legend-container absolute left-0 right-0 z-20 select-none pointer-events-none transition-all duration-300 flex justify-center ${
+              (selectedMarkerId && !(isExporting || isCopying)) ? 'bottom-[250px] md:bottom-6' : 'bottom-6'
+            }`}
+            style={{ fontFamily: fontCssValue }}
+          >
+            <div 
+              className={`tactical-legend-wrapper px-4 py-2 md:px-6 md:py-1.5 border rounded-2xl md:rounded-full shadow-2xl transition-all flex items-center justify-center max-w-[92vw] sm:max-w-[85vw] pointer-events-auto ${
+                theme === 'light' 
+                  ? 'bg-slate-950/50 border-slate-900/30 text-slate-100' 
+                  : 'bg-white/50 border-white/20 text-slate-950'
+              }`}
+              style={{ fontFamily: fontCssValue }}
+            >
               <p 
-                className="tactical-legend-text font-aptos text-[7.5px] sm:text-[8px] md:text-[9px] font-bold opacity-95 text-center whitespace-normal md:whitespace-nowrap leading-relaxed"
+                className="tactical-legend-text text-[7.5px] sm:text-[8px] md:text-[9px] font-bold opacity-95 text-center whitespace-normal md:whitespace-nowrap leading-relaxed"
+                style={{ fontFamily: fontCssValue }}
               >
                 {legendOverlayText !== undefined && legendOverlayText !== '' 
                   ? legendOverlayText 
@@ -3999,77 +5776,438 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         {/* Floating Line Drawing Mobile/Desktop Control Toolbar */}
         {!(isExporting || isCopying) && interactionMode === 'line' && (
-          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[95vw] animate-fade-in">
-            <div className={`px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-3.5 ${
+          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[96vw] animate-fade-in">
+            {/* Warning banner if selected line has excessive editing points */}
+            {selectedDrawnLine && selectedDrawnLine.points.length > 20 && (
+              <div className="px-3.5 py-1.5 rounded-2xl bg-amber-500 text-slate-950 font-extrabold text-xs shadow-2xl flex items-center gap-2.5 border-2 border-amber-300 animate-pulse">
+                <span>⚠️ {language === 'uk' ? `У вибраній лінії ${selectedDrawnLine.points.length} точок (забагато для зручного редагування).` : `Line has ${selectedDrawnLine.points.length} points (too many for easy editing).`}</span>
+                <button
+                  type="button"
+                  onClick={() => handleOptimizeLinePoints(16)}
+                  className="px-2.5 py-1 bg-slate-950 text-amber-300 hover:bg-slate-900 rounded-xl text-xs font-black shadow transition-all cursor-pointer hover:scale-105 active:scale-95"
+                >
+                  {language === 'uk' ? '✨ Зменшити до ~16 точок' : '✨ Reduce to ~16 pts'}
+                </button>
+              </div>
+            )}
+
+            <div className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-3 ${
               theme === 'light'
                 ? 'bg-slate-900/90 border-slate-700/80 text-white'
                 : 'bg-slate-950/90 border-white/20 text-white'
             }`}>
-              {/* Line Status Info */}
-              <div className="flex items-center gap-2 border-r border-white/20 pr-2.5 sm:pr-3.5">
-                <PenTool className="w-4 h-4 text-emerald-400 animate-pulse flex-shrink-0" />
-                <div className="flex flex-col text-left">
-                  <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
-                    {language === 'uk' ? 'Нанесення лінії' : 'Line Drawing'}
+              {/* Technique Switcher: Freehand (Paint) vs Point-by-point */}
+              <div className="flex items-center p-0.5 rounded-xl bg-black/40 border border-white/10">
+                <button
+                  type="button"
+                  onClick={() => onChangeLineDrawMethod?.('freehand')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    lineDrawMethod === 'freehand'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title={language === 'uk' ? 'Малювання лінії мишкою або пальцем як в Paint з авто-згладжуванням' : 'Freehand draw with mouse/touch like Paint with auto-smoothing'}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'Від руки (Paint)' : 'Freehand (Paint)'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeLineDrawMethod?.('points')}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    lineDrawMethod === 'points'
+                      ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20 font-black'
+                      : 'text-slate-300 hover:text-white hover:bg-white/5'
+                  }`}
+                  title={language === 'uk' ? 'Покрокове нанесення лінії по окремих точках на карті' : 'Point-by-point click line vertices'}
+                >
+                  <PenTool className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'По точках' : 'Point-by-point'}</span>
+                </button>
+              </div>
+
+              {/* Endpoints Selectors (Початок / Кінець) */}
+              <div className="flex items-center gap-1.5 px-2 border-l border-r border-white/15">
+                {/* Start endpoint */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const order: LineEndpointType[] = ['none', 'arrow', 'dot', 'explosion', 'fade'];
+                    const idx = order.indexOf(lineStartStyle);
+                    const next = order[(idx + 1) % order.length];
+                    onChangeLineStartStyle?.(next);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-white/10 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Натисніть щоб змінити початкову точку лінії' : 'Click to change start endpoint'}
+                >
+                  <span className="text-slate-400 text-[10px]">{language === 'uk' ? 'Початок:' : 'Start:'}</span>
+                  <span className="text-emerald-400 font-extrabold">
+                    {lineStartStyle === 'arrow' && '➔'}
+                    {lineStartStyle === 'dot' && '⏺'}
+                    {lineStartStyle === 'explosion' && '💥'}
+                    {lineStartStyle === 'fade' && '✨'}
+                    {lineStartStyle === 'custom_icon' && '🖼️'}
+                    {lineStartStyle === 'none' && '—'}
                   </span>
-                  <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
-                    {draftLinePoints.length === 0 ? (
-                      <span className="text-slate-400 italic">
-                        {language === 'uk' ? 'Торкніться карти...' : 'Tap on map...'}
-                      </span>
-                    ) : (
-                      <>
-                        <strong>{draftLinePoints.length}</strong> {language === 'uk' ? 'точок' : 'pts'}
-                        {draftLinePoints.length >= 2 && (
-                          <span className="ml-1.5 text-amber-300 font-bold">
-                            ({(calculateDraftLineDistance() >= 1000 
-                              ? `${(calculateDraftLineDistance() / 1000).toFixed(2)} км` 
-                              : `${Math.round(calculateDraftLineDistance())} м`)})
-                          </span>
-                        )}
-                      </>
-                    )}
+                </button>
+
+                {/* End endpoint */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const order: LineEndpointType[] = ['none', 'arrow', 'dot', 'explosion', 'fade'];
+                    const idx = order.indexOf(lineEndStyle);
+                    const next = order[(idx + 1) % order.length];
+                    onChangeLineEndStyle?.(next);
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 text-[11px] font-bold flex items-center gap-1 border border-white/10 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Натисніть щоб змінити кінцеву точку лінії' : 'Click to change end endpoint'}
+                >
+                  <span className="text-slate-400 text-[10px]">{language === 'uk' ? 'Кінець:' : 'End:'}</span>
+                  <span className="text-emerald-400 font-extrabold">
+                    {lineEndStyle === 'arrow' && '➔'}
+                    {lineEndStyle === 'dot' && '⏺'}
+                    {lineEndStyle === 'explosion' && '💥'}
+                    {lineEndStyle === 'fade' && '✨'}
+                    {lineEndStyle === 'custom_icon' && '🖼️'}
+                    {lineEndStyle === 'none' && '—'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Specific Mode Controls */}
+              {lineDrawMethod === 'freehand' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 animate-pulse" />
+                      <span>{language === 'uk' ? 'Режим Paint' : 'Paint Mode'}</span>
+                    </span>
+                    <span className="text-xs font-semibold whitespace-nowrap">
+                      {justSmoothedNotice ? (
+                        <span className="text-emerald-400 font-extrabold animate-bounce inline-block">
+                          {language === 'uk' ? '✨ Лінію авто-згладжено!' : '✨ Line auto-smoothed!'}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">
+                          {language === 'uk' ? 'Проведіть лінію по карті' : 'Draw line on map'}
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Undo last drawn line in freehand mode */}
+                  {drawnLines.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const last = drawnLines[drawnLines.length - 1];
+                        if (last) onDeleteDrawnLine(last.id);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
+                      title={language === 'uk' ? 'Видалити останню намальовану лінію' : 'Undo last drawn line'}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати лінію' : 'Undo Line'}</span>
+                    </button>
+                  )}
+                </div>
+              ) : (
+                /* Point-by-point controls */
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="flex flex-col text-left pr-1.5">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-400">
+                      {language === 'uk' ? 'По точках' : 'Points'}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-200 whitespace-nowrap">
+                      {draftLinePoints.length === 0 ? (
+                        <span className="text-slate-400 italic">
+                          {language === 'uk' ? 'Торкніться карти...' : 'Tap on map...'}
+                        </span>
+                      ) : (
+                        <>
+                          <strong>{draftLinePoints.length}</strong> {language === 'uk' ? 'точок' : 'pts'}
+                          {draftLinePoints.length >= 2 && (
+                            <span className="ml-1 text-amber-300 font-bold">
+                              ({(calculateDraftLineDistance() >= 1000 
+                                ? `${(calculateDraftLineDistance() / 1000).toFixed(2)} км` 
+                                : `${Math.round(calculateDraftLineDistance())} м`)})
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {/* Undo point */}
+                  <button
+                    onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
+                    disabled={draftLinePoints.length === 0}
+                    className="px-2.5 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
+                    title={language === 'uk' ? 'Скасувати останню точку' : 'Undo last vertex'}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати точку' : 'Undo'}</span>
+                  </button>
+
+                  {/* Finish Line */}
+                  <button
+                    onClick={handleFinishDraftLine}
+                    disabled={draftLinePoints.length < 2}
+                    className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-400/50 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
+                  </button>
+
+                  {/* Clear / Cancel */}
+                  {draftLinePoints.length > 0 && (
+                    <button
+                      onClick={() => setDraftLinePoints([])}
+                      className="p-1.5 sm:p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all border border-red-500/30 cursor-pointer active:scale-95"
+                      title={language === 'uk' ? 'Очистити чернетку' : 'Clear draft'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* Selected line points & quick optimization */}
+              {selectedDrawnLine && (
+                <div className="flex items-center gap-2 pl-2 border-l border-white/15">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">
+                      {language === 'uk' ? 'Точки:' : 'Points:'}
+                    </span>
+                    <span className={`text-xs font-black ${selectedDrawnLine.points.length > 22 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {selectedDrawnLine.points.length} {language === 'uk' ? 'вузлів' : 'pts'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleOptimizeLinePoints(16)}
+                    className="px-2 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 text-[11px] font-bold border border-emerald-500/30 transition-colors cursor-pointer flex items-center gap-1 active:scale-95"
+                    title={language === 'uk' ? 'Зменшити кількість точок для зручного перетягування' : 'Reduce edit points to optimal ~16'}
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    <span>{language === 'uk' ? 'Зменшити точки' : 'Reduce Points'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Ruler / Measure Tool Toolbar with Multi-City & Multi-Track support */}
+        {!(isExporting || isCopying) && interactionMode === 'measure' && (
+          <div className="absolute bottom-6 sm:bottom-8 left-1/2 -translate-x-1/2 z-40 select-none pointer-events-auto flex flex-col items-center gap-2 max-w-[96vw] animate-fade-in">
+            {/* Track Switcher if multiple tracks exist */}
+            {measureTracks.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto max-w-full px-2 py-1 rounded-full bg-slate-950/80 border border-white/10 backdrop-blur-md">
+                {measureTracks.map((tr) => {
+                  const isCur = tr.id === activeTrackId;
+                  const dist = tr.points.length >= 2 ? formatDistance(calculateDistanceMeters(tr.points[0], tr.points[tr.points.length - 1])) : null;
+                  return (
+                    <button
+                      key={tr.id}
+                      type="button"
+                      onClick={() => setActiveTrackId(tr.id)}
+                      className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                        isCur
+                          ? 'bg-white/20 text-white shadow-sm ring-1 ring-white/30'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                      }`}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full inline-block flex-shrink-0"
+                        style={{ backgroundColor: tr.color }}
+                      />
+                      <span className="truncate max-w-[120px]">{tr.name}</span>
+                      {dist && <span className="opacity-75 font-mono text-[10px]">({dist})</span>}
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={() => handleAddTrack()}
+                  className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 flex items-center gap-1 transition-colors cursor-pointer"
+                  title={language === 'uk' ? 'Додати новий вимір (інший колір/маршрут)' : 'Add new measurement track'}
+                >
+                  <Plus className="w-3 h-3" />
+                  <span>{language === 'uk' ? 'Новий вимір' : 'New track'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Main Ruler Control Bar */}
+            <div
+              className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-2xl border shadow-2xl backdrop-blur-md flex flex-wrap items-center justify-center gap-2 sm:gap-2.5 ${
+                theme === 'light'
+                  ? 'bg-slate-900/90 border-slate-700/80 text-white'
+                  : 'bg-slate-950/90 border-white/20 text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2 pr-2.5 border-r border-white/15">
+                <div
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-slate-950 font-black shadow-xs"
+                  style={{ backgroundColor: activeTrack.color }}
+                >
+                  <Ruler className="w-4 h-4" />
+                </div>
+                <div className="flex flex-col text-left min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 truncate max-w-[100px]">
+                      {activeTrack.name}
+                    </span>
+                  </div>
+                  <span
+                    className="text-xs font-black truncate"
+                    style={{ color: activeTrack.color }}
+                  >
+                    {measurePoints.length >= 2
+                      ? formatDistance(totalMeasureDistance)
+                      : language === 'uk'
+                      ? 'Клікніть на карту'
+                      : 'Click on map'}
                   </span>
                 </div>
               </div>
 
-              {/* Control Action Buttons */}
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                {/* Undo last vertex point */}
-                <button
-                  onClick={() => setDraftLinePoints((prev) => prev.slice(0, -1))}
-                  disabled={draftLinePoints.length === 0}
-                  className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-bold border border-amber-500/30 cursor-pointer active:scale-95"
-                  title={language === 'uk' ? 'Скасувати останню точку' : 'Undo last vertex'}
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{language === 'uk' ? 'Скасувати точку' : 'Undo Point'}</span>
-                </button>
+              {/* Point counter */}
+              <div className="flex items-center gap-1 text-xs text-slate-300 font-medium px-0.5">
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-black text-[11px]">
+                  {measurePoints.length}{' '}
+                  {language === 'uk'
+                    ? measurePoints.length === 1
+                      ? 'точка'
+                      : measurePoints.length >= 2 && measurePoints.length <= 4
+                      ? 'точки'
+                      : 'точок'
+                    : measurePoints.length === 1
+                    ? 'point'
+                    : 'points'}
+                </span>
+              </div>
 
-                {/* Finish Line */}
-                <button
-                  onClick={handleFinishDraftLine}
-                  disabled={draftLinePoints.length < 2}
-                  className="px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 disabled:opacity-30 disabled:pointer-events-none transition-all flex items-center gap-1.5 text-xs font-extrabold border border-emerald-400/50 shadow-lg shadow-emerald-500/20 cursor-pointer active:scale-95"
-                >
-                  <Check className="w-4 h-4 stroke-[3]" />
-                  <span>{language === 'uk' ? 'Завершити' : 'Finish'}</span>
-                </button>
+              {/* Button: City Ruler Measurements Modal */}
+              <button
+                type="button"
+                onClick={() => setIsCityRulerModalOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black flex items-center gap-1.5 shadow-md transition-all active:scale-95 cursor-pointer"
+                title={
+                  language === 'uk'
+                    ? 'Виміри між містами та швидкий перехід до міст'
+                    : 'City ruler measurements & quick jump'
+                }
+              >
+                <Compass className="w-3.5 h-3.5" />
+                <span>{language === 'uk' ? 'Виміри в містах' : 'City Presets'}</span>
+              </button>
 
-                {/* Clear / Cancel */}
-                {draftLinePoints.length > 0 && (
+              {/* Quick Jump Chips (Popular cities) */}
+              <div className="hidden lg:flex items-center gap-1 pl-1 border-l border-white/15">
+                <span className="text-[10px] text-slate-400 font-medium mr-0.5">
+                  {language === 'uk' ? 'Міста:' : 'Cities:'}
+                </span>
+                {MAJOR_CITIES_RULER.slice(0, 4).map((c) => (
                   <button
-                    onClick={() => setDraftLinePoints([])}
-                    className="p-1.5 sm:p-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all border border-red-500/30 cursor-pointer active:scale-95"
-                    title={language === 'uk' ? 'Очистити чернетку' : 'Clear draft'}
+                    key={c.id}
+                    type="button"
+                    onClick={() => handleJumpToCity(c, false)}
+                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-slate-300 hover:text-white text-[10px] font-bold border border-white/10 transition-colors cursor-pointer"
+                    title={
+                      language === 'uk'
+                        ? `Перейти до м. ${c.nameUa}`
+                        : `Jump to ${c.nameEn}`
+                    }
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    {c.nameUa.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-1.5 border-l border-white/15 pl-2">
+                {/* Undo last point button */}
+                <button
+                  type="button"
+                  onClick={() => setMeasurePoints((prev) => prev.slice(0, -1))}
+                  disabled={measurePoints.length === 0}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    measurePoints.length > 0
+                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 active:scale-95'
+                      : 'opacity-40 cursor-not-allowed text-slate-500 bg-slate-800/40'
+                  }`}
+                  title={
+                    language === 'uk'
+                      ? 'Видалити останню точку (Backspace / Del)'
+                      : 'Undo last point (Backspace / Del)'
+                  }
+                >
+                  <Undo2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">
+                    {language === 'uk' ? 'Скасувати' : 'Undo'}
+                  </span>
+                </button>
+
+                {/* Clear all measure points button */}
+                <button
+                  type="button"
+                  onClick={() => setMeasurePoints([])}
+                  disabled={measurePoints.length === 0}
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    measurePoints.length > 0
+                      ? 'bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 active:scale-95'
+                      : 'opacity-40 cursor-not-allowed text-slate-500 bg-rose-500/5'
+                  }`}
+                  title={
+                    language === 'uk'
+                      ? 'Очистити точки цього виміру (Esc)'
+                      : 'Clear current track points (Esc)'
+                  }
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{language === 'uk' ? 'Очистити' : 'Clear'}</span>
+                </button>
+
+                {/* Delete track if multiple tracks */}
+                {measureTracks.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteTrack(activeTrackId)}
+                    className="p-1.5 rounded-lg bg-white/5 hover:bg-rose-500/20 text-slate-400 hover:text-rose-300 transition-colors cursor-pointer"
+                    title={language === 'uk' ? 'Видалити цей вимір' : 'Delete this measurement track'}
+                  >
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
             </div>
+
+            {measurePoints.length > 0 && (
+              <div className="text-[10px] text-amber-200/90 bg-slate-950/85 px-3 py-1 rounded-full border border-amber-400/30 backdrop-blur-xs flex items-center gap-1.5 shadow-md">
+                <span>
+                  💡{' '}
+                  {language === 'uk'
+                    ? 'Перетягуйте точки для зміни позиції. Клік або ПКМ по точці для видалення.'
+                    : 'Drag points to move. Click or right-click a point to delete.'}
+                </span>
+              </div>
+            )}
           </div>
         )}
+
+        {/* City Ruler Modal */}
+        <CityRulerModal
+          isOpen={isCityRulerModalOpen}
+          onClose={() => setIsCityRulerModalOpen(false)}
+          language={language}
+          theme={theme}
+          onApplyInterCityPreset={handleApplyInterCityPreset}
+          onJumpToCity={handleJumpToCity}
+          onAddCityPointToActive={handleAddCityPointToActive}
+        />
 
         {!(isExporting || isCopying) && lastAutoZoneName && (
           <div className="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 z-30 bg-slate-900/95 border border-amber-500/50 px-4 py-2 rounded-2xl shadow-2xl flex items-center gap-3 text-white backdrop-blur-md animate-fade-in max-w-[92vw]">
@@ -4094,23 +6232,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         {/* Watermark branding overlay for Кривий Ріг Alerts and @krrig_alerts - NOT blurred, background/border 50% transparent */}
 
         <div className="tactical-logo-container-outer absolute top-4 left-0 right-0 z-20 pointer-events-none select-none flex justify-center">
-          <div className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
-            theme === 'light' 
-              ? 'bg-slate-950/50 border-slate-900/30' 
-              : 'bg-white/50 border-white/20'
-          }`}>
+          <div 
+            className={`tactical-logo-container px-4 py-1.5 rounded-full border flex flex-nowrap items-center justify-center gap-1.5 sm:gap-2 shadow-2xl transition-all max-w-[95vw] ${
+              theme === 'light' 
+                ? 'bg-slate-950/50 border-slate-900/30' 
+                : 'bg-white/50 border-white/20'
+            }`}
+            style={{ fontFamily: fontCssValue }}
+          >
             <span 
-              className="tactical-logo-title font-sans font-bold tracking-tight text-[15.5px] sm:text-[18.5px] leading-none flex items-center"
-              style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
+              className="tactical-logo-title font-bold tracking-tight text-[15.5px] sm:text-[18.5px] leading-none flex items-center"
+              style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)', fontFamily: fontCssValue }}
             >
               UA Mapper
             </span>
             <span className={`inline-block w-[1px] h-3.5 mx-0.5 sm:mx-1 self-center ${
               theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
             }`} />
-            <span className={`tactical-logo-author font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[8.5px] sm:text-[9.5px] ${
-              theme === 'light' ? 'text-white' : 'text-slate-950'
-            }`}>
+            <span 
+              className={`tactical-logo-author font-bold tracking-wider uppercase leading-none flex items-center text-[8.5px] sm:text-[9.5px] ${
+                theme === 'light' ? 'text-white' : 'text-slate-950'
+              }`}
+              style={{ fontFamily: fontCssValue }}
+            >
               BY @KRRIG_ALERTS
             </span>
             <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 ml-0.5 flex-shrink-0" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -4137,15 +6281,31 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             justify-content: center !important;
             overflow: visible !important;
           }
-          .leaflet-container {
-            font-family: ${fontCssValue} !important;
-          }
+          #map-stage-wrapper,
+          #map-stage-wrapper *,
+          .tactical-logo-container,
+          .tactical-logo-container *,
+          .tactical-logo-title,
+          .tactical-logo-author,
+          .tactical-legend-container,
+          .tactical-legend-container *,
+          .tactical-legend-wrapper,
+          .tactical-legend-text,
+          #map-legend-widget-container,
+          #map-legend-widget-container *,
+          .leaflet-container,
+          .leaflet-container *,
           .settlement-label-marker,
+          .settlement-label-marker *,
           .custom-leaflet-div-icon,
+          .custom-leaflet-div-icon *,
           .leaflet-marker-icon,
           .leaflet-popup,
+          .leaflet-popup *,
           .leaflet-tooltip,
-          .map-measurement-badge {
+          .map-measurement-badge,
+          .exporting-map,
+          .exporting-map * {
             font-family: ${fontCssValue} !important;
           }
           /* Theme map filter */
@@ -4190,6 +6350,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .leaflet-popup-tip-container {
             margin-top: -1px;
           }
+          /* Measure node drag cursors and popup styles */
+          .measure-node-icon {
+            cursor: grab !important;
+          }
+          .measure-node-icon:active,
+          .leaflet-dragging .measure-node-icon {
+            cursor: grabbing !important;
+          }
+          .measure-point-popup .leaflet-popup-content-wrapper {
+            background: #0f172a;
+            border: 1px solid rgba(250, 204, 21, 0.4);
+            color: #f8fafc;
+            border-radius: 16px;
+            padding: 6px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+          }
+          .measure-point-popup .leaflet-popup-tip {
+            background: #0f172a;
+          }
           /* Hide selected marker outline and box-shadow during image export/copy */
           .exporting-map .selected-marker-highlight {
             outline: none !important;
@@ -4218,6 +6397,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             justify-content: center !important;
             line-height: 1 !important;
           }
+          /* Live map font rules for logo, legend, and conventional signs widget */
+          .tactical-logo-title,
+          .tactical-logo-author,
+          .tactical-legend-text,
+          .tactical-legend-wrapper,
+          #map-legend-widget-container,
+          #map-legend-widget-container * {
+            font-family: ${fontCssValue} !important;
+          }
+
+          /* Hide logo and legend on live map when toggle is switched off */
+          .hide-map-branding .tactical-logo-container-outer,
+          .hide-map-branding .tactical-legend-container {
+            display: none !important;
+          }
+
+          /* In export / clipboard copy, ALWAYS show logo and legend */
+          .exporting-map .tactical-logo-container-outer,
+          .exporting-map .tactical-legend-container,
+          .exporting-map #map-legend-widget-container {
+            display: flex !important;
+          }
+
           /* Custom overrides during image export on all screen sizes to keep layout pristine */
           .exporting-map .tactical-logo-container-outer {
             top: 20px !important;
@@ -4240,9 +6442,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             max-width: 90% !important;
           }
           .exporting-map .tactical-logo-title {
+            font-family: ${fontCssValue} !important;
             font-size: 18.5px !important;
           }
           .exporting-map .tactical-logo-author {
+            font-family: ${fontCssValue} !important;
             font-size: 9.5px !important;
           }
           .exporting-map .tactical-logo-container svg {
@@ -4267,6 +6471,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             max-width: 88% !important;
           }
           .exporting-map .tactical-legend-text {
+            font-family: ${fontCssValue} !important;
             font-size: 12px !important;
             font-weight: 700 !important;
             line-height: 1.45 !important;
@@ -4298,7 +6503,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               display: none !important;
             }
             .exporting-map .tactical-logo-container-outer,
-            .exporting-map .tactical-legend-container {
+            .exporting-map .tactical-legend-container,
+            .exporting-map #map-legend-widget-container {
               display: flex !important;
             }
           }
@@ -4316,6 +6522,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         alertsStrokeWidth={alertsStrokeWidth}
         language={language}
         onAlertClick={onAlertClick}
+      />
+
+      {/* Real-time Live Neptun Threats Layer */}
+      <LiveThreatsLayer
+        map={mapInstanceRef.current}
+        isLiveMode={isLiveMode}
+        threats={liveThreats}
+        showTrails={showLiveTrails}
+        language={language}
       />
 
       {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}

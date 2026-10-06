@@ -1,76 +1,112 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, WatermarkType, AirAlert, MapFontFamily, IconPreset } from './types';
+import JSZip from 'jszip';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat, NeptunMessage } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
 import { TelegramExportModal } from './components/TelegramExportModal';
 import { AirAlertsPanel } from './components/AirAlertsPanel';
+import { LiveModeToggle } from './components/LiveModeToggle';
+import { LiveMessagesFeed } from './components/LiveMessagesFeed';
 import { fetchActiveAlerts } from './utils/alertsService';
+import { fetchNeptunThreats, fetchNeptunMessages } from './utils/neptunService';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
-import { Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell } from 'lucide-react';
+import { preloadFontEmbedCSS } from './utils/mapFonts';
+import { RotateCw, Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
 import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'carto_dark',
-    nameEn: 'CartoDB Dark Matter (Clean, No Watermark)',
-    nameUa: 'CartoDB Темна (Без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png',
-    tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
-    requiresKey: false,
-    isDark: true,
-  },
-  {
-    id: 'esri_dark_gray',
-    nameEn: 'Esri Dark Gray Canvas (Clean, No Watermark)',
-    nameUa: 'Esri Темна сіра (Без водяних знаків)',
+    nameEn: 'Dark Canvas (Clean)',
+    nameUa: 'Темна (Чиста, без водяних знаків)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, HERE, NGA, USGS',
+    attribution: '© Esri, HERE, Garmin, NGA, USGS',
     requiresKey: false,
     isDark: true,
-  },
-  {
-    id: 'carto_voyager',
-    nameEn: 'CartoDB Voyager (Clean, No Watermark)',
-    nameUa: 'CartoDB Детальна Voyager (Світла, без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
-    tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
-    requiresKey: false,
-    isDark: false,
   },
   {
     id: 'carto_light',
-    nameEn: 'CartoDB Positron / Light (Clean, No Watermark)',
-    nameUa: 'CartoDB Світла Positron (Без водяних знаків)',
-    url: 'https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png',
+    nameEn: 'Light Canvas (Clean)',
+    nameUa: 'Світла (Чиста, без водяних знаків)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
     tms: false,
-    subdomains: 'abcd',
-    maxZoom: 20,
-    attribution: '© CartoDB, © OpenStreetMap',
+    subdomains: '',
+    maxZoom: 19,
+    attribution: '© Esri, HERE, Garmin, NGA, USGS',
     requiresKey: false,
     isDark: false,
   },
   {
-    id: 'esri_light_gray',
-    nameEn: 'Esri Light Gray Canvas (Clean, No Watermark)',
-    nameUa: 'Esri Світла сіра Canvas (Без водяних знаків)',
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    id: 'carto_voyager',
+    nameEn: 'Detailed Street Map',
+    nameUa: 'Детальна вулична (Street Map)',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, HERE, NGA, USGS',
+    attribution: '© Esri, HERE, Garmin, USGS',
     requiresKey: false,
     isDark: false,
+  },
+  {
+    id: 'deepstatemap',
+    nameEn: 'DeepStateMap.live (Tactical)',
+    nameUa: 'DeepStateMap.live (Тактична карта)',
+    url: 'https://st1.deepstatemap.live/styles/DSUkraineUk/{z}/{x}/{y}{r}.webp',
+    tms: false,
+    subdomains: '',
+    minZoom: 2,
+    maxZoom: 19,
+    attribution: '© DeepStateMap.live, OpenStreetMap contributors',
+    requiresKey: false,
+    isDark: false,
+  },
+  {
+    id: 'apple_maps',
+    nameEn: 'Apple Maps (Standard Light, Clean)',
+    nameUa: 'Apple Maps (Світла, без водяних знаків)',
+    url: '/api/tiles/apple/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: '',
+    minZoom: 1,
+    maxZoom: 19,
+    attribution: '© Apple Maps (maps.apple.com)',
+    requiresKey: false,
+    isDark: false,
+  },
+  {
+    id: 'apple_maps_satellite',
+    nameEn: 'Apple Maps Satellite (Clean, High-Res)',
+    nameUa: 'Apple Maps Супутник (Чистий супутник Apple)',
+    url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
+    tms: false,
+    subdomains: '',
+    minZoom: 2,
+    maxZoom: 19,
+    attribution: '© Apple Maps (maps.apple.com)',
+    requiresKey: false,
+    isDark: true,
+  },
+  {
+    id: 'apple_maps_hybrid',
+    nameEn: 'Apple Maps Hybrid (Satellite + Labels)',
+    nameUa: 'Apple Maps Гібрид (Супутник + Підписи українською)',
+    url: '/api/tiles/apple-satellite/{z}/{x}/{y}.jpg',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
+    tms: false,
+    subdomains: '',
+    minZoom: 2,
+    maxZoom: 19,
+    attribution: '© Apple Maps (maps.apple.com)',
+    requiresKey: false,
+    isDark: true,
   },
   {
     id: 'osm',
@@ -87,12 +123,13 @@ const TILE_LAYERS: TileLayerConfig[] = [
   {
     id: 'esri_satellite',
     nameEn: 'Esri World Imagery (Satellite)',
-    nameUa: 'Супутникова карта Esri Satellite',
+    nameUa: 'Супутникова карта Esri Satellite (Підписи міст та сіл українською)',
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    overlayUrl: '/api/tiles/apple-hybrid/{z}/{x}/{y}.png',
     tms: false,
     subdomains: '',
     maxZoom: 19,
-    attribution: '© Esri, DigitalGlobe, GeoEye, Earthstar Geographics',
+    attribution: '© Esri, DigitalGlobe, © Apple Maps (Підписи українською)',
     requiresKey: false,
     isDark: true,
   },
@@ -110,75 +147,8 @@ const TILE_LAYERS: TileLayerConfig[] = [
   },
 ];
 
-// Default Ukraine Air Threat Tactical Markers in Kryvyi Rih region
-const DEFAULT_MARKERS: CustomMarker[] = [
-  {
-    id: 'threat_krr_center',
-    lat: 47.90,
-    lng: 33.34,
-    title: 'Кривий Ріг (Центр)',
-    description: 'Розвідувальний БпЛА здійснює збір даних',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 220,
-    iconType: 'uav-recon',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.83,
-    endLng: 33.22,
-  },
-  {
-    id: 'threat_krr_saksahan',
-    lat: 47.95,
-    lng: 33.41,
-    title: 'Саксаганський р-н',
-    description: 'Керована авіаційна бомба в напрямку міста',
-    color: '#f97316',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 200,
-    iconType: 'bomb-air',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.91,
-    endLng: 33.39,
-  },
-  {
-    id: 'threat_krr_radushna',
-    lat: 47.82,
-    lng: 33.51,
-    title: 'Радушна',
-    description: 'Ударний БпЛА типу "Шахед" вздовж траси',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 28,
-    rotation: 215,
-    iconType: 'uav-kamikaze',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-    endLat: 47.75,
-    endLng: 33.42,
-  },
-  {
-    id: 'threat_krr_pokrovsky',
-    lat: 48.06,
-    lng: 33.46,
-    title: 'Покровський р-н',
-    description: 'Швидкісна ракета повз район',
-    color: '#ef4444',
-    borderColor: '#ffffff',
-    size: 32,
-    rotation: 180,
-    iconType: 'missile-cruise',
-    draggable: true,
-    labelVisible: true,
-    endPointStyle: 'none',
-  },
-];
+// Default markers (empty on first launch)
+const DEFAULT_MARKERS: CustomMarker[] = [];
 
 export function getDefaultIconName(iconType: string, language: Language): string {
   const found = ICON_TYPES.find((t) => t.id === iconType);
@@ -190,6 +160,7 @@ export function getDefaultIconName(iconType: string, language: Language): string
 
 export default function App() {
   const mapRef = useRef<MapContainerRef | null>(null);
+  const [clearAllTrigger, setClearAllTrigger] = useState<number>(0);
 
   const [customIconTitles, setCustomIconTitles] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('visicom_custom_icon_titles');
@@ -323,13 +294,43 @@ export default function App() {
   const [markers, setMarkers] = useState<CustomMarker[]>(() => {
     try {
       const saved = localStorage.getItem('visicom_custom_markers');
-      const loaded = saved ? JSON.parse(saved) : DEFAULT_MARKERS;
-      return loaded.map((m: any) => ({
-        ...m,
-        endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
-      }));
+      if (saved) {
+        const loaded = JSON.parse(saved);
+        if (Array.isArray(loaded)) {
+          // If the saved markers are the old demo markers (threat_krr_*), clear them out
+          const isOldDefaultMarkers = loaded.length > 0 && 
+            loaded.every((m: any) => m?.id && typeof m.id === 'string' && m.id.startsWith('threat_krr_'));
+          if (isOldDefaultMarkers) {
+            localStorage.setItem('visicom_custom_markers', JSON.stringify([]));
+            return [];
+          }
+          return loaded
+            .filter((m: any) => m && !isNaN(Number(m.lat)) && !isNaN(Number(m.lng)))
+            .map((m: any) => ({
+              ...m,
+              lat: Number(m.lat),
+              lng: Number(m.lng),
+              rotation: isNaN(Number(m.rotation)) ? 0 : Number(m.rotation),
+              endLat: m.endLat !== undefined && !isNaN(Number(m.endLat)) ? Number(m.endLat) : undefined,
+              endLng: m.endLng !== undefined && !isNaN(Number(m.endLng)) ? Number(m.endLng) : undefined,
+              endPointStyle: m.endPointStyle === 'explosion' || m.endPointStyle === 'line' ? m.endPointStyle : 'none',
+              movementSpeedKmh: Number.isFinite(Number(m.movementSpeedKmh)) ? Math.max(0, Number(m.movementSpeedKmh)) : 100,
+              movementEnabled: m.movementEnabled === true,
+              movementTrailEnabled: m.movementTrailEnabled === true,
+              movementTrailColor: typeof m.movementTrailColor === 'string' ? m.movementTrailColor : (m.color || '#ef4444'),
+              movementTrailWidth: Number.isFinite(Number(m.movementTrailWidth)) ? Math.max(1, Number(m.movementTrailWidth)) : 3,
+              movementTrailDashStyle: m.movementTrailDashStyle === 'dashed' || m.movementTrailDashStyle === 'dotted' ? m.movementTrailDashStyle : 'solid',
+              movementTrail: Array.isArray(m.movementTrail)
+                ? m.movementTrail
+                    .filter((pt: any) => Array.isArray(pt) && pt.length >= 2 && Number.isFinite(Number(pt[0])) && Number.isFinite(Number(pt[1])))
+                    .map((pt: any) => [Number(pt[0]), Number(pt[1])] as [number, number])
+                : [],
+            }));
+        }
+      }
+      return [];
     } catch (e) {
-      return DEFAULT_MARKERS;
+      return [];
     }
   });
 
@@ -342,11 +343,16 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map((l: any) => ({
-            ...l,
-            startPointStyle: l.startPointStyle === 'arrow' || l.startPointStyle === 'explosion' || l.startPointStyle === 'custom_icon' ? l.startPointStyle : 'none',
-            endPointStyle: l.endPointStyle === 'arrow' || l.endPointStyle === 'explosion' || l.endPointStyle === 'custom_icon' ? l.endPointStyle : 'none',
-          }));
+          return parsed
+            .map((l: any) => ({
+              ...l,
+              points: (l.points || [])
+                .filter((pt: any) => Array.isArray(pt) && !isNaN(Number(pt[0])) && !isNaN(Number(pt[1])))
+                .map((pt: any) => [Number(pt[0]), Number(pt[1])]),
+              startPointStyle: l.startPointStyle === 'arrow' || l.startPointStyle === 'explosion' || l.startPointStyle === 'custom_icon' ? l.startPointStyle : 'none',
+              endPointStyle: l.endPointStyle === 'arrow' || l.endPointStyle === 'explosion' || l.endPointStyle === 'custom_icon' ? l.endPointStyle : 'none',
+            }))
+            .filter((l: any) => l.points.length >= 2);
         }
       }
       return [];
@@ -364,10 +370,62 @@ export default function App() {
   const [lineStartStyle, setLineStartStyle] = useState<LineEndpointType>('none');
   const [lineStartCustomIcon, setLineStartCustomIcon] = useState<string>('');
   const [lineStartIconRotation, setLineStartIconRotation] = useState<number>(0);
+  const [lineStartIconSize, setLineStartIconSize] = useState<number>(32);
   const [lineEndStyle, setLineEndStyle] = useState<LineEndpointType>('none');
   const [lineEndCustomIcon, setLineEndCustomIcon] = useState<string>('');
   const [lineEndIconRotation, setLineEndIconRotation] = useState<number>(0);
+  const [lineEndIconSize, setLineEndIconSize] = useState<number>(32);
   const [lineDashStyle, setLineDashStyle] = useState<'solid' | 'dashed' | 'dotted'>('solid');
+  const [lineDrawMethod, setLineDrawMethod] = useState<LineDrawMethod>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_line_draw_method');
+      if (saved === 'points' || saved === 'freehand') return saved;
+    } catch {}
+    return 'freehand'; // Default to freehand (Paint-style auto-smoothed)
+  });
+
+  const handleSetLineDrawMethod = useCallback((method: LineDrawMethod) => {
+    setLineDrawMethod(method);
+    try {
+      localStorage.setItem('visicom_line_draw_method', method);
+    } catch {}
+  }, []);
+
+  // Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") state
+  const [mapLegendConfig, setMapLegendConfig] = useState<MapLegendConfig>(() => {
+    try {
+      const saved = localStorage.getItem('tactical_map_legend_cfg');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      enabled: false,
+      title: 'УМОВНІ ПОЗНАЧЕННЯ:',
+      position: 'bottom-left',
+      items: [],
+    };
+  });
+
+  const handleUpdateMapLegendConfig = useCallback((cfg: MapLegendConfig) => {
+    setMapLegendConfig(cfg);
+    try {
+      localStorage.setItem('tactical_map_legend_cfg', JSON.stringify(cfg));
+    } catch {}
+  }, []);
+
+  // Custom Icons Library (custom uploaded PNG / SVG / JPG icons) state
+  const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('visicom_custom_library');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleUpdateCustomLibrary = useCallback((lib: { id: string; name: string; dataUrl: string }[]) => {
+    setCustomLibrary(lib);
+    safeSetItem('visicom_custom_library', JSON.stringify(lib));
+  }, []);
 
   const handleAddDrawnLine = (newLine: DrawnLine) => {
     setDrawnLines((prev) => {
@@ -411,8 +469,20 @@ export default function App() {
 
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
+    if (savedId === 'esri_light_gray') {
+      const light = TILE_LAYERS.find((l) => l.id === 'carto_light' || l.id === 'apple_maps');
+      if (light) return light;
+    }
+    if (savedId === 'esri_dark_gray') {
+      const dark = TILE_LAYERS.find((l) => l.id === 'carto_dark');
+      if (dark) return dark;
+    }
+    if (savedId === 'esri_topo') {
+      const deepstate = TILE_LAYERS.find((l) => l.id === 'deepstatemap');
+      if (deepstate) return deepstate;
+    }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
-    return matched || TILE_LAYERS.find((l) => l.id === 'visicom') || TILE_LAYERS.find((l) => l.id === 'carto_dark') || TILE_LAYERS[0];
+    return matched || TILE_LAYERS.find((l) => l.id === 'deepstatemap') || TILE_LAYERS[0];
   });
 
   const [watermarkType, setWatermarkType] = useState<WatermarkType>(() => {
@@ -447,6 +517,11 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
+  const [showLogoAndLegendOnMap, setShowLogoAndLegendOnMap] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_logo_and_legend_on_map');
+    return saved !== null ? saved === 'true' : true;
+  });
+
   const [legendOverlayText, setLegendOverlayText] = useState<string>(() => {
     const saved = localStorage.getItem('visicom_legend_overlay_text');
     return saved !== null 
@@ -474,19 +549,334 @@ export default function App() {
     return saved !== null ? saved === 'true' : true;
   });
 
+  const [cityBoundaryConfig, setCityBoundaryConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_city_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#38bdf8',
+      weight: 2.0,
+      opacity: 0.95,
+      strokeStyle: 'dashed',
+    };
+  });
+
+  const handleUpdateCityBoundaryConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setCityBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_city_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [districtBoundaryConfig, setDistrictBoundaryConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_district_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#10b981',
+      weight: 2.2,
+      opacity: 0.95,
+      strokeStyle: 'solid',
+    };
+  });
+
+  const handleUpdateDistrictBoundaryConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setDistrictBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_district_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [hromadaBoundariesConfig, setHromadaBoundariesConfig] = useState<BoundaryStyleConfig>(() => {
+    const saved = localStorage.getItem('uamapper_hromada_boundaries_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#475569',
+      weight: 1.4,
+      opacity: 0.85,
+      strokeStyle: 'dashed',
+    };
+  });
+
+  const handleUpdateHromadaBoundariesConfig = (updates: Partial<BoundaryStyleConfig>) => {
+    setHromadaBoundariesConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_hromada_boundaries_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const [showUkraineBoundary, setShowUkraineBoundary] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_ukraine_boundary');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const [ukraineBoundaryConfig, setUkraineBoundaryConfig] = useState<UkraineBoundaryConfig>(() => {
+    const saved = localStorage.getItem('uamapper_ukraine_boundary_config');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      enabled: true,
+      color: '#f59e0b',
+      weight: 2.8,
+      opacity: 0.95,
+      strokeStyle: 'solid',
+    };
+  });
+
+  const handleToggleUkraineBoundary = (val: boolean) => {
+    setShowUkraineBoundary(val);
+    localStorage.setItem('uamapper_show_ukraine_boundary', String(val));
+  };
+
+  const handleUpdateUkraineBoundaryConfig = (updates: Partial<UkraineBoundaryConfig>) => {
+    setUkraineBoundaryConfig(prev => {
+      const next = { ...prev, ...updates };
+      localStorage.setItem('uamapper_ukraine_boundary_config', JSON.stringify(next));
+      return next;
+    });
+  };
+
   const [showHromadaBoundaries, setShowHromadaBoundaries] = useState<boolean>(() => {
     const saved = localStorage.getItem('uamapper_show_hromada_boundaries');
     return saved !== null ? saved === 'true' : true;
   });
+
+  const [showQuickSettlements, setShowQuickSettlements] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_quick_settlements');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleUpdateShowQuickSettlements = (val: boolean) => {
+    setShowQuickSettlements(val);
+    localStorage.setItem('uamapper_show_quick_settlements', String(val));
+  };
+
+  const [deepStateOccupiedConfig, setDeepStateOccupiedConfig] = useState<DeepStateOccupiedConfig>(() => {
+    const defaultCfg: DeepStateOccupiedConfig = {
+      enabled: true,
+      fillColor: '#b91c1c',
+      fillOpacity: 0.35,
+      fillPattern: 'solid',
+      patternDensity: 10,
+      patternStrokeWidth: 1.5,
+      patternBgOpacity: 0.1,
+      showStroke: true,
+      strokeColor: '#7f1d1d',
+      strokeWidth: 1.5,
+      strokeOpacity: 0.9,
+      strokeStyle: 'solid',
+      includeGrayZone: true,
+      grayZoneFillColor: '#6b7280',
+      grayZoneOpacity: 0.25,
+      grayZonePattern: 'diagonal-right',
+      grayZoneStrokeColor: '#4b5563',
+      grayZoneStrokeWidth: 1.2,
+      grayZoneStrokeStyle: 'dashed',
+    };
+    const saved = localStorage.getItem('uamapper_deepstate_config');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return { ...defaultCfg, ...parsed };
+      } catch {}
+    }
+    return defaultCfg;
+  });
+
+  const [deepStateGeoJson, setDeepStateGeoJson] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('uamapper_deepstate_geojson_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.features?.length) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return null;
+  });
+  const [isLoadingDeepState, setIsLoadingDeepState] = useState<boolean>(false);
+  const [deepStateLastSync, setDeepStateLastSync] = useState<string | null>(() => {
+    try {
+      const cachedTime = localStorage.getItem('uamapper_deepstate_last_sync');
+      if (cachedTime) return cachedTime;
+    } catch {}
+    return null;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('uamapper_deepstate_config', JSON.stringify(deepStateOccupiedConfig));
+    } catch {}
+  }, [deepStateOccupiedConfig]);
+
+  const handleUpdateDeepStateConfig = useCallback((updates: Partial<DeepStateOccupiedConfig>) => {
+    setDeepStateOccupiedConfig((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const handleToggleDeepStateOccupied = useCallback((enabled: boolean) => {
+    setDeepStateOccupiedConfig((prev) => ({ ...prev, enabled }));
+  }, []);
+
+  const fetchDeepStateData = useCallback(async (isUserTriggered = false) => {
+    setIsLoadingDeepState(true);
+    let loadedData: any = null;
+
+    const isValidGeoJson = (d: any) => Boolean(d && Array.isArray(d.features) && d.features.length > 0);
+
+    // Tier 1: Fetch from /api/deepstatemap/occupied
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7500);
+      const res = await fetch('/api/deepstatemap/occupied', {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.trim().startsWith('{') || text.trim().startsWith('['))) {
+          const parsed = JSON.parse(text);
+          if (isValidGeoJson(parsed)) {
+            loadedData = parsed;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Primary DeepState API endpoint unreachable or timed out. Falling back to static data...', e);
+    }
+
+    // Tier 2: Resilient static fallback snapshot (works on all devices, offline/poor connection)
+    if (!loadedData) {
+      try {
+        const fbRes = await fetch('/data/deepstatemap_occupied_fallback.json');
+        if (fbRes.ok) {
+          const fbData = await fbRes.json();
+          if (isValidGeoJson(fbData)) {
+            loadedData = fbData;
+            console.info('Loaded DeepState occupied territories from local static snapshot fallback.');
+          }
+        }
+      } catch (fbErr) {
+        console.warn('Local static fallback fetch failed:', fbErr);
+      }
+    }
+
+    // Tier 3: Direct upstream DeepState API if client has direct internet access
+    if (!loadedData && typeof window !== 'undefined') {
+      try {
+        const pubRes = await fetch('https://deepstatemap.live/api/history/public', {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (pubRes.ok) {
+          const historyList = (await pubRes.json()) as any[];
+          const last = historyList[historyList.length - 1];
+          if (last?.id) {
+            const geoRes = await fetch(`https://deepstatemap.live/api/history/${last.id}/geojson`, {
+              headers: { Accept: 'application/json' },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (geoRes.ok) {
+              const rawGeo = await geoRes.json();
+              if (isValidGeoJson(rawGeo)) {
+                const foreignKeywords = [
+                  'петсамо', 'салла', 'естоні', 'латві', 'курильськ', 'пруссія',
+                  'карелі', 'ічкерія', 'абхазі', 'цхінваль', 'придністров', 'саатсе', 'печорськ'
+                ];
+                const filtered = rawGeo.features.filter((f: any) => {
+                  if (!f.geometry || (f.geometry.type !== 'Polygon' && f.geometry.type !== 'MultiPolygon')) return false;
+                  const n = (f.properties?.name || '').toLowerCase();
+                  if (foreignKeywords.some((kw) => n.includes(kw))) return false;
+                  const isOcc = n.includes('окупован') || n.includes('ордло') || n.includes('крим') || f.properties?.fill === '#a52714';
+                  const isG = n.includes('невідомий') || f.properties?.fill === '#bdbdbd';
+                  return isOcc || isG;
+                }).map((f: any) => {
+                  const n = (f.properties?.name || '').toLowerCase();
+                  const isGray = n.includes('невідомий') || f.properties?.fill === '#bdbdbd';
+                  const rawName = f.properties?.name || '';
+                  const parts = rawName.split('///');
+                  return {
+                    type: 'Feature',
+                    properties: {
+                      name: parts[0]?.trim() || (isGray ? 'Сіра зона' : 'Окупована територія'),
+                      nameEn: parts[1]?.trim() || (isGray ? 'Gray zone' : 'Occupied territory'),
+                      zoneType: isGray ? 'gray' : 'occupied',
+                      originalFill: f.properties?.fill || (isGray ? '#bdbdbd' : '#a52714'),
+                      originalStroke: f.properties?.stroke || (isGray ? '#757575' : '#7f1d1d'),
+                    },
+                    geometry: f.geometry,
+                  };
+                });
+                loadedData = {
+                  type: 'FeatureCollection',
+                  updatedAt: last.updatedAt || new Date().toISOString(),
+                  datetime: last.datetime || '',
+                  features: filtered,
+                };
+              }
+            }
+          }
+        }
+      } catch (directErr) {
+        console.warn('Direct DeepState upstream fetch failed:', directErr);
+      }
+    }
+
+    if (loadedData) {
+      setDeepStateGeoJson(loadedData);
+      const timeStr = loadedData.datetime || (loadedData.updatedAt ? new Date(loadedData.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      setDeepStateLastSync(timeStr);
+      try {
+        safeSetItem('uamapper_deepstate_geojson_cache', JSON.stringify(loadedData));
+        safeSetItem('uamapper_deepstate_last_sync', timeStr);
+      } catch {}
+    } else if (isUserTriggered) {
+      console.warn('Could not refresh DeepState data at this moment; keeping existing snapshot.');
+    }
+
+    setIsLoadingDeepState(false);
+  }, []);
+
+  useEffect(() => {
+    if (deepStateOccupiedConfig.enabled && !deepStateGeoJson && !isLoadingDeepState) {
+      fetchDeepStateData();
+    }
+  }, [deepStateOccupiedConfig.enabled, deepStateGeoJson, isLoadingDeepState, fetchDeepStateData]);
 
   const [mapFont, setMapFont] = useState<MapFontFamily>(() => {
     const saved = localStorage.getItem('uamapper_map_font');
     return (saved as MapFontFamily) || 'inter';
   });
 
+  useEffect(() => {
+    preloadFontEmbedCSS(mapFont);
+  }, [mapFont]);
+
   const handleUpdateMapFont = (font: MapFontFamily) => {
     setMapFont(font);
     localStorage.setItem('uamapper_map_font', font);
+    preloadFontEmbedCSS(font);
   };
 
   const [showSettlementLabels, setShowSettlementLabels] = useState<boolean>(() => {
@@ -727,12 +1117,11 @@ export default function App() {
   });
 
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    return (localStorage.getItem('visicom_theme') as 'dark' | 'light') || 'dark';
+    return (localStorage.getItem('visicom_theme') as 'dark' | 'light') || 'light';
   });
 
   const [showAlert, setShowAlert] = useState<boolean>(true);
   const [interactionMode, setInteractionMode] = useState<InteractionMode>('draw');
-  const [routePlacementMarkerId, setRoutePlacementMarkerId] = useState<string | null>(null);
 
   // --- Real-Time Air Raid Alerts (alerts.in.ua) State ---
   const [activeAlerts, setActiveAlerts] = useState<AirAlert[]>([]);
@@ -785,6 +1174,70 @@ export default function App() {
     const interval = setInterval(refreshAlerts, 15000);
     return () => clearInterval(interval);
   }, [refreshAlerts]);
+
+  // --- Real-Time Live Threats & Messages (neptun.in.ua) State ---
+  const [isLiveMode, setIsLiveMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_live_mode');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [liveThreats, setLiveThreats] = useState<NeptunThreat[]>([]);
+  const [liveMessages, setLiveMessages] = useState<NeptunMessage[]>([]);
+  const [isLoadingLive, setIsLoadingLive] = useState<boolean>(false);
+  const [showLiveTrails, setShowLiveTrails] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_live_trails');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const [showLiveMessagesFeed, setShowLiveMessagesFeed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_show_live_messages');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const refreshLiveThreats = useCallback(async () => {
+    try {
+      const threats = await fetchNeptunThreats();
+      setLiveThreats(threats);
+    } catch (err) {
+      console.warn('Live threats fetch error:', err);
+    }
+  }, []);
+
+  const refreshLiveMessages = useCallback(async () => {
+    try {
+      const messages = await fetchNeptunMessages();
+      setLiveMessages(messages);
+    } catch (err) {
+      console.warn('Live messages fetch error:', err);
+    }
+  }, []);
+
+  const refreshLiveData = useCallback(async () => {
+    setIsLoadingLive(true);
+    await Promise.all([refreshLiveThreats(), refreshLiveMessages()]);
+    setIsLoadingLive(false);
+  }, [refreshLiveThreats, refreshLiveMessages]);
+
+  const handleToggleLiveMode = useCallback(() => {
+    setIsLiveMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('uamapper_live_mode', String(next));
+      return next;
+    });
+  }, []);
+
+  // Poll live data when Live mode is enabled
+  useEffect(() => {
+    if (!isLiveMode) return;
+    refreshLiveData();
+
+    // Poll threats every 10 seconds, messages every 15 seconds
+    const threatsInterval = setInterval(refreshLiveThreats, 10000);
+    const messagesInterval = setInterval(refreshLiveMessages, 15000);
+
+    return () => {
+      clearInterval(threatsInterval);
+      clearInterval(messagesInterval);
+    };
+  }, [isLiveMode, refreshLiveData, refreshLiveThreats, refreshLiveMessages]);
 
   const handleSelectAlert = useCallback((alert: AirAlert, customLat?: number, customLng?: number) => {
     if (customLat !== undefined && customLng !== undefined) {
@@ -857,6 +1310,39 @@ export default function App() {
     }
   }, [interactionMode, selectedLineId]);
   const [mobileView, setMobileView] = useState<'map' | 'sidebar'>('map');
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
+    const saved = localStorage.getItem('uamapper_sidebar_open');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleToggleSidebar = () => {
+    setIsSidebarOpen((prev) => {
+      const next = !prev;
+      localStorage.setItem('uamapper_sidebar_open', String(next));
+      return next;
+    });
+  };
+
+  const [isQuickCopied, setIsQuickCopied] = useState<boolean>(false);
+
+  const handleQuickCopyBuffer = async () => {
+    if (mobileView !== 'map') {
+      setMobileView('map');
+      setTimeout(async () => {
+        const success = await mapRef.current?.copyPNG();
+        if (success !== false) {
+          setIsQuickCopied(true);
+          setTimeout(() => setIsQuickCopied(false), 2000);
+        }
+      }, 450);
+    } else {
+      const success = await mapRef.current?.copyPNG();
+      if (success !== false) {
+        setIsQuickCopied(true);
+        setTimeout(() => setIsQuickCopied(false), 2000);
+      }
+    }
+  };
 
   const [autoHighlightZone, setAutoHighlightZone] = useState<boolean>(() => {
     return localStorage.getItem('visicom_auto_highlight_zone') === 'true';
@@ -868,6 +1354,12 @@ export default function App() {
   };
 
   const [isLocating, setIsLocating] = useState<boolean>(false);
+  const [isReloading, setIsReloading] = useState<boolean>(false);
+
+  const handleReloadPage = () => {
+    setIsReloading(true);
+    window.location.reload();
+  };
 
   // GPS centering handler
   const handleFindMyLocation = () => {
@@ -923,6 +1415,12 @@ export default function App() {
             zoneColor: lastMarker.zoneColor || lastMarker.color || '#ef4444',
             zoneRadiusKm: lastMarker.zoneRadiusKm !== undefined ? lastMarker.zoneRadiusKm : (lastMarker.zoneSize && lastMarker.zoneSize <= 200 ? lastMarker.zoneSize : 5),
             zoneSize: lastMarker.zoneSize || 5,
+            movementSpeedKmh: Number.isFinite(Number(lastMarker.movementSpeedKmh)) ? Number(lastMarker.movementSpeedKmh) : 100,
+            movementEnabled: lastMarker.movementEnabled === true,
+            movementTrailEnabled: lastMarker.movementTrailEnabled === true,
+            movementTrailColor: lastMarker.movementTrailColor || lastMarker.color || '#ef4444',
+            movementTrailWidth: Number.isFinite(Number(lastMarker.movementTrailWidth)) ? Number(lastMarker.movementTrailWidth) : 3,
+            movementTrailDashStyle: lastMarker.movementTrailDashStyle || 'solid',
           };
         }
       } catch (e) {
@@ -943,6 +1441,12 @@ export default function App() {
       zoneColor: '#ef4444',
       zoneRadiusKm: 10,
       zoneSize: 10,
+      movementSpeedKmh: 100,
+      movementEnabled: false,
+      movementTrailEnabled: false,
+      movementTrailColor: '#ef4444',
+      movementTrailWidth: 3,
+      movementTrailDashStyle: 'solid',
     };
   });
 
@@ -1015,6 +1519,10 @@ export default function App() {
   }, [showLegendOverlay]);
 
   useEffect(() => {
+    localStorage.setItem('uamapper_show_logo_and_legend_on_map', String(showLogoAndLegendOnMap));
+  }, [showLogoAndLegendOnMap]);
+
+  useEffect(() => {
     localStorage.setItem('visicom_legend_overlay_text', legendOverlayText);
   }, [legendOverlayText]);
 
@@ -1031,6 +1539,10 @@ export default function App() {
   }, [showDistrictBoundary]);
 
   useEffect(() => {
+    localStorage.setItem('uamapper_show_ukraine_boundary', String(showUkraineBoundary));
+  }, [showUkraineBoundary]);
+
+  useEffect(() => {
     localStorage.setItem('uamapper_show_hromada_boundaries', String(showHromadaBoundaries));
   }, [showHromadaBoundaries]);
 
@@ -1043,8 +1555,13 @@ export default function App() {
   const handleSelectMarker = (id: string | null) => {
     setSelectedMarkerId(id);
     
-    // When a marker is selected, sync its style choices as active styles so they stay "active" per user intent!
+    // When a marker is selected, sync its style choices as active styles and activate marker draw mode so they stay active per user intent!
     if (id) {
+      setSelectedLineId(null);
+      setInteractionMode('draw');
+      if (!isSidebarOpen && window.innerWidth >= 768) {
+        setIsSidebarOpen(true);
+      }
       const selectedMarker = markers.find((m) => m.id === id);
       if (selectedMarker) {
         setActiveStyle({
@@ -1067,6 +1584,57 @@ export default function App() {
     }
   };
 
+  // Handler: Select a drawn line (auto-activates line mode and syncs active line properties)
+  const handleSelectLine = (id: string | null) => {
+    setSelectedLineId(id);
+    if (id) {
+      setSelectedMarkerId(null);
+      setInteractionMode('line');
+      if (!isSidebarOpen && window.innerWidth >= 768) {
+        setIsSidebarOpen(true);
+      }
+      const foundLine = drawnLines.find((l) => l.id === id);
+      if (foundLine) {
+        setLineColor(foundLine.color);
+        setLineWeight(foundLine.weight);
+        setLineSmoothed(!!foundLine.smoothed);
+        if (foundLine.dashStyle) setLineDashStyle(foundLine.dashStyle);
+        if (foundLine.startPointStyle) setLineStartStyle(foundLine.startPointStyle);
+        if (foundLine.startCustomIconUrl) setLineStartCustomIcon(foundLine.startCustomIconUrl);
+        if (foundLine.startIconRotation !== undefined) setLineStartIconRotation(foundLine.startIconRotation);
+        if (foundLine.startIconSize !== undefined) setLineStartIconSize(foundLine.startIconSize);
+        if (foundLine.endPointStyle) setLineEndStyle(foundLine.endPointStyle);
+        if (foundLine.endCustomIconUrl) setLineEndCustomIcon(foundLine.endCustomIconUrl);
+        if (foundLine.endIconRotation !== undefined) setLineEndIconRotation(foundLine.endIconRotation);
+        if (foundLine.endIconSize !== undefined) setLineEndIconSize(foundLine.endIconSize);
+      }
+    }
+  };
+
+  const getInitialMarkerEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+    const earthRadiusKm = 6371.0088;
+    const distanceKm = 1;
+    const angularDistance = distanceKm / earthRadiusKm;
+    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const lat1 = (lat * Math.PI) / 180;
+    const lng1 = (lng * Math.PI) / 180;
+    const sinLat1 = Math.sin(lat1);
+    const cosLat1 = Math.cos(lat1);
+    const sinAngular = Math.sin(angularDistance);
+    const cosAngular = Math.cos(angularDistance);
+    const lat2 = Math.asin(Math.min(1, Math.max(-1,
+      sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)
+    )));
+    const lng2 = lng1 + Math.atan2(
+      Math.sin(bearing) * sinAngular * cosLat1,
+      cosAngular - sinLat1 * Math.sin(lat2)
+    );
+    return [
+      (lat2 * 180) / Math.PI,
+      ((lng2 * 180) / Math.PI + 540) % 360 - 180,
+    ];
+  };
+
   // Handler: Add marker on manual coordinates or click
   const handleAddMarker = (lat?: number, lng?: number) => {
     // If coordinates not supplied, center on Kryvyi Rih center slightly jittered
@@ -1079,20 +1647,8 @@ export default function App() {
     const defaultTitle = customIconTitles[currentIconType] || getDefaultIconName(currentIconType, language);
 
     const newId = 'marker_' + Date.now();
-    const initialBearing = ((baseStyle.rotation ?? 0) + 360) % 360;
-    const initialDistanceKm = 1.5;
-    const earthRadiusKm = 6371;
-    const bearingRad = initialBearing * Math.PI / 180;
-    const latRad = finalLat * Math.PI / 180;
-    const angularDistance = initialDistanceKm / earthRadiusKm;
-    const targetLat = Math.asin(
-      Math.sin(latRad) * Math.cos(angularDistance) +
-      Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearingRad)
-    ) * 180 / Math.PI;
-    const targetLng = finalLng + Math.atan2(
-      Math.sin(bearingRad) * Math.sin(angularDistance) * Math.cos(latRad),
-      Math.cos(angularDistance) - Math.sin(latRad) * Math.sin(targetLat * Math.PI / 180)
-    ) * 180 / Math.PI;
+    const initialRotation = Number.isFinite(Number(baseStyle.rotation)) ? Number(baseStyle.rotation) : 0;
+    const [initialEndLat, initialEndLng] = getInitialMarkerEndpoint(finalLat, finalLng, initialRotation);
     const newMarker: CustomMarker = {
       id: newId,
       lat: finalLat,
@@ -1102,7 +1658,7 @@ export default function App() {
       color: baseStyle.color || '#ef4444',
       borderColor: baseStyle.borderColor || '#ffffff',
       size: baseStyle.size || 32,
-      rotation: baseStyle.rotation || 0,
+      rotation: initialRotation,
       iconType: baseStyle.iconType || 'pin',
       draggable: baseStyle.draggable !== undefined ? baseStyle.draggable : true,
       labelVisible: baseStyle.labelVisible !== undefined ? baseStyle.labelVisible : true,
@@ -1113,8 +1669,15 @@ export default function App() {
       zoneColor: baseStyle.zoneColor || baseStyle.color || '#ef4444',
       zoneRadiusKm: baseStyle.zoneRadiusKm !== undefined ? baseStyle.zoneRadiusKm : (baseStyle.zoneSize && baseStyle.zoneSize <= 200 ? baseStyle.zoneSize : 5),
       zoneSize: baseStyle.zoneSize || 5,
-      endLat: targetLat,
-      endLng: targetLng,
+      movementSpeedKmh: Number.isFinite(Number(baseStyle.movementSpeedKmh)) ? Math.max(0, Number(baseStyle.movementSpeedKmh)) : 100,
+      movementEnabled: baseStyle.movementEnabled === true,
+      movementTrailEnabled: baseStyle.movementTrailEnabled === true,
+      movementTrailColor: baseStyle.movementTrailColor || baseStyle.color || '#ef4444',
+      movementTrailWidth: Number.isFinite(Number(baseStyle.movementTrailWidth)) ? Math.max(1, Number(baseStyle.movementTrailWidth)) : 3,
+      movementTrailDashStyle: baseStyle.movementTrailDashStyle || 'solid',
+      movementTrail: [],
+      endLat: initialEndLat,
+      endLng: initialEndLng,
     };
 
     setMarkers((prev) => [...prev, newMarker]);
@@ -1137,6 +1700,12 @@ export default function App() {
       zoneColor: newMarker.zoneColor || newMarker.color || '#ef4444',
       zoneRadiusKm: newMarker.zoneRadiusKm,
       zoneSize: newMarker.zoneSize,
+      movementSpeedKmh: newMarker.movementSpeedKmh,
+      movementEnabled: newMarker.movementEnabled,
+      movementTrailEnabled: newMarker.movementTrailEnabled,
+      movementTrailColor: newMarker.movementTrailColor,
+      movementTrailWidth: newMarker.movementTrailWidth,
+      movementTrailDashStyle: newMarker.movementTrailDashStyle,
     });
 
     return newId;
@@ -1168,45 +1737,45 @@ export default function App() {
     };
   }, [selectedMarkerId, markers]);
 
-  const startRoutePlacement = (markerId: string) => {
-    setSelectedMarkerId(markerId);
-    setRoutePlacementMarkerId(markerId);
-  };
-
-  const cancelRoutePlacement = () => {
-    setRoutePlacementMarkerId(null);
-  };
-
-  useEffect(() => {
-    if (!routePlacementMarkerId) return;
-    const handleRouteEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setRoutePlacementMarkerId(null);
-    };
-    window.addEventListener('keydown', handleRouteEscape);
-    return () => window.removeEventListener('keydown', handleRouteEscape);
-  }, [routePlacementMarkerId]);
-
   // Handler: Update an individual marker
   const handleUpdateMarker = (updatedMarker: CustomMarker) => {
+    const liveState = mapRef.current?.getMarkerLiveState?.(updatedMarker.id);
+    const markerToSave: CustomMarker = liveState
+      ? {
+          ...updatedMarker,
+          lat: liveState.lat,
+          lng: liveState.lng,
+          movementTrail: updatedMarker.movementTrailEnabled === true
+            ? (liveState.trail.length ? liveState.trail : updatedMarker.movementTrail)
+            : updatedMarker.movementTrail,
+        }
+      : updatedMarker;
+
     setMarkers((prev) =>
-      prev.map((m) => (m.id === updatedMarker.id ? updatedMarker : m))
+      prev.map((m) => (m.id === markerToSave.id ? markerToSave : m))
     );
     // Also keep the activeStyle synchronized!
     setActiveStyle({
-      title: updatedMarker.title,
-      color: updatedMarker.color,
-      borderColor: updatedMarker.borderColor || '#ffffff',
-      size: updatedMarker.size,
-      rotation: updatedMarker.rotation,
-      iconType: updatedMarker.iconType,
-      draggable: updatedMarker.draggable,
-      labelVisible: updatedMarker.labelVisible,
-      endPointStyle: updatedMarker.endPointStyle || 'none',
-      customIconUrl: updatedMarker.customIconUrl,
-      hasZone: updatedMarker.hasZone || false,
-      zoneColor: updatedMarker.zoneColor || updatedMarker.color || '#ef4444',
-      zoneRadiusKm: updatedMarker.zoneRadiusKm !== undefined ? updatedMarker.zoneRadiusKm : (updatedMarker.zoneSize && updatedMarker.zoneSize <= 200 ? updatedMarker.zoneSize : 5),
-      zoneSize: updatedMarker.zoneSize || 5,
+      title: markerToSave.title,
+      color: markerToSave.color,
+      borderColor: markerToSave.borderColor || '#ffffff',
+      size: markerToSave.size,
+      rotation: markerToSave.rotation,
+      iconType: markerToSave.iconType,
+      draggable: markerToSave.draggable,
+      labelVisible: markerToSave.labelVisible,
+      endPointStyle: markerToSave.endPointStyle || 'none',
+      customIconUrl: markerToSave.customIconUrl,
+      hasZone: markerToSave.hasZone || false,
+      zoneColor: markerToSave.zoneColor || markerToSave.color || '#ef4444',
+      zoneRadiusKm: markerToSave.zoneRadiusKm !== undefined ? markerToSave.zoneRadiusKm : (markerToSave.zoneSize && markerToSave.zoneSize <= 200 ? markerToSave.zoneSize : 5),
+      zoneSize: markerToSave.zoneSize || 5,
+      movementSpeedKmh: markerToSave.movementSpeedKmh ?? 100,
+      movementEnabled: markerToSave.movementEnabled === true,
+      movementTrailEnabled: markerToSave.movementTrailEnabled === true,
+      movementTrailColor: markerToSave.movementTrailColor || markerToSave.color || '#ef4444',
+      movementTrailWidth: markerToSave.movementTrailWidth ?? 3,
+      movementTrailDashStyle: markerToSave.movementTrailDashStyle || 'solid',
     });
   };
 
@@ -1225,13 +1794,16 @@ export default function App() {
     }
   };
 
-  // Handler: Clear all
+  // Handler: Clear all ("Очистити все" - прибирає маркери, лінії та виділені н.п./зони через пошук)
   const handleClearMarkers = () => {
     setMarkers([]);
     setSelectedMarkerId(null);
     setDrawnLines([]);
     setSelectedLineId(null);
     localStorage.removeItem('visicom_drawn_lines');
+    localStorage.removeItem('visicom_searched_areas');
+    setClearAllTrigger((prev) => prev + 1);
+    mapRef.current?.clearSearchedAreas?.();
   };
 
   // Handler: Toggle App Language
@@ -1245,235 +1817,475 @@ export default function App() {
     setSelectedMarkerId(null);
   };
 
-  // Handler: Export all settings & data
-  const handleExportAllSettings = () => {
-    const exportData = {
-      version: 1,
-      type: 'uamapper_full_backup',
-      exportedAt: new Date().toISOString(),
-      settings: {
-        theme,
-        language,
-        watermarkType,
-        watermarkText,
-        watermarkImageUrl,
-        watermarkSize,
-        watermarkOpacity,
-        watermarkRotation,
-        legendOverlayText,
-        showLegendOverlay,
-        showRadarOverlay,
-        blurMapOnExport,
-        mapFont,
-        showCityBoundary,
-        showDistrictBoundary,
-        showHromadaBoundaries,
-        showSettlementLabels,
-        settlementLabelMode,
-        disabledSettlementCategories,
-        activeTileLayerId: activeTileLayer.id,
-        autoHighlightZone,
-        visicomKey,
-        customIconTitles,
-        iconPresets,
-        activeStyle,
-        telegramBotToken: localStorage.getItem('visicom_tg_bot_token') || '',
-        telegramChannels: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('visicom_telegram_channels') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-      },
-      data: {
-        markers,
-        drawnLines,
-        customSettlements: customSettlements.filter(
-          (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
-        ),
-        customQuickZones: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('uamapper_custom_quick_zones') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-        searchedAreas: (() => {
-          try {
-            return JSON.parse(localStorage.getItem('visicom_searched_areas') || '[]');
-          } catch {
-            return [];
-          }
-        })(),
-      },
-    };
+  // Handler: Export all settings & data as ZIP archive (with custom icons)
+  const handleExportAllSettings = async () => {
+    try {
+      const zip = new JSZip();
 
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    const dateStr = new Date().toISOString().slice(0, 10);
-    link.download = `uamapper_settings_backup_${dateStr}.json`;
-    link.href = url;
-    link.click();
-    URL.revokeObjectURL(url);
+      // 1. Gather all configuration and active states
+      const exportData = {
+        version: 2,
+        type: 'uamapper_full_backup',
+        exportedAt: new Date().toISOString(),
+        settings: {
+          theme,
+          language,
+          watermarkType,
+          watermarkText,
+          watermarkImageUrl,
+          watermarkSize,
+          watermarkOpacity,
+          watermarkRotation,
+          legendOverlayText,
+          showLegendOverlay,
+          showLogoAndLegendOnMap,
+          showRadarOverlay,
+          blurMapOnExport,
+          mapFont,
+          showCityBoundary,
+          cityBoundaryConfig,
+          showDistrictBoundary,
+          districtBoundaryConfig,
+          showUkraineBoundary,
+          ukraineBoundaryConfig,
+          showHromadaBoundaries,
+          hromadaBoundariesConfig,
+          showQuickSettlements,
+          showSettlementLabels,
+          settlementLabelMode,
+          disabledSettlementCategories,
+          activeTileLayerId: activeTileLayer.id,
+          autoHighlightZone,
+          visicomKey,
+          customIconTitles,
+          iconPresets,
+          customLibrary,
+          mapLegendConfig,
+          showAlerts,
+          showAirAlertsPanel,
+          showAlertPolygons,
+          showAlertMarkers,
+          alertsOpacity,
+          alertsStrokeWidth,
+          alertSoundEnabled,
+          alertsCustomUrl: localStorage.getItem('uamapper_alerts_custom_url') || '',
+          alertsToken: localStorage.getItem('uamapper_alerts_token') || '',
+          activeStyle,
+          telegramBotToken: localStorage.getItem('visicom_tg_bot_token') || '',
+          telegramChannels: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('visicom_telegram_channels') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+        },
+        data: {
+          markers,
+          drawnLines,
+          customLibrary,
+          customSettlements: customSettlements.filter(
+            (s) => s.id.startsWith('custom_') && !(s as any).isDeleted
+          ),
+          customQuickZones: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('uamapper_custom_quick_zones') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+          searchedAreas: (() => {
+            try {
+              return JSON.parse(localStorage.getItem('visicom_searched_areas') || '[]');
+            } catch {
+              return [];
+            }
+          })(),
+        },
+      };
+
+      // Add main JSON file to ZIP
+      zip.file('uamapper_settings.json', JSON.stringify(exportData, null, 2));
+
+      // 2. Add custom icons to custom_icons/ folder inside ZIP
+      const iconsFolder = zip.folder('custom_icons');
+      const iconsManifest: { id: string; name: string; filename: string; mimeType: string }[] = [];
+
+      if (iconsFolder && Array.isArray(customLibrary) && customLibrary.length > 0) {
+        customLibrary.forEach((icon, index) => {
+          if (!icon.dataUrl) return;
+          const match = icon.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            const mimeType = match[1];
+            const base64Data = match[2];
+            let ext = 'png';
+            if (mimeType.includes('svg')) ext = 'svg';
+            else if (mimeType.includes('jpeg') || mimeType.includes('jpg')) ext = 'jpg';
+            else if (mimeType.includes('webp')) ext = 'webp';
+
+            const cleanName = (icon.name || `icon_${icon.id}`).replace(/[^a-zA-Z0-9_\u0400-\u04FF-]/g, '_');
+            const filename = `${index + 1}_${cleanName}.${ext}`;
+            iconsFolder.file(filename, base64Data, { base64: true });
+            iconsManifest.push({
+              id: icon.id,
+              name: icon.name,
+              filename,
+              mimeType,
+            });
+          }
+        });
+      }
+
+      // Add watermark image if it's a custom base64 image
+      if (watermarkImageUrl && watermarkImageUrl.startsWith('data:') && iconsFolder) {
+        const wmMatch = watermarkImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (wmMatch) {
+          const wmMime = wmMatch[1];
+          const wmBase64 = wmMatch[2];
+          let wmExt = 'png';
+          if (wmMime.includes('svg')) wmExt = 'svg';
+          else if (wmMime.includes('jpeg') || wmMime.includes('jpg')) wmExt = 'jpg';
+          iconsFolder.file(`watermark_image.${wmExt}`, wmBase64, { base64: true });
+        }
+      }
+
+      if (iconsFolder && iconsManifest.length > 0) {
+        iconsFolder.file('manifest.json', JSON.stringify(iconsManifest, null, 2));
+      }
+
+      // 3. Generate and trigger download
+      const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `uamapper_backup_${dateStr}.zip`;
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      console.error('Error exporting settings ZIP:', err);
+      alert(language === 'uk' ? 'Помилка експорту у ZIP!' : 'Error exporting settings to ZIP!');
+    }
   };
 
-  // Handler: Import all settings & data
-  const handleImportAllSettings = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const content = e.target?.result as string;
-        const parsed = JSON.parse(content);
+  // Handler: Import all settings & data (supports .zip and .json)
+  const handleImportAllSettings = async (file: File) => {
+    try {
+      const isZip = file.name.toLowerCase().endsWith('.zip') || file.type.includes('zip');
+      let parsed: any = null;
+      let loadedCustomIcons: { id: string; name: string; dataUrl: string }[] = [];
 
-        if (!parsed || (parsed.type !== 'uamapper_full_backup' && !parsed.settings && !parsed.data)) {
-          alert(language === 'uk' ? 'Недійсний файл налаштувань!' : 'Invalid settings backup file!');
+      if (isZip) {
+        const zip = await JSZip.loadAsync(file);
+
+        // Find settings file inside ZIP
+        let settingsFile = zip.file('uamapper_settings.json') || zip.file('settings.json');
+        if (!settingsFile) {
+          const jsonFiles = zip.filter((path) => path.endsWith('.json') && !path.includes('/'));
+          if (jsonFiles.length > 0) {
+            settingsFile = jsonFiles[0];
+          }
+        }
+
+        if (!settingsFile) {
+          alert(language === 'uk' ? 'У ZIP-архіві не знайдено файл налаштувань (uamapper_settings.json)!' : 'No settings file found in ZIP!');
           return;
         }
 
-        const { settings, data } = parsed;
+        const settingsJsonText = await settingsFile.async('string');
+        parsed = JSON.parse(settingsJsonText);
 
-        if (settings) {
-          if (settings.theme) {
-            setTheme(settings.theme);
-            localStorage.setItem('visicom_theme', settings.theme);
-          }
-          if (settings.language) {
-            setLanguage(settings.language);
-            localStorage.setItem('visicom_ui_lang', settings.language);
-          }
-          if (settings.watermarkType !== undefined) {
-            setWatermarkType(settings.watermarkType);
-            localStorage.setItem('visicom_watermark_type', settings.watermarkType);
-          }
-          if (settings.watermarkText !== undefined) {
-            setWatermarkText(settings.watermarkText);
-            localStorage.setItem('visicom_watermark_text', settings.watermarkText);
-          }
-          if (settings.watermarkImageUrl !== undefined) {
-            setWatermarkImageUrl(settings.watermarkImageUrl);
-            if (settings.watermarkImageUrl) {
-              safeSetItem('visicom_watermark_image_url', settings.watermarkImageUrl);
-            } else {
-              localStorage.removeItem('visicom_watermark_image_url');
+        // Check for custom_icons/ folder
+        const iconsFolder = zip.folder('custom_icons');
+        if (iconsFolder) {
+          const manifestFile = iconsFolder.file('manifest.json');
+          if (manifestFile) {
+            try {
+              const manifestText = await manifestFile.async('string');
+              const manifest = JSON.parse(manifestText);
+              if (Array.isArray(manifest)) {
+                for (const item of manifest) {
+                  const iconFile = iconsFolder.file(item.filename);
+                  if (iconFile) {
+                    const base64 = await iconFile.async('base64');
+                    const mime = item.mimeType || (item.filename.endsWith('.svg') ? 'image/svg+xml' : 'image/png');
+                    loadedCustomIcons.push({
+                      id: item.id,
+                      name: item.name,
+                      dataUrl: `data:${mime};base64,${base64}`,
+                    });
+                  }
+                }
+              }
+            } catch (e) {
+              console.warn('Failed to parse icons manifest, will read files directly', e);
             }
           }
-          if (settings.watermarkSize !== undefined) {
-            setWatermarkSize(settings.watermarkSize);
-            localStorage.setItem('visicom_watermark_size', String(settings.watermarkSize));
-          }
-          if (settings.watermarkOpacity !== undefined) {
-            setWatermarkOpacity(settings.watermarkOpacity);
-            localStorage.setItem('visicom_watermark_opacity', String(settings.watermarkOpacity));
-          }
-          if (settings.watermarkRotation !== undefined) {
-            setWatermarkRotation(settings.watermarkRotation);
-            localStorage.setItem('visicom_watermark_rotation', String(settings.watermarkRotation));
-          }
-          if (settings.legendOverlayText !== undefined) {
-            setLegendOverlayText(settings.legendOverlayText);
-            localStorage.setItem('visicom_legend_overlay_text', settings.legendOverlayText);
-          }
-          if (settings.showLegendOverlay !== undefined) {
-            setShowLegendOverlay(settings.showLegendOverlay);
-            localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
-          }
-          if (settings.showRadarOverlay !== undefined) {
-            setShowRadarOverlay(settings.showRadarOverlay);
-            localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
-          }
-          if (settings.blurMapOnExport !== undefined) {
-            setBlurMapOnExport(settings.blurMapOnExport);
-            localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
-          }
-          if (settings.mapFont) {
-            setMapFont(settings.mapFont);
-            localStorage.setItem('uamapper_map_font', settings.mapFont);
-          }
-          if (settings.showCityBoundary !== undefined) {
-            setShowCityBoundary(settings.showCityBoundary);
-            localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
-          }
-          if (settings.showDistrictBoundary !== undefined) {
-            setShowDistrictBoundary(settings.showDistrictBoundary);
-            localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
-          }
-          if (settings.showHromadaBoundaries !== undefined) {
-            setShowHromadaBoundaries(settings.showHromadaBoundaries);
-            localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
-          }
-          if (settings.showSettlementLabels !== undefined) {
-            setShowSettlementLabels(settings.showSettlementLabels);
-            localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
-          }
-          if (settings.settlementLabelMode) {
-            setSettlementLabelMode(settings.settlementLabelMode);
-            localStorage.setItem('visicom_settlement_label_mode', settings.settlementLabelMode);
-          }
-          if (Array.isArray(settings.disabledSettlementCategories)) {
-            setDisabledSettlementCategories(settings.disabledSettlementCategories);
-            localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(settings.disabledSettlementCategories));
-          }
-          if (settings.activeTileLayerId) {
-            const matchedLayer = TILE_LAYERS.find((l) => l.id === settings.activeTileLayerId);
-            if (matchedLayer) {
-              setActiveTileLayer(matchedLayer);
-              localStorage.setItem('visicom_active_layer', matchedLayer.id);
+
+          // Fallback: read all image files in custom_icons/
+          if (loadedCustomIcons.length === 0) {
+            const imageEntries = zip.filter((path) => {
+              return path.startsWith('custom_icons/') && /\.(png|jpg|jpeg|svg|webp)$/i.test(path);
+            });
+            for (const imgEntry of imageEntries) {
+              const filename = imgEntry.name.replace('custom_icons/', '');
+              if (filename.startsWith('watermark_image')) continue;
+              const ext = filename.split('.').pop()?.toLowerCase() || 'png';
+              const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : 'image/png';
+              const base64 = await imgEntry.async('base64');
+              const cleanName = filename.replace(/^\d+_/, '').replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+              loadedCustomIcons.push({
+                id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+                name: cleanName,
+                dataUrl: `data:${mime};base64,${base64}`,
+              });
             }
           }
-          if (settings.autoHighlightZone !== undefined) {
-            setAutoHighlightZone(settings.autoHighlightZone);
-            localStorage.setItem('visicom_auto_highlight_zone', settings.autoHighlightZone ? 'true' : 'false');
-          }
-          if (settings.customIconTitles) {
-            setCustomIconTitles(settings.customIconTitles);
-            localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
-          }
-          if (settings.iconPresets) {
-            setIconPresets(settings.iconPresets);
-            localStorage.setItem('visicom_icon_presets', JSON.stringify(settings.iconPresets));
-          }
-          if (settings.activeStyle) {
-            setActiveStyle(settings.activeStyle);
-            localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
-          }
-          if (settings.telegramBotToken !== undefined) {
-            localStorage.setItem('visicom_tg_bot_token', settings.telegramBotToken);
-          }
-          if (Array.isArray(settings.telegramChannels)) {
-            localStorage.setItem('visicom_telegram_channels', JSON.stringify(settings.telegramChannels));
+
+          // Check for watermark image
+          const wmEntries = zip.filter((path) => path.startsWith('custom_icons/watermark_image'));
+          if (wmEntries.length > 0) {
+            const wmEntry = wmEntries[0];
+            const ext = wmEntry.name.split('.').pop()?.toLowerCase() || 'png';
+            const mime = ext === 'svg' ? 'image/svg+xml' : 'image/png';
+            const base64 = await wmEntry.async('base64');
+            const dataUrl = `data:${mime};base64,${base64}`;
+            setWatermarkImageUrl(dataUrl);
+            safeSetItem('visicom_watermark_image_url', dataUrl);
           }
         }
-
-        if (data) {
-          if (Array.isArray(data.markers)) {
-            setMarkers(data.markers);
-            localStorage.setItem('visicom_custom_markers', JSON.stringify(data.markers));
-          }
-          if (Array.isArray(data.drawnLines)) {
-            setDrawnLines(data.drawnLines);
-            localStorage.setItem('visicom_drawn_lines', JSON.stringify(data.drawnLines));
-          }
-          if (Array.isArray(data.customSettlements)) {
-            handleImportCustomSettlements(data.customSettlements);
-          }
-          if (Array.isArray(data.customQuickZones)) {
-            localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(data.customQuickZones));
-          }
-          if (Array.isArray(data.searchedAreas)) {
-            localStorage.setItem('visicom_searched_areas', JSON.stringify(data.searchedAreas));
-          }
-        }
-
-        alert(language === 'uk' ? 'Усі налаштування та дані успішно імпортовано!' : 'All settings and data successfully imported!');
-      } catch (err) {
-        console.error('Error importing backup:', err);
-        alert(language === 'uk' ? 'Помилка зчитування файлу налаштувань!' : 'Error reading settings file!');
+      } else {
+        // Plain JSON file
+        const content = await file.text();
+        parsed = JSON.parse(content);
       }
-    };
-    reader.readAsText(file);
+
+      if (!parsed || (parsed.type !== 'uamapper_full_backup' && !parsed.settings && !parsed.data)) {
+        alert(language === 'uk' ? 'Недійсний файл налаштувань!' : 'Invalid settings backup file!');
+        return;
+      }
+
+      const { settings, data } = parsed;
+
+      // Update custom library first
+      const jsonCustomIcons = settings?.customLibrary || data?.customLibrary || [];
+      const finalCustomLibrary = loadedCustomIcons.length > 0 ? loadedCustomIcons : jsonCustomIcons;
+      if (Array.isArray(finalCustomLibrary) && finalCustomLibrary.length > 0) {
+        handleUpdateCustomLibrary(finalCustomLibrary);
+      }
+
+      if (settings) {
+        if (settings.theme) {
+          setTheme(settings.theme);
+          localStorage.setItem('visicom_theme', settings.theme);
+        }
+        if (settings.language) {
+          setLanguage(settings.language);
+          localStorage.setItem('visicom_ui_lang', settings.language);
+        }
+        if (settings.watermarkType !== undefined) {
+          setWatermarkType(settings.watermarkType);
+          localStorage.setItem('visicom_watermark_type', settings.watermarkType);
+        }
+        if (settings.watermarkText !== undefined) {
+          setWatermarkText(settings.watermarkText);
+          localStorage.setItem('visicom_watermark_text', settings.watermarkText);
+        }
+        if (settings.watermarkImageUrl !== undefined && !loadedCustomIcons.length) {
+          setWatermarkImageUrl(settings.watermarkImageUrl);
+          if (settings.watermarkImageUrl) {
+            safeSetItem('visicom_watermark_image_url', settings.watermarkImageUrl);
+          } else {
+            localStorage.removeItem('visicom_watermark_image_url');
+          }
+        }
+        if (settings.watermarkSize !== undefined) {
+          setWatermarkSize(settings.watermarkSize);
+          localStorage.setItem('visicom_watermark_size', String(settings.watermarkSize));
+        }
+        if (settings.watermarkOpacity !== undefined) {
+          setWatermarkOpacity(settings.watermarkOpacity);
+          localStorage.setItem('visicom_watermark_opacity', String(settings.watermarkOpacity));
+        }
+        if (settings.watermarkRotation !== undefined) {
+          setWatermarkRotation(settings.watermarkRotation);
+          localStorage.setItem('visicom_watermark_rotation', String(settings.watermarkRotation));
+        }
+        if (settings.legendOverlayText !== undefined) {
+          setLegendOverlayText(settings.legendOverlayText);
+          localStorage.setItem('visicom_legend_overlay_text', settings.legendOverlayText);
+        }
+        if (settings.showLegendOverlay !== undefined) {
+          setShowLegendOverlay(settings.showLegendOverlay);
+          localStorage.setItem('visicom_show_legend_overlay', String(settings.showLegendOverlay));
+        }
+        if (settings.showLogoAndLegendOnMap !== undefined) {
+          setShowLogoAndLegendOnMap(settings.showLogoAndLegendOnMap);
+          localStorage.setItem('uamapper_show_logo_and_legend_on_map', String(settings.showLogoAndLegendOnMap));
+        }
+        if (settings.showRadarOverlay !== undefined) {
+          setShowRadarOverlay(settings.showRadarOverlay);
+          localStorage.setItem('visicom_show_radar_overlay', String(settings.showRadarOverlay));
+        }
+        if (settings.blurMapOnExport !== undefined) {
+          setBlurMapOnExport(settings.blurMapOnExport);
+          localStorage.setItem('visicom_blur_map_on_export', settings.blurMapOnExport ? 'true' : 'false');
+        }
+        if (settings.mapFont) {
+          setMapFont(settings.mapFont);
+          localStorage.setItem('uamapper_map_font', settings.mapFont);
+        }
+        if (settings.showCityBoundary !== undefined) {
+          setShowCityBoundary(settings.showCityBoundary);
+          localStorage.setItem('uamapper_show_city_boundary', String(settings.showCityBoundary));
+        }
+        if (settings.cityBoundaryConfig) {
+          setCityBoundaryConfig(settings.cityBoundaryConfig);
+          localStorage.setItem('uamapper_city_boundary_config', JSON.stringify(settings.cityBoundaryConfig));
+        }
+        if (settings.showDistrictBoundary !== undefined) {
+          setShowDistrictBoundary(settings.showDistrictBoundary);
+          localStorage.setItem('uamapper_show_district_boundary', String(settings.showDistrictBoundary));
+        }
+        if (settings.districtBoundaryConfig) {
+          setDistrictBoundaryConfig(settings.districtBoundaryConfig);
+          localStorage.setItem('uamapper_district_boundary_config', JSON.stringify(settings.districtBoundaryConfig));
+        }
+        if (settings.showUkraineBoundary !== undefined) {
+          setShowUkraineBoundary(settings.showUkraineBoundary);
+          localStorage.setItem('uamapper_show_ukraine_boundary', String(settings.showUkraineBoundary));
+        }
+        if (settings.ukraineBoundaryConfig) {
+          setUkraineBoundaryConfig(settings.ukraineBoundaryConfig);
+          localStorage.setItem('uamapper_ukraine_boundary_config', JSON.stringify(settings.ukraineBoundaryConfig));
+        }
+        if (settings.showHromadaBoundaries !== undefined) {
+          setShowHromadaBoundaries(settings.showHromadaBoundaries);
+          localStorage.setItem('uamapper_show_hromada_boundaries', String(settings.showHromadaBoundaries));
+        }
+        if (settings.hromadaBoundariesConfig) {
+          setHromadaBoundariesConfig(settings.hromadaBoundariesConfig);
+          localStorage.setItem('uamapper_hromada_boundaries_config', JSON.stringify(settings.hromadaBoundariesConfig));
+        }
+        if (settings.showQuickSettlements !== undefined) {
+          setShowQuickSettlements(settings.showQuickSettlements);
+          localStorage.setItem('uamapper_show_quick_settlements', String(settings.showQuickSettlements));
+        }
+        if (settings.showSettlementLabels !== undefined) {
+          setShowSettlementLabels(settings.showSettlementLabels);
+          localStorage.setItem('visicom_show_settlement_labels', String(settings.showSettlementLabels));
+        }
+        if (settings.settlementLabelMode) {
+          setSettlementLabelMode(settings.settlementLabelMode);
+          localStorage.setItem('visicom_settlement_label_mode', settings.settlementLabelMode);
+        }
+        if (Array.isArray(settings.disabledSettlementCategories)) {
+          setDisabledSettlementCategories(settings.disabledSettlementCategories);
+          localStorage.setItem('visicom_disabled_settlement_categories', JSON.stringify(settings.disabledSettlementCategories));
+        }
+        if (settings.activeTileLayerId) {
+          const matchedLayer = TILE_LAYERS.find((l) => l.id === settings.activeTileLayerId);
+          if (matchedLayer) {
+            setActiveTileLayer(matchedLayer);
+            localStorage.setItem('visicom_active_layer', matchedLayer.id);
+          }
+        }
+        if (settings.autoHighlightZone !== undefined) {
+          setAutoHighlightZone(settings.autoHighlightZone);
+          localStorage.setItem('visicom_auto_highlight_zone', settings.autoHighlightZone ? 'true' : 'false');
+        }
+        if (settings.customIconTitles) {
+          setCustomIconTitles(settings.customIconTitles);
+          localStorage.setItem('visicom_custom_icon_titles', JSON.stringify(settings.customIconTitles));
+        }
+        if (settings.iconPresets) {
+          setIconPresets(settings.iconPresets);
+          localStorage.setItem('visicom_icon_presets', JSON.stringify(settings.iconPresets));
+        }
+        if (settings.mapLegendConfig) {
+          setMapLegendConfig(settings.mapLegendConfig);
+          try {
+            localStorage.setItem('tactical_map_legend_cfg', JSON.stringify(settings.mapLegendConfig));
+          } catch {}
+        }
+        if (settings.showAlerts !== undefined) {
+          setShowAlerts(settings.showAlerts);
+          localStorage.setItem('uamapper_show_alerts', String(settings.showAlerts));
+        }
+        if (settings.showAirAlertsPanel !== undefined) {
+          setShowAirAlertsPanel(settings.showAirAlertsPanel);
+          localStorage.setItem('uamapper_show_alerts_panel', String(settings.showAirAlertsPanel));
+        }
+        if (settings.showAlertPolygons !== undefined) {
+          setShowAlertPolygons(settings.showAlertPolygons);
+          localStorage.setItem('uamapper_show_alert_polygons', String(settings.showAlertPolygons));
+        }
+        if (settings.showAlertMarkers !== undefined) {
+          setShowAlertMarkers(settings.showAlertMarkers);
+          localStorage.setItem('uamapper_show_alert_markers', String(settings.showAlertMarkers));
+        }
+        if (settings.alertsOpacity !== undefined) {
+          setAlertsOpacity(settings.alertsOpacity);
+          localStorage.setItem('uamapper_alerts_opacity', String(settings.alertsOpacity));
+        }
+        if (settings.alertsStrokeWidth !== undefined) {
+          setAlertsStrokeWidth(settings.alertsStrokeWidth);
+          localStorage.setItem('uamapper_alerts_stroke_width', String(settings.alertsStrokeWidth));
+        }
+        if (settings.alertSoundEnabled !== undefined) {
+          setAlertSoundEnabled(settings.alertSoundEnabled);
+          localStorage.setItem('uamapper_alert_sound', String(settings.alertSoundEnabled));
+        }
+        if (settings.alertsCustomUrl !== undefined) {
+          localStorage.setItem('uamapper_alerts_custom_url', settings.alertsCustomUrl);
+        }
+        if (settings.alertsToken !== undefined) {
+          localStorage.setItem('uamapper_alerts_token', settings.alertsToken);
+        }
+        if (settings.activeStyle) {
+          setActiveStyle(settings.activeStyle);
+          localStorage.setItem('visicom_active_style', JSON.stringify(settings.activeStyle));
+        }
+        if (settings.telegramBotToken !== undefined) {
+          localStorage.setItem('visicom_tg_bot_token', settings.telegramBotToken);
+        }
+        if (Array.isArray(settings.telegramChannels)) {
+          localStorage.setItem('visicom_telegram_channels', JSON.stringify(settings.telegramChannels));
+        }
+      }
+
+      if (data) {
+        if (Array.isArray(data.markers)) {
+          setMarkers(data.markers);
+          localStorage.setItem('visicom_custom_markers', JSON.stringify(data.markers));
+        }
+        if (Array.isArray(data.drawnLines)) {
+          setDrawnLines(data.drawnLines);
+          localStorage.setItem('visicom_drawn_lines', JSON.stringify(data.drawnLines));
+        }
+        if (Array.isArray(data.customSettlements)) {
+          handleImportCustomSettlements(data.customSettlements);
+        }
+        if (Array.isArray(data.customQuickZones)) {
+          localStorage.setItem('uamapper_custom_quick_zones', JSON.stringify(data.customQuickZones));
+        }
+        if (Array.isArray(data.searchedAreas)) {
+          localStorage.setItem('visicom_searched_areas', JSON.stringify(data.searchedAreas));
+        }
+      }
+
+      alert(
+        language === 'uk'
+          ? (isZip ? 'Усі налаштування та власні іконки успішно імпортовано з ZIP-архіву!' : 'Усі налаштування та дані успішно імпортовано!')
+          : (isZip ? 'All settings and custom icons successfully imported from ZIP!' : 'All settings and data successfully imported!')
+      );
+    } catch (err) {
+      console.error('Error importing backup:', err);
+      alert(language === 'uk' ? 'Помилка зчитування файлу налаштувань!' : 'Error reading settings file!');
+    }
   };
 
   const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
@@ -1512,8 +2324,6 @@ export default function App() {
             onToggleAutoHighlightZone={handleToggleAutoHighlightZone}
             theme={theme}
             onUpdateMarker={handleUpdateMarker}
-            routePlacementMarkerId={routePlacementMarkerId}
-            onFinishRoutePlacement={() => setRoutePlacementMarkerId(null)}
             watermarkType={watermarkType}
             watermarkText={watermarkText}
             watermarkImageUrl={watermarkImageUrl}
@@ -1521,14 +2331,27 @@ export default function App() {
             watermarkOpacity={watermarkOpacity}
             watermarkRotation={watermarkRotation}
             showLegendOverlay={showLegendOverlay}
+            showLogoAndLegendOnMap={showLogoAndLegendOnMap}
             legendOverlayText={legendOverlayText}
             showRadarOverlay={showRadarOverlay}
             blurMapOnExport={blurMapOnExport}
             mapFont={mapFont}
             showCityBoundary={showCityBoundary}
+            cityBoundaryConfig={cityBoundaryConfig}
             showDistrictBoundary={showDistrictBoundary}
+            districtBoundaryConfig={districtBoundaryConfig}
+            showUkraineBoundary={showUkraineBoundary}
+            ukraineBoundaryConfig={ukraineBoundaryConfig}
+            onToggleUkraineBoundary={handleToggleUkraineBoundary}
             showHromadaBoundaries={showHromadaBoundaries}
+            hromadaBoundariesConfig={hromadaBoundariesConfig}
             onToggleHromadaBoundaries={setShowHromadaBoundaries}
+            showQuickSettlements={showQuickSettlements}
+            onToggleQuickSettlements={handleUpdateShowQuickSettlements}
+            deepStateOccupiedConfig={deepStateOccupiedConfig}
+            onToggleDeepStateOccupied={handleToggleDeepStateOccupied}
+            deepStateGeoJson={deepStateGeoJson}
+            isLoadingDeepState={isLoadingDeepState}
             showSettlementLabels={showSettlementLabels}
             settlementLabelMode={settlementLabelMode}
             disabledSettlementCategories={disabledSettlementCategories}
@@ -1540,7 +2363,7 @@ export default function App() {
             onDeleteCustomSettlement={handleDeleteCustomSettlement}
             drawnLines={drawnLines}
             selectedLineId={selectedLineId}
-            onSelectLine={setSelectedLineId}
+            onSelectLine={handleSelectLine}
             onAddDrawnLine={handleAddDrawnLine}
             onUpdateDrawnLine={handleUpdateDrawnLine}
             onDeleteDrawnLine={handleDeleteDrawnLine}
@@ -1550,10 +2373,18 @@ export default function App() {
             lineStartStyle={lineStartStyle}
             lineStartCustomIcon={lineStartCustomIcon}
             lineStartIconRotation={lineStartIconRotation}
+            lineStartIconSize={lineStartIconSize}
             lineEndStyle={lineEndStyle}
             lineEndCustomIcon={lineEndCustomIcon}
             lineEndIconRotation={lineEndIconRotation}
+            lineEndIconSize={lineEndIconSize}
             lineDashStyle={lineDashStyle}
+            lineDrawMethod={lineDrawMethod}
+            onChangeLineDrawMethod={handleSetLineDrawMethod}
+            onChangeLineStartStyle={setLineStartStyle}
+            onChangeLineEndStyle={setLineEndStyle}
+            mapLegendConfig={mapLegendConfig}
+            onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
             activeAlerts={activeAlerts}
             showAlerts={showAlerts}
             showAlertPolygons={showAlertPolygons}
@@ -1561,6 +2392,10 @@ export default function App() {
             alertsOpacity={alertsOpacity}
             alertsStrokeWidth={alertsStrokeWidth}
             onAlertClick={handleSelectAlert}
+            clearAllTrigger={clearAllTrigger}
+            isLiveMode={isLiveMode}
+            liveThreats={liveThreats}
+            showLiveTrails={showLiveTrails}
           />
 
           {/* Floating Air Alerts Widget Panel */}
@@ -1617,8 +2452,18 @@ export default function App() {
             />
           )}
 
-          {/* Floating Top-Right Quick Air Alerts Badge / Button on Map (Desktop & Tablet) */}
-          <div className="hidden sm:flex absolute top-4 right-4 z-30 items-center gap-2">
+          {/* Floating Top-Right Quick Live Mode & Air Alerts Badges / Buttons on Map */}
+          <div className="absolute top-3.5 right-14 sm:right-16 z-30 flex items-center gap-2">
+            <LiveModeToggle
+              isLiveMode={isLiveMode}
+              onToggle={handleToggleLiveMode}
+              threatsCount={liveThreats.length}
+              isLoading={isLoadingLive}
+              language={language}
+              theme={theme}
+              onRefresh={refreshLiveData}
+            />
+
             <button
               onClick={() => {
                 setShowAirAlertsPanel((prev) => {
@@ -1627,12 +2472,14 @@ export default function App() {
                   return next;
                 });
               }}
-              className={`px-3 py-1.5 rounded-full border shadow-xl backdrop-blur-xl flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+              className={`hidden sm:flex px-3.5 py-1.5 rounded-full border shadow-[0_8px_32px_0_rgba(0,0,0,0.25)] backdrop-blur-2xl backdrop-saturate-150 items-center gap-2 text-xs font-bold transition-all cursor-pointer active:scale-95 ${
                 showAirAlertsPanel
-                  ? 'bg-red-600 text-white border-red-400 shadow-red-500/30'
+                  ? 'bg-red-600/90 text-white border-red-400/80 shadow-red-500/30'
                   : activeAlerts.length > 0
-                  ? 'bg-slate-900/90 hover:bg-slate-900 border-red-500/50 text-red-300'
-                  : 'bg-slate-900/80 hover:bg-slate-900 border-white/10 text-slate-300'
+                  ? 'bg-slate-900/75 hover:bg-slate-900/90 border-red-500/50 text-red-300 ring-1 ring-red-500/30'
+                  : theme === 'light'
+                  ? 'bg-white/70 hover:bg-white/90 border-white/80 text-slate-700 ring-1 ring-black/5'
+                  : 'bg-slate-900/70 hover:bg-slate-900/90 border-white/15 text-slate-200 ring-1 ring-white/10'
               }`}
               title={language === 'uk' ? 'Панель повітряних тривог' : 'Air Raid Alerts Panel'}
             >
@@ -1648,12 +2495,22 @@ export default function App() {
                   ? 'bg-white/20 text-white'
                   : activeAlerts.length > 0
                   ? 'bg-red-500 text-white'
-                  : 'bg-emerald-500/20 text-emerald-300'
+                  : 'bg-emerald-500/20 text-emerald-400'
               }`}>
                 {activeAlerts.length}
               </span>
             </button>
           </div>
+
+          {/* Floating Live Side Messages Feed ("з боку локанічно майже не замітно") */}
+          <LiveMessagesFeed
+            messages={liveMessages}
+            isLoading={isLoadingLive}
+            onRefresh={refreshLiveMessages}
+            language={language}
+            theme={theme}
+            isLiveMode={isLiveMode && showLiveMessagesFeed}
+          />
 
 
           {/* Floating Action Bar (When no marker is selected, Mobile Only) */}
@@ -1681,13 +2538,13 @@ export default function App() {
                 <Camera className="w-5 h-5 text-slate-950" />
               </button>
 
-              {/* Find Location GPS Button */}
+              {/* Page Reload / Refresh (F5) Button */}
               <button
-                onClick={handleFindMyLocation}
-                title={language === 'uk' ? 'Моє місцезнаходження' : 'My Location'}
-                className={`w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-200 ${isLocating ? 'animate-spin text-blue-400' : ''}`}
+                onClick={handleReloadPage}
+                title={language === 'uk' ? 'Оновити сторінку (F5)' : 'Reload page (F5)'}
+                className="w-11 h-11 rounded-full flex items-center justify-center transition-all cursor-pointer flex-shrink-0 bg-white/10 hover:bg-white/20 text-slate-200 active:scale-95"
               >
-                <Compass className="w-5 h-5" />
+                <RotateCw className={`w-5 h-5 ${isReloading ? 'animate-spin text-blue-400' : ''}`} />
               </button>
 
               {/* Theme Toggle Button */}
@@ -1853,21 +2710,81 @@ export default function App() {
             </div>
           )}
 
+          {/* Summon Sidebar & Quick Buffer Buttons on Map (Floating Center-Right: Visible on desktop only, hidden on mobile) */}
+          <div className="hidden md:flex absolute top-1/2 -translate-y-1/2 right-2.5 sm:right-3.5 z-30 flex-col items-end gap-2.5 pointer-events-auto">
+            <button
+              id="summon-sidebar-toggle-btn"
+              onClick={() => {
+                if (window.innerWidth < 768) {
+                  setMobileView(mobileView === 'sidebar' ? 'map' : 'sidebar');
+                } else {
+                  handleToggleSidebar();
+                }
+              }}
+              title={
+                isSidebarOpen
+                  ? (language === 'uk' ? 'Сховати бічну панель' : 'Hide sidebar panel')
+                  : (language === 'uk' ? 'Відкрити бічну панель' : 'Open sidebar panel')
+              }
+              className="px-3.5 py-2.5 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex items-center gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 bg-blue-600 hover:bg-blue-700 text-white border-blue-400/80 ring-2 ring-blue-500/40 shadow-blue-500/35 hover:scale-105"
+            >
+              {isSidebarOpen ? (
+                <>
+                  <PanelRightClose className="w-4 h-4 text-white shrink-0" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Сховати' : 'Hide'}</span>
+                </>
+              ) : (
+                <>
+                  <PanelRightOpen className="w-4 h-4 text-white shrink-0" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Панель' : 'Sidebar'}</span>
+                </>
+              )}
+            </button>
+
+            {/* Quick Buffer / Copy Map to Clipboard Button */}
+            <button
+              id="quick-buffer-copy-btn"
+              onClick={handleQuickCopyBuffer}
+              title={language === 'uk' ? 'Скопіювати карту в буфер обміну (БУФЕР)' : 'Copy map to clipboard (BUFFER)'}
+              className={`px-3.5 py-2.5 rounded-2xl border backdrop-blur-2xl backdrop-saturate-200 shadow-[0_8px_32px_rgba(0,0,0,0.3)] flex items-center gap-2 font-black text-xs transition-all duration-300 cursor-pointer active:scale-95 ${
+                isQuickCopied
+                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-400/50 shadow-emerald-500/40 scale-105'
+                  : 'bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 border-[#FFD700]/50 shadow-[#FFD700]/25 hover:scale-105'
+              }`}
+            >
+              {isQuickCopied ? (
+                <>
+                  <Check className="w-4 h-4 text-white shrink-0 animate-bounce" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Скопійовано!' : 'Copied!'}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-slate-950 shrink-0" />
+                  <span className="font-extrabold tracking-tight">{language === 'uk' ? 'Буфер' : 'Buffer'}</span>
+                </>
+              )}
+            </button>
+          </div>
+
         </div>
 
         {/* Sidebar Controls (Rendered SECOND to be on the right, wrapped for full responsiveness) */}
-        <div className={`transition-all duration-300 ${mobileView === 'sidebar' ? 'w-full h-full flex flex-col' : 'hidden md:flex md:w-80 md:h-full flex-col'}`}>
-          <div className="flex-1 min-h-0 overflow-hidden">
+        <div className={`transition-all duration-300 shrink-0 ${
+          mobileView === 'sidebar' 
+            ? 'w-full h-full flex flex-col z-40 fixed inset-0 md:relative' 
+            : isSidebarOpen 
+              ? 'hidden md:flex md:w-[360px] lg:w-[380px] md:h-full flex-col' 
+              : 'hidden'
+        }`}>
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
             <Sidebar
+              onClose={handleToggleSidebar}
               markers={markers}
               selectedMarkerId={selectedMarkerId}
               onSelectMarker={handleSelectMarker}
               onAddMarker={handleAddMarker}
               onUpdateMarker={handleUpdateMarker}
               onDeleteMarker={handleDeleteMarker}
-              routePlacementMarkerId={routePlacementMarkerId}
-              onStartRoutePlacement={startRoutePlacement}
-              onCancelRoutePlacement={cancelRoutePlacement}
               onClearMarkers={handleClearMarkers}
               tileLayers={TILE_LAYERS}
               activeTileLayer={activeTileLayer}
@@ -1923,6 +2840,8 @@ export default function App() {
               onUpdateWatermarkRotation={setWatermarkRotation}
               showLegendOverlay={showLegendOverlay}
               onUpdateShowLegendOverlay={setShowLegendOverlay}
+              showLogoAndLegendOnMap={showLogoAndLegendOnMap}
+              onUpdateShowLogoAndLegendOnMap={setShowLogoAndLegendOnMap}
               legendOverlayText={legendOverlayText}
               onUpdateLegendOverlayText={setLegendOverlayText}
               showRadarOverlay={showRadarOverlay}
@@ -1936,10 +2855,27 @@ export default function App() {
               onUpdateMapFont={handleUpdateMapFont}
               showCityBoundary={showCityBoundary}
               onUpdateShowCityBoundary={setShowCityBoundary}
+              cityBoundaryConfig={cityBoundaryConfig}
+              onUpdateCityBoundaryConfig={handleUpdateCityBoundaryConfig}
               showDistrictBoundary={showDistrictBoundary}
               onUpdateShowDistrictBoundary={setShowDistrictBoundary}
+              districtBoundaryConfig={districtBoundaryConfig}
+              onUpdateDistrictBoundaryConfig={handleUpdateDistrictBoundaryConfig}
+              showUkraineBoundary={showUkraineBoundary}
+              onUpdateShowUkraineBoundary={handleToggleUkraineBoundary}
+              ukraineBoundaryConfig={ukraineBoundaryConfig}
+              onUpdateUkraineBoundaryConfig={handleUpdateUkraineBoundaryConfig}
               showHromadaBoundaries={showHromadaBoundaries}
               onUpdateShowHromadaBoundaries={setShowHromadaBoundaries}
+              hromadaBoundariesConfig={hromadaBoundariesConfig}
+              onUpdateHromadaBoundariesConfig={handleUpdateHromadaBoundariesConfig}
+              showQuickSettlements={showQuickSettlements}
+              onToggleQuickSettlements={handleUpdateShowQuickSettlements}
+              deepStateOccupiedConfig={deepStateOccupiedConfig}
+              onUpdateDeepStateOccupiedConfig={handleUpdateDeepStateConfig}
+              isLoadingDeepState={isLoadingDeepState}
+              deepStateLastSync={deepStateLastSync}
+              onRefreshDeepState={fetchDeepStateData}
               showSettlementLabels={showSettlementLabels}
               onUpdateShowSettlementLabels={handleToggleSettlementLabels}
               autoHighlightZone={autoHighlightZone}
@@ -1957,11 +2893,13 @@ export default function App() {
               onImportCustomSettlements={handleImportCustomSettlements}
               onExportAllSettings={handleExportAllSettings}
               onImportAllSettings={handleImportAllSettings}
+              customLibrary={customLibrary}
+              onUpdateCustomLibrary={handleUpdateCustomLibrary}
               customIconTitles={customIconTitles}
               onUpdateCustomIconTitle={handleUpdateCustomIconTitle}
               drawnLines={drawnLines}
               selectedLineId={selectedLineId}
-              onSelectLine={setSelectedLineId}
+              onSelectLine={handleSelectLine}
               onUpdateLine={handleUpdateDrawnLine}
               onDeleteLine={handleDeleteDrawnLine}
               onClearDrawnLines={handleClearDrawnLines}
@@ -1977,14 +2915,22 @@ export default function App() {
               onChangeLineStartCustomIcon={setLineStartCustomIcon}
               lineStartIconRotation={lineStartIconRotation}
               onChangeLineStartIconRotation={setLineStartIconRotation}
+              lineStartIconSize={lineStartIconSize}
+              onChangeLineStartIconSize={setLineStartIconSize}
               lineEndStyle={lineEndStyle}
               onChangeLineEndStyle={setLineEndStyle}
               lineEndCustomIcon={lineEndCustomIcon}
               onChangeLineEndCustomIcon={setLineEndCustomIcon}
               lineEndIconRotation={lineEndIconRotation}
               onChangeLineEndIconRotation={setLineEndIconRotation}
+              lineEndIconSize={lineEndIconSize}
+              onChangeLineEndIconSize={setLineEndIconSize}
               lineDashStyle={lineDashStyle}
               onChangeLineDashStyle={setLineDashStyle}
+              lineDrawMethod={lineDrawMethod}
+              onChangeLineDrawMethod={handleSetLineDrawMethod}
+              mapLegendConfig={mapLegendConfig}
+              onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
               activeAlerts={activeAlerts}
               showAlerts={showAlerts}
               onToggleShowAlerts={() => {
@@ -2030,6 +2976,28 @@ export default function App() {
               }}
               onRefreshAlerts={refreshAlerts}
               isLoadingAlerts={isLoadingAlerts}
+              isLiveMode={isLiveMode}
+              onToggleLiveMode={handleToggleLiveMode}
+              liveThreats={liveThreats}
+              isLoadingLive={isLoadingLive}
+              onRefreshLive={refreshLiveData}
+              showLiveTrails={showLiveTrails}
+              onToggleShowLiveTrails={() => {
+                setShowLiveTrails((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_live_trails', String(next));
+                  return next;
+                });
+              }}
+              showLiveMessagesFeed={showLiveMessagesFeed}
+              onToggleShowLiveMessagesFeed={() => {
+                setShowLiveMessagesFeed((prev) => {
+                  const next = !prev;
+                  localStorage.setItem('uamapper_show_live_messages', String(next));
+                  return next;
+                });
+              }}
+              liveMessagesCount={liveMessages.length}
             />
           </div>
           {/* Mobile Back-to-Map Sticky bottom bar */}
