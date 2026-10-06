@@ -1,0 +1,5575 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
+import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
+import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
+import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
+import { simplifyLatLngPath } from '../utils/smoothing';
+import { 
+  Map as MapIcon, 
+  Settings, 
+  Layers, 
+  Trash2, 
+  Upload, 
+  Sliders, 
+  Check, 
+  Globe, 
+  ChevronRight,
+  ChevronDown,
+  MapPin,
+  Send,
+  RotateCcw,
+  Sun,
+  Moon,
+  CircleDot,
+  Compass,
+  Move,
+  Download,
+  Copy,
+  AlertCircle,
+  Edit3,
+  Ruler,
+  ShieldAlert,
+  PenTool,
+  Hand,
+  Building2,
+  Spline,
+  Sparkles,
+  Plus,
+  Image as ImageIcon,
+  Radio,
+  Bell,
+  RefreshCw,
+  Type,
+  PanelRightClose,
+  KeyRound,
+  ExternalLink,
+  X
+} from 'lucide-react';
+
+interface SidebarProps {
+  onClose?: () => void;
+  markers: CustomMarker[];
+  selectedMarkerId: string | null;
+  onSelectMarker: (id: string | null) => void;
+  onAddMarker: (lat?: number, lng?: number) => void;
+  onUpdateMarker: (marker: CustomMarker) => void;
+  onDeleteMarker: (id: string) => void;
+  onClearMarkers: () => void;
+  tileLayers: TileLayerConfig[];
+  activeTileLayer: TileLayerConfig;
+  onSelectTileLayer: (layer: TileLayerConfig) => void;
+  visicomKey: string;
+  onUpdateVisicomKey: (key: string) => void;
+  language: Language;
+  onToggleLanguage: () => void;
+  onImportMarkers: (imported: CustomMarker[]) => void;
+  interactionMode?: InteractionMode;
+  onSetInteractionMode?: (mode: InteractionMode) => void;
+  onUndo?: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
+  onExportPNG?: () => void;
+  onExportTelegram?: () => void;
+  onCopyPNG?: () => void;
+  activeStyle?: Partial<CustomMarker>;
+  onUpdateActiveStyle?: React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>;
+  watermarkType?: WatermarkType;
+  onUpdateWatermarkType?: (type: WatermarkType) => void;
+  watermarkText?: string;
+  onUpdateWatermarkText?: (text: string) => void;
+  watermarkImageUrl?: string;
+  onUpdateWatermarkImageUrl?: (url: string) => void;
+  watermarkSize?: number;
+  onUpdateWatermarkSize?: (size: number) => void;
+  watermarkOpacity?: number;
+  onUpdateWatermarkOpacity?: (opacity: number) => void;
+  watermarkRotation?: number;
+  onUpdateWatermarkRotation?: (rotation: number) => void;
+  showLegendOverlay?: boolean;
+  onUpdateShowLegendOverlay?: (show: boolean) => void;
+  showLogoAndLegendOnMap?: boolean;
+  onUpdateShowLogoAndLegendOnMap?: (show: boolean) => void;
+  legendOverlayText?: string;
+  onUpdateLegendOverlayText?: (text: string) => void;
+  showRadarOverlay?: boolean;
+  onUpdateShowRadarOverlay?: (show: boolean) => void;
+  blurMapOnExport?: boolean;
+  onUpdateBlurMapOnExport?: (blur: boolean) => void;
+  mapFont?: MapFontFamily;
+  onUpdateMapFont?: (font: MapFontFamily) => void;
+  showCityBoundary?: boolean;
+  onUpdateShowCityBoundary?: (show: boolean) => void;
+  cityBoundaryConfig?: BoundaryStyleConfig;
+  onUpdateCityBoundaryConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
+  showDistrictBoundary?: boolean;
+  onUpdateShowDistrictBoundary?: (show: boolean) => void;
+  districtBoundaryConfig?: BoundaryStyleConfig;
+  onUpdateDistrictBoundaryConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
+  showUkraineBoundary?: boolean;
+  onUpdateShowUkraineBoundary?: (show: boolean) => void;
+  ukraineBoundaryConfig?: UkraineBoundaryConfig;
+  onUpdateUkraineBoundaryConfig?: (updates: Partial<UkraineBoundaryConfig>) => void;
+  showHromadaBoundaries?: boolean;
+  onUpdateShowHromadaBoundaries?: (show: boolean) => void;
+  hromadaBoundariesConfig?: BoundaryStyleConfig;
+  onUpdateHromadaBoundariesConfig?: (updates: Partial<BoundaryStyleConfig>) => void;
+  showQuickSettlements?: boolean;
+  onToggleQuickSettlements?: (show: boolean) => void;
+  deepStateOccupiedConfig?: DeepStateOccupiedConfig;
+  onUpdateDeepStateOccupiedConfig?: (updates: Partial<DeepStateOccupiedConfig>) => void;
+  isLoadingDeepState?: boolean;
+  deepStateLastSync?: string | null;
+  onRefreshDeepState?: () => void;
+  showSettlementLabels?: boolean;
+  onUpdateShowSettlementLabels?: (show: boolean) => void;
+  settlementLabelMode?: 'all' | 'districts_cities' | 'districts_only';
+  onUpdateSettlementLabelMode?: (mode: 'all' | 'districts_cities' | 'districts_only') => void;
+  disabledSettlementCategories?: SettlementCategory[];
+  onToggleSettlementCategory?: (category: SettlementCategory) => void;
+  customSettlements?: Settlement[];
+  onEnableSettlementMode?: () => void;
+  onEditSettlement?: (settlement: Settlement) => void;
+  onDeleteCustomSettlement?: (id: string) => void;
+  onClearAllCustomSettlements?: () => void;
+  onExportCustomSettlements?: () => void;
+  onImportCustomSettlements?: (settlements: Settlement[]) => void;
+  onExportAllSettings?: () => void;
+  onImportAllSettings?: (file: File) => void;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
+  onUpdateCustomLibrary?: (lib: { id: string; name: string; dataUrl: string }[]) => void;
+  autoHighlightZone?: boolean;
+  onToggleAutoHighlightZone?: (enabled: boolean) => void;
+  customIconTitles?: Record<string, string>;
+  onUpdateCustomIconTitle?: (iconType: string, title: string) => void;
+  iconPresets?: Record<string, IconPreset>;
+  onUpdateIconPreset?: (iconType: string, presetUpdates: Partial<IconPreset>) => void;
+  onResetIconPreset?: (iconType: string) => void;
+  onApplyPresetToAllIcons?: (preset: Partial<IconPreset>) => void;
+
+  drawnLines?: DrawnLine[];
+  selectedLineId?: string | null;
+  onSelectLine?: (id: string | null) => void;
+  onUpdateLine?: (line: DrawnLine) => void;
+  onDeleteLine?: (id: string) => void;
+  onClearDrawnLines?: () => void;
+
+  lineColor?: string;
+  onChangeLineColor?: (color: string) => void;
+  lineWeight?: number;
+  onChangeLineWeight?: (weight: number) => void;
+  lineSmoothed?: boolean;
+  onChangeLineSmoothed?: (smoothed: boolean) => void;
+  lineStartStyle?: LineEndpointType;
+  onChangeLineStartStyle?: (style: LineEndpointType) => void;
+  lineStartCustomIcon?: string;
+  onChangeLineStartCustomIcon?: (url: string) => void;
+  lineStartIconRotation?: number;
+  onChangeLineStartIconRotation?: (rot: number) => void;
+  lineStartIconSize?: number;
+  onChangeLineStartIconSize?: (size: number) => void;
+  lineEndStyle?: LineEndpointType;
+  onChangeLineEndStyle?: (style: LineEndpointType) => void;
+  lineEndCustomIcon?: string;
+  onChangeLineEndCustomIcon?: (url: string) => void;
+  lineEndIconRotation?: number;
+  onChangeLineEndIconRotation?: (rot: number) => void;
+  lineEndIconSize?: number;
+  onChangeLineEndIconSize?: (size: number) => void;
+  lineDashStyle?: 'solid' | 'dashed' | 'dotted';
+  onChangeLineDashStyle?: (dash: 'solid' | 'dashed' | 'dotted') => void;
+  lineDrawMethod?: LineDrawMethod;
+  onChangeLineDrawMethod?: (method: LineDrawMethod) => void;
+
+  // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
+  mapLegendConfig?: MapLegendConfig;
+  onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
+
+  // Air Alerts Props
+  activeAlerts?: AirAlert[];
+  showAlerts?: boolean;
+  onToggleShowAlerts?: () => void;
+  showAirAlertsPanel?: boolean;
+  onToggleShowAirAlertsPanel?: () => void;
+  showAlertPolygons?: boolean;
+  onToggleShowAlertPolygons?: () => void;
+  showAlertMarkers?: boolean;
+  onToggleShowAlertMarkers?: () => void;
+  alertsOpacity?: number;
+  onChangeAlertsOpacity?: (opacity: number) => void;
+  alertsStrokeWidth?: number;
+  onChangeAlertsStrokeWidth?: (width: number) => void;
+  onRefreshAlerts?: () => void;
+  isLoadingAlerts?: boolean;
+
+  // Live Mode (Neptun) Props
+  isLiveMode?: boolean;
+  onToggleLiveMode?: () => void;
+  liveThreats?: NeptunThreat[];
+  isLoadingLive?: boolean;
+  onRefreshLive?: () => void;
+  showLiveTrails?: boolean;
+  onToggleShowLiveTrails?: () => void;
+  showLiveMessagesFeed?: boolean;
+  onToggleShowLiveMessagesFeed?: () => void;
+  liveMessagesCount?: number;
+}
+
+
+export const Sidebar: React.FC<SidebarProps> = ({
+  onClose,
+  markers,
+  selectedMarkerId,
+  onSelectMarker,
+  onAddMarker,
+  onUpdateMarker,
+  onDeleteMarker,
+  onClearMarkers,
+  tileLayers,
+  activeTileLayer,
+  onSelectTileLayer,
+  visicomKey,
+  onUpdateVisicomKey,
+  language,
+  onToggleLanguage,
+  onImportMarkers,
+  interactionMode = 'draw',
+  onSetInteractionMode = (_mode) => {},
+  onUndo = () => {},
+  theme = 'light',
+  onToggleTheme = () => {},
+  onExportPNG = () => {},
+  onExportTelegram = () => {},
+  onCopyPNG = () => {},
+  activeStyle = {} as Partial<CustomMarker>,
+  onUpdateActiveStyle = (() => {}) as React.Dispatch<React.SetStateAction<Partial<CustomMarker>>>,
+  watermarkType = 'text',
+  onUpdateWatermarkType = (_type) => {},
+  watermarkText = 'UA Mapper',
+  onUpdateWatermarkText = (_text) => {},
+  watermarkImageUrl = '',
+  onUpdateWatermarkImageUrl = (_url) => {},
+  watermarkSize,
+  onUpdateWatermarkSize = (_size) => {},
+  watermarkOpacity,
+  onUpdateWatermarkOpacity = (_opacity) => {},
+  watermarkRotation,
+  onUpdateWatermarkRotation = (_rotation) => {},
+  showLegendOverlay = true,
+  onUpdateShowLegendOverlay = (_show) => {},
+  showLogoAndLegendOnMap = true,
+  onUpdateShowLogoAndLegendOnMap = (_show) => {},
+  legendOverlayText = '',
+  onUpdateLegendOverlayText = (_text) => {},
+  showRadarOverlay = true,
+  onUpdateShowRadarOverlay = (_show) => {},
+  blurMapOnExport = false,
+  onUpdateBlurMapOnExport = (_blur) => {},
+  mapFont = 'inter',
+  onUpdateMapFont = (_font) => {},
+  showCityBoundary = true,
+  onUpdateShowCityBoundary,
+  cityBoundaryConfig,
+  onUpdateCityBoundaryConfig,
+  showDistrictBoundary = true,
+  onUpdateShowDistrictBoundary,
+  districtBoundaryConfig,
+  onUpdateDistrictBoundaryConfig,
+  showUkraineBoundary = true,
+  onUpdateShowUkraineBoundary,
+  ukraineBoundaryConfig,
+  onUpdateUkraineBoundaryConfig,
+  showHromadaBoundaries = true,
+  onUpdateShowHromadaBoundaries,
+  hromadaBoundariesConfig,
+  onUpdateHromadaBoundariesConfig,
+  showQuickSettlements = true,
+  onToggleQuickSettlements,
+  deepStateOccupiedConfig,
+  onUpdateDeepStateOccupiedConfig,
+  isLoadingDeepState = false,
+  deepStateLastSync = null,
+  onRefreshDeepState,
+  showSettlementLabels = true,
+  onUpdateShowSettlementLabels = (_show) => {},
+  settlementLabelMode = 'all',
+  onUpdateSettlementLabelMode = (_mode) => {},
+  disabledSettlementCategories = [],
+  onToggleSettlementCategory = (_category) => {},
+  customSettlements = [],
+  onEnableSettlementMode = () => {},
+  onEditSettlement = (_s) => {},
+  onDeleteCustomSettlement = (_id) => {},
+  onClearAllCustomSettlements = () => {},
+  onExportCustomSettlements = () => {},
+  onImportCustomSettlements = (_settlements) => {},
+  onExportAllSettings,
+  onImportAllSettings,
+  customLibrary: propsCustomLibrary,
+  onUpdateCustomLibrary,
+  autoHighlightZone = false,
+  onToggleAutoHighlightZone = (_enabled) => {},
+  customIconTitles = {},
+  onUpdateCustomIconTitle = (_type, _val) => {},
+  iconPresets = {},
+  onUpdateIconPreset,
+  onResetIconPreset,
+  onApplyPresetToAllIcons,
+  drawnLines = [],
+  selectedLineId = null,
+  activeAlerts = [],
+  showAlerts = false,
+  onToggleShowAlerts,
+  showAirAlertsPanel = false,
+  onToggleShowAirAlertsPanel,
+  showAlertPolygons = true,
+  onToggleShowAlertPolygons,
+  showAlertMarkers = true,
+  onToggleShowAlertMarkers,
+  alertsOpacity = 0.30,
+  onChangeAlertsOpacity,
+  alertsStrokeWidth = 2.5,
+  onChangeAlertsStrokeWidth,
+  onRefreshAlerts,
+  isLoadingAlerts = false,
+  isLiveMode = false,
+  onToggleLiveMode,
+  liveThreats = [],
+  isLoadingLive = false,
+  onRefreshLive,
+  showLiveTrails = true,
+  onToggleShowLiveTrails,
+  showLiveMessagesFeed = true,
+  onToggleShowLiveMessagesFeed,
+  liveMessagesCount = 0,
+  onSelectLine = (_id) => {},
+  onUpdateLine = (_line) => {},
+  onDeleteLine = (_id) => {},
+  onClearDrawnLines = () => {},
+  lineColor = '#ef4444',
+  onChangeLineColor = (_color) => {},
+  lineWeight = 5,
+  onChangeLineWeight = (_weight) => {},
+  lineSmoothed = true,
+  onChangeLineSmoothed = (_smoothed) => {},
+  lineStartStyle = 'none',
+  onChangeLineStartStyle = (_style) => {},
+  lineStartCustomIcon = '',
+  onChangeLineStartCustomIcon = (_url) => {},
+  lineStartIconRotation = 0,
+  onChangeLineStartIconRotation = (_rot) => {},
+  lineStartIconSize = 32,
+  onChangeLineStartIconSize = (_size) => {},
+  lineEndStyle = 'none',
+  onChangeLineEndStyle = (_style) => {},
+  lineEndCustomIcon = '',
+  onChangeLineEndCustomIcon = (_url) => {},
+  lineEndIconRotation = 0,
+  onChangeLineEndIconRotation = (_rot) => {},
+  lineEndIconSize = 32,
+  onChangeLineEndIconSize = (_size) => {},
+  lineDashStyle = 'solid',
+  onChangeLineDashStyle = (_style) => {},
+  lineDrawMethod = 'freehand',
+  onChangeLineDrawMethod = (_method) => {},
+
+  // Map Legend
+  mapLegendConfig,
+  onUpdateMapLegendConfig,
+}) => {
+  const [importError, setImportError] = useState<string | null>(null);
+  const [customTileUrl, setCustomTileUrl] = useState('');
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [renamingMarkerId, setRenamingMarkerId] = useState<string | null>(null);
+  const [isEditingVisicomKey, setIsEditingVisicomKey] = useState(false);
+  const [newVisicomKeyInput, setNewVisicomKeyInput] = useState('');
+  const [visicomKeySavedSuccess, setVisicomKeySavedSuccess] = useState(false);
+  const [deepStateSubTab, setDeepStateSubTab] = useState<'fill' | 'stroke' | 'gray'>('fill');
+  const [isUkraineSettingsOpen, setIsUkraineSettingsOpen] = useState(false);
+  const [isCitySettingsOpen, setIsCitySettingsOpen] = useState(false);
+  const [isDistrictSettingsOpen, setIsDistrictSettingsOpen] = useState(false);
+  const [isHromadaSettingsOpen, setIsHromadaSettingsOpen] = useState(false);
+
+  // Custom PNG Library State (synced with props / App state)
+  const [customLibrary, setCustomLibrary] = useState<{ id: string; name: string; dataUrl: string }[]>(() => {
+    if (propsCustomLibrary && propsCustomLibrary.length > 0) return propsCustomLibrary;
+    try {
+      const saved = localStorage.getItem('visicom_custom_library');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (propsCustomLibrary) {
+      setCustomLibrary(propsCustomLibrary);
+    }
+  }, [propsCustomLibrary]);
+
+  const handleWatermarkImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert(language === 'uk' ? 'Будь ласка, оберіть файл зображення (PNG, JPG, SVG, WebP)' : 'Please select an image file (PNG, JPG, SVG, WebP)');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const rawDataUrl = event.target?.result as string;
+      if (!rawDataUrl) return;
+
+      try {
+        const optimized = await optimizeIconDataUrl(rawDataUrl, 384);
+        onUpdateWatermarkImageUrl(optimized);
+        onUpdateWatermarkType('image');
+        if (!watermarkSize || watermarkSize === 14) {
+          onUpdateWatermarkSize(48);
+        }
+        if (watermarkOpacity === undefined || watermarkOpacity === 0.10) {
+          onUpdateWatermarkOpacity(0.20);
+        }
+      } catch (err) {
+        console.error('Failed to optimize watermark image:', err);
+        onUpdateWatermarkImageUrl(rawDataUrl);
+        onUpdateWatermarkType('image');
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const [expandedSections, setExpandedSections] = useState({
+    mode: false,
+    lines: false,
+    styles: false,
+    objects: false,
+    map: false,
+    overlays: false,
+    settings: false,
+  });
+
+  const selectedLine = drawnLines.find((l) => l.id === selectedLineId);
+  const currLineColor = selectedLine ? selectedLine.color : lineColor;
+  const currLineWeight = selectedLine ? selectedLine.weight : lineWeight;
+  const currLineSmoothed = selectedLine ? selectedLine.smoothed : lineSmoothed;
+  const currLineStartStyle = selectedLine ? selectedLine.startPointStyle : lineStartStyle;
+  const currLineStartCustomIcon = selectedLine ? (selectedLine.startCustomIconUrl || '') : lineStartCustomIcon;
+  const currLineStartIconRotation = selectedLine ? (selectedLine.startIconRotation || 0) : (lineStartIconRotation || 0);
+  const currLineStartIconSize = selectedLine ? (selectedLine.startIconSize || 32) : (lineStartIconSize || 32);
+  const currLineEndStyle = selectedLine ? selectedLine.endPointStyle : lineEndStyle;
+  const currLineEndCustomIcon = selectedLine ? (selectedLine.endCustomIconUrl || '') : lineEndCustomIcon;
+  const currLineEndIconRotation = selectedLine ? (selectedLine.endIconRotation || 0) : (lineEndIconRotation || 0);
+  const currLineEndIconSize = selectedLine ? (selectedLine.endIconSize || 32) : (lineEndIconSize || 32);
+  const currLineLabel = selectedLine ? (selectedLine.label || '') : '';
+  const currLineLabelSize = selectedLine ? (selectedLine.labelSize || 12) : 12;
+  const currLineDashStyle = selectedLine ? (selectedLine.dashStyle || 'solid') : lineDashStyle;
+
+  const handleSimplifySelectedLine = (targetCount: number) => {
+    if (!selectedLine) return;
+    const optimized = simplifyLatLngPath(selectedLine.points, targetCount);
+    onUpdateLine({
+      ...selectedLine,
+      points: optimized,
+      smoothed: true,
+    });
+  };
+
+  const userCustomSettlements = customSettlements.filter(s => s.id.startsWith('custom_') && !(s as any).isDeleted);
+
+  const accordionContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToSection = (sectionKey: string) => {
+    setTimeout(() => {
+      const container = accordionContainerRef.current;
+      const targetEl = document.getElementById(`section-${sectionKey}`);
+      if (!container || !targetEl) return;
+      
+      const targetOffset = targetEl.offsetTop - container.offsetTop;
+      container.scrollTo({
+        top: Math.max(0, targetOffset - 4),
+        behavior: 'smooth'
+      });
+    }, 60);
+  };
+
+  const openSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections({
+      mode: section === 'mode',
+      lines: section === 'lines',
+      styles: section === 'styles',
+      objects: section === 'objects',
+      map: section === 'map',
+      overlays: section === 'overlays',
+      settings: section === 'settings',
+    });
+    scrollToSection(String(section));
+  };
+
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections((prev) => {
+      const isCurrentlyOpen = prev[section];
+      const willBeOpen = !isCurrentlyOpen;
+      
+      if (willBeOpen) {
+        scrollToSection(String(section));
+      }
+      
+      return {
+        mode: willBeOpen && section === 'mode',
+        lines: willBeOpen && section === 'lines',
+        styles: willBeOpen && section === 'styles',
+        objects: willBeOpen && section === 'objects',
+        map: willBeOpen && section === 'map',
+        overlays: willBeOpen && section === 'overlays',
+        settings: willBeOpen && section === 'settings',
+      };
+    });
+  };
+
+  const isLinesOpen = expandedSections.lines;
+  const isAnySectionOpen = expandedSections.mode || isLinesOpen || expandedSections.styles || expandedSections.objects || expandedSections.map || expandedSections.overlays;
+
+  useEffect(() => {
+    if (interactionMode === 'line' || selectedLineId !== null) {
+      openSection('lines');
+    }
+  }, [interactionMode, selectedLineId]);
+
+  useEffect(() => {
+    if (selectedMarkerId !== null) {
+      openSection('styles');
+    }
+  }, [selectedMarkerId]);
+
+  const saveToLibrary = async (name: string, rawDataUrl: string) => {
+    const optimizedDataUrl = await optimizeIconDataUrl(rawDataUrl);
+    const newItem = {
+      id: 'custom_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      name,
+      dataUrl: optimizedDataUrl,
+    };
+    const updated = [...customLibrary, newItem];
+    setCustomLibrary(updated);
+    safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
+    return newItem;
+  };
+
+  const deleteFromLibrary = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = customLibrary.filter((item) => item.id !== id);
+    setCustomLibrary(updated);
+    safeSetItem('visicom_custom_library', JSON.stringify(updated));
+    onUpdateCustomLibrary?.(updated);
+  };
+
+  const handleFileImportSettlements = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const parsed = JSON.parse(content);
+
+        let settlementsToImport: Settlement[] = [];
+        if (Array.isArray(parsed)) {
+          settlementsToImport = parsed;
+        } else if (parsed && Array.isArray(parsed.settlements)) {
+          settlementsToImport = parsed.settlements;
+        } else {
+          alert(isUa ? 'Невідомий формат файлу експорту.' : 'Unknown export file format.');
+          return;
+        }
+
+        onImportCustomSettlements(settlementsToImport);
+      } catch (err) {
+        console.error('Failed to parse settlements JSON:', err);
+        alert(isUa ? 'Помилка при зчитуванні JSON-файлу.' : 'Error reading JSON file.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const selectedMarker = markers.find((m) => m.id === selectedMarkerId);
+
+  // Localization
+  const isUa = language === 'uk';
+  const t = {
+    appName: isUa ? 'UA Mapper' : 'UA Mapper',
+    author: isUa ? 'by @krrig_alerts' : 'by @krrig_alerts',
+    
+    secMode: isUa ? 'Режим роботи' : 'Interactions',
+    btnDraw: isUa ? 'Малювання' : 'Draw',
+    btnPan: isUa ? 'Переміщення' : 'Move',
+
+    secStyles: isUa ? 'Стилі іконок' : 'Styles & Symbols',
+    lblPointIcon: isUa ? 'Іконка точки' : 'Point Icon',
+    lblPointColor: isUa ? 'Колір іконки' : 'Icon Color',
+    lblLineColor: isUa ? 'Колір обводки' : 'Outline Color',
+    btnNoColor: isUa ? 'Без кольору' : 'No Color',
+    lblEndPoint: isUa ? 'Кінцевий маркер' : 'End Decorator',
+    lblLineWidth: isUa ? 'Товщина роздільної лінії' : 'Dividing Line Thickness',
+    
+    lblTitle: isUa ? 'Назва точки' : 'Point Title',
+    lblSize: isUa ? 'Розмір іконки' : 'Icon Size',
+    lblRotation: isUa ? 'Обертання' : 'Rotation',
+    lblDraggable: isUa ? 'Перетягування' : 'Draggable',
+    lblShowLabel: isUa ? 'Показувати підпис' : 'Show Label',
+    lblCoordinates: isUa ? 'Координати' : 'Coordinates',
+
+    secObjects: isUa ? 'Список об\'єктів' : 'Objects List',
+    secMap: isUa ? 'Шар карти' : 'Map Layer',
+    lblMapUrl: isUa ? 'Власний URL карти' : 'Custom Map URL',
+    btnLoad: isUa ? 'Завантажити' : 'Load',
+    btnResetMap: isUa ? 'Скинути карту' : 'Reset Map',
+
+    btnSavePng: isUa ? 'Експорт PNG' : 'Export PNG',
+    btnExportTelegram: isUa ? 'Telegram' : 'Telegram',
+    btnShare: isUa ? 'БУФЕР' : 'BUFFER',
+    btnUndo: isUa ? 'Скасувати' : 'Undo',
+    btnClearAll: isUa ? 'Очистити все' : 'Clear All',
+    btnSupport: isUa ? 'ПІДТРИМКА' : 'SUPPORT',
+
+    noObjects: isUa ? 'Ще не створено жодного об\'єкта.' : 'No objects created yet.',
+    confirmClear: isUa ? 'Видалити всі маркери?' : 'Clear all markers?',
+    
+    // Zone strings
+    lblHasZone: isUa ? 'Зона навколо іконки' : 'Zone around Icon',
+    lblZoneColor: isUa ? 'Колір зони' : 'Zone Color',
+    lblZoneSize: isUa ? 'Розмір зони' : 'Zone Size',
+  };
+
+  // Helper to get fallback preset for any icon
+  const getDefaultPresetForIcon = (iconTypeId: string, customItem?: { id: string; name: string; dataUrl: string }): IconPreset => {
+    if (customItem) {
+      return {
+        title: customItem.name,
+        color: '#ffffff',
+        borderColor: '#ffffff',
+        size: 36,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+        customIconUrl: customItem.dataUrl,
+      };
+    }
+
+    const defaultTitleStr = isUa 
+      ? (ICON_TYPES.find(t => t.id === iconTypeId)?.nameUa || 'Маркер') 
+      : (ICON_TYPES.find(t => t.id === iconTypeId)?.nameEn || 'Marker');
+
+    if (iconTypeId === 'explosion') {
+      return {
+        title: defaultTitleStr,
+        color: '#eab308',
+        borderColor: '#ffffff',
+        size: 36,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#eab308',
+        zoneSize: 80,
+      };
+    }
+
+    if (iconTypeId === 'missile-cruise') {
+      return {
+        title: defaultTitleStr,
+        color: '#ef4444',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 180,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#ef4444',
+        zoneSize: 60,
+      };
+    }
+
+    if (iconTypeId === 'warning') {
+      return {
+        title: defaultTitleStr,
+        color: '#eab308',
+        borderColor: '#ffffff',
+        size: 32,
+        rotation: 0,
+        draggable: true,
+        labelVisible: true,
+        endPointStyle: 'none',
+        lineWidth: 3,
+        hasZone: false,
+        zoneColor: '#eab308',
+        zoneSize: 60,
+      };
+    }
+
+    return {
+      title: defaultTitleStr,
+      color: '#ef4444',
+      borderColor: '#ffffff',
+      size: 32,
+      rotation: 0,
+      draggable: true,
+      labelVisible: true,
+      endPointStyle: 'none',
+      lineWidth: 3,
+      hasZone: false,
+      zoneColor: '#ef4444',
+      zoneSize: 60,
+    };
+  };
+
+  const handleSelectCustomIcon = (item: { id: string; name: string; dataUrl: string }) => {
+    // 1. Automatically expand the styles/settings section when an icon is selected!
+    setExpandedSections((prev) => ({ ...prev, styles: true }));
+
+    const presetKey = item.id;
+    const fallbackPreset = getDefaultPresetForIcon(item.id, item);
+    const preset = iconPresets[presetKey] || fallbackPreset;
+    const titleVal = preset.title || customIconTitles[presetKey] || item.name;
+
+    const updates: Partial<CustomMarker> = {
+      iconType: item.id,
+      customIconUrl: item.dataUrl,
+      title: titleVal,
+      color: preset.color !== undefined ? preset.color : '#ffffff',
+      borderColor: preset.borderColor !== undefined ? preset.borderColor : '#ffffff',
+      size: preset.size !== undefined ? preset.size : 36,
+      rotation: preset.rotation !== undefined ? preset.rotation : 0,
+      draggable: preset.draggable !== undefined ? preset.draggable : true,
+      labelVisible: preset.labelVisible !== undefined ? preset.labelVisible : true,
+      endPointStyle: preset.endPointStyle !== undefined ? preset.endPointStyle : 'none',
+      lineWidth: preset.lineWidth !== undefined ? preset.lineWidth : 3,
+      hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
+      zoneColor: preset.zoneColor || preset.color || '#ef4444',
+      zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : 60,
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
+    };
+
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        ...updates,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...updates,
+      }));
+    }
+
+    if (onUpdateIconPreset) {
+      onUpdateIconPreset(presetKey, {
+        title: titleVal,
+        color: updates.color,
+        borderColor: updates.borderColor,
+        size: updates.size,
+        rotation: updates.rotation,
+        draggable: updates.draggable,
+        labelVisible: updates.labelVisible,
+        endPointStyle: updates.endPointStyle,
+        lineWidth: updates.lineWidth,
+        hasZone: updates.hasZone,
+        zoneColor: updates.zoneColor,
+        zoneSize: updates.zoneSize,
+        customIconUrl: item.dataUrl,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
+      });
+    }
+  };
+
+  // Helper to trigger custom PNG upload
+  const handlePngUploadClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/svg+xml,image/jpeg';
+    input.onchange = (event: any) => {
+      const file = event.target.files?.[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = async (readerEvent) => {
+          const base64 = readerEvent.target?.result as string;
+          const defaultName = file.name.replace(/\.[^/.]+$/, "");
+          const name = window.prompt(isUa ? 'Введіть назву для іконки:' : 'Enter a name for the icon:', defaultName) || defaultName;
+          
+          const newItem = await saveToLibrary(name, base64);
+          handleSelectCustomIcon(newItem);
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
+  };
+
+  const getDefaultIconName = (iconType: string) => {
+    const found = ICON_TYPES.find((t) => t.id === iconType);
+    if (found) {
+      return language === 'uk' ? found.nameUa : found.nameEn;
+    }
+    return language === 'uk' ? 'Маркер' : 'Marker';
+  };
+
+  const generateLegendItemsFromMap = (): MapLegendItem[] => {
+    const itemsMap = new Map<string, MapLegendItem>();
+
+    markers.forEach((m) => {
+      const key = `${m.iconType}_${m.color}_${m.customIconUrl || ''}`;
+      if (!itemsMap.has(key)) {
+        const title = m.title || customIconTitles[m.iconType] || getDefaultIconName(m.iconType);
+        itemsMap.set(key, {
+          id: `marker_${key}`,
+          iconType: m.iconType,
+          customIconUrl: m.customIconUrl,
+          color: m.color,
+          name: title,
+          title,
+          countText: '1 шт',
+          count: '1 шт',
+          visible: true,
+        });
+      } else {
+        const existing = itemsMap.get(key)!;
+        const currentCountNum = parseInt(existing.countText || existing.count || '1', 10);
+        const newCount = isNaN(currentCountNum) ? 2 : currentCountNum + 1;
+        existing.count = `${newCount} шт`;
+        existing.countText = `${newCount} шт`;
+      }
+    });
+
+    drawnLines.forEach((l) => {
+      if (l.startPointStyle === 'custom_icon' && l.startCustomIconUrl) {
+        const key = `line_start_${l.startCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Початок маршруту' : 'Route Start';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.startCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+      if (l.endPointStyle === 'custom_icon' && l.endCustomIconUrl) {
+        const key = `line_end_${l.endCustomIconUrl}_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Кінець маршруту' : 'Route End';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'pin',
+            customIconUrl: l.endCustomIconUrl,
+            color: l.color,
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      } else if (l.endPointStyle === 'explosion') {
+        const key = `line_explosion_${l.color}`;
+        if (!itemsMap.has(key)) {
+          const t = isUa ? 'Ураження / Вибух' : 'Impact / Explosion';
+          itemsMap.set(key, {
+            id: key,
+            iconType: 'crosshair',
+            color: '#ef4444',
+            name: t,
+            title: t,
+            countText: '1 шт',
+            count: '1 шт',
+            visible: true,
+          });
+        }
+      }
+    });
+
+    return Array.from(itemsMap.values());
+  };
+
+  const handleSelectIconType = (iconTypeId: string) => {
+    // 1. Automatically expand the styles/settings section when an icon is selected!
+    openSection('styles');
+
+    const fallbackPreset = getDefaultPresetForIcon(iconTypeId);
+    const preset = iconPresets[iconTypeId] || fallbackPreset;
+    const defaultName = isUa 
+      ? (ICON_TYPES.find(t => t.id === iconTypeId)?.nameUa || 'Маркер') 
+      : (ICON_TYPES.find(t => t.id === iconTypeId)?.nameEn || 'Marker');
+    const titleVal = preset.title || customIconTitles[iconTypeId] || defaultName;
+
+    const updates: Partial<CustomMarker> = {
+      iconType: iconTypeId,
+      customIconUrl: undefined,
+      title: titleVal,
+      color: preset.color !== undefined ? preset.color : (activeStyle.color || '#ef4444'),
+      borderColor: preset.borderColor !== undefined ? preset.borderColor : (activeStyle.borderColor || '#ffffff'),
+      size: preset.size !== undefined ? preset.size : (activeStyle.size || 32),
+      rotation: preset.rotation !== undefined ? preset.rotation : (activeStyle.rotation || 0),
+      draggable: preset.draggable !== undefined ? preset.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true),
+      labelVisible: preset.labelVisible !== undefined ? preset.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true),
+      endPointStyle: preset.endPointStyle !== undefined ? preset.endPointStyle : (activeStyle.endPointStyle || 'none'),
+      lineWidth: preset.lineWidth !== undefined ? preset.lineWidth : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3),
+      hasZone: preset.hasZone !== undefined ? preset.hasZone : false,
+      zoneColor: preset.zoneColor || preset.color || (activeStyle.color || '#ef4444'),
+      zoneSize: preset.zoneSize !== undefined ? preset.zoneSize : (activeStyle.zoneSize || 60),
+      movementSpeedKmh: preset.movementSpeedKmh !== undefined ? preset.movementSpeedKmh : (activeStyle.movementSpeedKmh ?? 100),
+      movementEnabled: preset.movementEnabled !== undefined ? preset.movementEnabled : (activeStyle.movementEnabled === true),
+      movementTrailEnabled: preset.movementTrailEnabled !== undefined ? preset.movementTrailEnabled : (activeStyle.movementTrailEnabled === true),
+      movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
+      movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
+      movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
+    };
+
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        ...updates,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...updates,
+      }));
+    }
+
+    if (onUpdateIconPreset) {
+      onUpdateIconPreset(iconTypeId, {
+        title: titleVal,
+        color: updates.color,
+        borderColor: updates.borderColor,
+        size: updates.size,
+        rotation: updates.rotation,
+        draggable: updates.draggable,
+        labelVisible: updates.labelVisible,
+        endPointStyle: updates.endPointStyle,
+        lineWidth: updates.lineWidth,
+        hasZone: updates.hasZone,
+        zoneColor: updates.zoneColor,
+        zoneSize: updates.zoneSize,
+        movementSpeedKmh: updates.movementSpeedKmh,
+        movementEnabled: updates.movementEnabled,
+        movementTrailEnabled: updates.movementTrailEnabled,
+        movementTrailColor: updates.movementTrailColor,
+        movementTrailWidth: updates.movementTrailWidth,
+        movementTrailDashStyle: updates.movementTrailDashStyle,
+      });
+    }
+  };
+
+  // Handle manual edits of properties (applies to selected marker or template activeStyle and saves per-icon preset!)
+  const handlePropChange = (key: keyof CustomMarker, value: any) => {
+    if (selectedMarker) {
+      onUpdateMarker({
+        ...selectedMarker,
+        [key]: value,
+      });
+    } else {
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        [key]: value,
+      }));
+    }
+
+    const currentKey = activeCustomItem 
+      ? activeCustomItem.id 
+      : (selectedMarker 
+          ? (selectedMarker.customIconUrl 
+              ? (customLibrary.find(c => c.dataUrl === selectedMarker.customIconUrl)?.id || selectedMarker.iconType) 
+              : selectedMarker.iconType) 
+          : (activeStyle.customIconUrl 
+              ? (customLibrary.find(c => c.dataUrl === activeStyle.customIconUrl)?.id || activeStyle.iconType) 
+              : (activeStyle.iconType || 'pin')));
+
+    if (onUpdateIconPreset && currentKey) {
+      onUpdateIconPreset(currentKey, { [key]: value });
+    }
+  };
+
+  const handlePropsChange = (updates: Partial<CustomMarker>) => {
+    const targetIcon = updates.iconType || currentPresetKey || activeIconType;
+    if (selectedMarker) {
+      const newUpdates = { ...updates };
+      if (updates.iconType && updates.iconType !== selectedMarker.iconType) {
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+      }
+      onUpdateMarker({
+        ...selectedMarker,
+        ...newUpdates,
+      });
+    } else {
+      const newUpdates = { ...updates };
+      if (updates.iconType && updates.iconType !== activeStyle.iconType) {
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+      }
+      onUpdateActiveStyle((prev) => ({
+        ...prev,
+        ...newUpdates,
+      }));
+    }
+
+    if (onUpdateIconPreset && targetIcon) {
+      const { id, lat, lng, ...presetProps } = updates as any;
+      onUpdateIconPreset(targetIcon, presetProps);
+    }
+  };
+
+  const handleLoadCustomTile = () => {
+    if (!customTileUrl) return;
+    onSelectTileLayer({
+      id: 'custom_url_' + Date.now(),
+      nameEn: 'Custom Layer',
+      nameUa: 'Власна карта',
+      url: customTileUrl,
+      tms: false,
+      maxZoom: 19,
+      attribution: 'Custom Tile Layer',
+      requiresKey: false
+    });
+  };
+
+  const handleResetTile = () => {
+    setCustomTileUrl('');
+    onSelectTileLayer(tileLayers[0]);
+  };
+
+  // Export properties representing either the selected marker or the pre-configured template activeStyle
+  const activeIconType = selectedMarker ? selectedMarker.iconType : (activeStyle.iconType || 'pin');
+  const activeCustomIconUrl = selectedMarker ? selectedMarker.customIconUrl : activeStyle.customIconUrl;
+  const activeCustomItem = customLibrary.find(
+    (item) => (activeCustomIconUrl && item.dataUrl === activeCustomIconUrl) || item.id === activeIconType
+  );
+  const currentPresetKey = activeCustomItem ? activeCustomItem.id : activeIconType;
+  const activeColor = selectedMarker ? selectedMarker.color : (activeStyle.color || '#ef4444');
+  const activeBorderColor = selectedMarker ? selectedMarker.borderColor || '#ffffff' : (activeStyle.borderColor || '#ffffff');
+  const activeEndPointStyle = selectedMarker ? selectedMarker.endPointStyle || 'none' : (activeStyle.endPointStyle || 'none');
+  const activeLineWidth = selectedMarker ? (selectedMarker.lineWidth !== undefined ? selectedMarker.lineWidth : 3) : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3);
+  const activeTitle = selectedMarker ? selectedMarker.title : '';
+  const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
+  const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
+  const activeMovementSpeed = selectedMarker
+    ? (selectedMarker.movementSpeedKmh !== undefined ? selectedMarker.movementSpeedKmh : 100)
+    : (activeStyle.movementSpeedKmh !== undefined ? activeStyle.movementSpeedKmh : 100);
+  const activeMovementEnabled = selectedMarker
+    ? selectedMarker.movementEnabled === true
+    : activeStyle.movementEnabled === true;
+  const activeMovementTrailEnabled = selectedMarker
+    ? selectedMarker.movementTrailEnabled === true
+    : activeStyle.movementTrailEnabled === true;
+  const activeMovementTrailColor = selectedMarker
+    ? (selectedMarker.movementTrailColor || selectedMarker.color || '#ef4444')
+    : (activeStyle.movementTrailColor || activeStyle.color || '#ef4444');
+  const activeMovementTrailWidth = selectedMarker
+    ? (selectedMarker.movementTrailWidth ?? 3)
+    : (activeStyle.movementTrailWidth ?? 3);
+  const activeMovementTrailDashStyle = selectedMarker
+    ? (selectedMarker.movementTrailDashStyle || 'solid')
+    : (activeStyle.movementTrailDashStyle || 'solid');
+  const activeDraggable = selectedMarker ? selectedMarker.draggable : (activeStyle.draggable !== undefined ? activeStyle.draggable : true);
+  const activeLabelVisible = selectedMarker ? selectedMarker.labelVisible : (activeStyle.labelVisible !== undefined ? activeStyle.labelVisible : true);
+  const activeLabelFontSize = selectedMarker ? (selectedMarker.labelFontSize || 11.5) : (activeStyle.labelFontSize || 11.5);
+  const activeLabelOrientation = selectedMarker ? (selectedMarker.labelOrientation || 'auto') : (activeStyle.labelOrientation || 'auto');
+  
+  // Tactical zone properties
+  const activeHasZone = selectedMarker ? !!selectedMarker.hasZone : !!activeStyle.hasZone;
+  const activeZoneColor = selectedMarker ? selectedMarker.zoneColor || selectedMarker.color : activeStyle.zoneColor || activeStyle.color || '#ef4444';
+  const activeZoneSize = selectedMarker ? selectedMarker.zoneSize || 60 : activeStyle.zoneSize || 60;
+
+  return (
+    <div className={`modern-sidebar w-full flex flex-col h-full overflow-hidden z-20 font-sans border-t md:border-t-0 backdrop-blur-3xl backdrop-saturate-200 transition-colors duration-300 ${
+      theme === 'light'
+        ? 'bg-white/45 border-l border-white/60 text-slate-800 shadow-2xl'
+        : 'bg-[#0a0d14]/45 border-l border-white/10 text-slate-200 shadow-2xl'
+    }`}>
+      
+      {/* Header section with App Branding */}
+      <div className={`px-3 py-2.5 border-b flex justify-between items-center gap-2 backdrop-blur-2xl shrink-0 ${
+        theme === 'light' ? 'bg-white/35 border-slate-200/50' : 'bg-[#06080e]/40 border-white/10'
+      }`}>
+        {/* Logo and channel badge (Clickable link to Telegram) */}
+        <a
+          href="https://t.me/krrig_alerts"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Telegram: @krrig_alerts"
+          className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 shadow-sm transition-all select-none min-w-0 cursor-pointer hover:opacity-90 active:scale-95 ${
+            theme === 'light' 
+              ? 'bg-slate-950/90 border-slate-900 text-white' 
+              : 'bg-white/90 border-white text-slate-950'
+          }`}
+        >
+          <span 
+            className="font-sans font-bold tracking-tight text-[11px] sm:text-[12px] leading-none flex items-center whitespace-nowrap"
+            style={{ color: theme === 'light' ? 'rgb(225, 255, 0)' : 'rgb(255, 0, 0)' }}
+          >
+            UA Mapper
+          </span>
+          <svg className="w-3.5 h-3.5 flex-shrink-0 animate-pulse" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="telegram-watermark-sidebar" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#2AABEE" />
+                <stop offset="100%" stopColor="#229ED9" />
+              </linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="url(#telegram-watermark-sidebar)" />
+            <path d="M10.8 14.9L10.5 19.1C10.9 19.1 11.1 18.9 11.3 18.7L13.2 16.9L17.2 19.8C17.9 20.2 18.4 20.0 18.6 19.2L21.2 6.9C21.4 6.0 20.8 5.6 20.2 5.9L4.8 11.8C3.9 12.2 3.9 12.7 4.7 13.0L8.6 14.2L17.6 8.5C18.0 8.2 18.4 8.4 18.1 8.7L10.8 14.9Z" fill="white" />
+          </svg>
+          <span className={`inline-block w-[1px] h-2.5 self-center ${
+            theme === 'light' ? 'bg-white/20' : 'bg-slate-950/20'
+          }`} />
+          <span className={`font-sans font-bold tracking-wider uppercase leading-none flex items-center text-[7.5px] whitespace-nowrap ${
+            theme === 'light' ? 'text-white' : 'text-slate-950'
+          }`}>
+            BY @KRRIG_ALERTS
+          </span>
+        </a>
+
+        {/* Top-Right utility buttons */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Theme Toggle Button */}
+          <button
+            onClick={onToggleTheme}
+            title={isUa ? 'Перемкнути світлу/темну тему' : 'Toggle light/dark theme'}
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            {theme === 'light' ? <Moon className="w-3.5 h-3.5 text-indigo-600" /> : <Sun className="w-3.5 h-3.5 text-amber-400" />}
+          </button>
+
+          <button
+            onClick={onToggleLanguage}
+            title={isUa ? 'Switch to English' : 'Перемкнути на українську'}
+            className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              theme === 'light' ? 'bg-white/60 border-slate-200/80 text-slate-700 hover:bg-white/90 shadow-sm' : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200" />
+          </button>
+
+          {/* Hide Sidebar Button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              title={isUa ? 'Сховати бічну панель' : 'Hide sidebar panel'}
+              className={`w-[30px] h-[30px] sm:w-[32px] sm:h-[32px] flex items-center justify-center border rounded-xl backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+                theme === 'light' 
+                  ? 'bg-white/70 border-slate-200/80 text-slate-700 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm' 
+                  : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-red-400'
+              }`}
+            >
+              <PanelRightClose className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Accordion List wrapper */}
+      <div 
+        ref={accordionContainerRef}
+        className="flex-1 flex flex-col min-h-0 overflow-y-auto px-3 pb-3 pt-1 space-y-2.5 scroll-smooth"
+      >
+
+        {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
+        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl grid grid-cols-6 gap-1.5 items-center flex-shrink-0 transition-all ${
+          theme === 'light' 
+            ? 'border-slate-200/80 bg-white/60' 
+            : 'border-white/10 bg-white/[0.04]'
+        }`}>
+          <button
+            onClick={() => onUpdateShowSettlementLabels?.(!showSettlementLabels)}
+            title={isUa ? `Назви населених пунктів: ${showSettlementLabels ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Settlement labels: ${showSettlementLabels ? 'ON' : 'OFF'}`}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              showSettlementLabels
+                ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => onToggleAutoHighlightZone?.(!autoHighlightZone)}
+            title={isUa ? `Авто-підсвітка громад: ${autoHighlightZone ? 'УВІМКНЕНО' : 'ВИМКНЕНО'}` : `Auto-highlight zones: ${autoHighlightZone ? 'ON' : 'OFF'}`}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              autoHighlightZone
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              const next = interactionMode === 'redzone' ? 'draw' : 'redzone';
+              onSetInteractionMode(next);
+              if (next === 'redzone') openSection('mode');
+            }}
+            title={isUa ? 'Червоні зони' : 'Red Zone Mode'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              interactionMode === 'redzone'
+                ? 'bg-red-500 text-white font-bold shadow-md shadow-red-500/30 ring-2 ring-red-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-red-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              const next = interactionMode === 'settlement' ? 'draw' : 'settlement';
+              onSetInteractionMode(next);
+              if (next === 'settlement') openSection('objects');
+            }}
+            title={isUa ? 'Додати точку населеного пункту' : 'Add Settlement Point'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              interactionMode === 'settlement'
+                ? 'bg-blue-500 text-white font-bold shadow-md shadow-blue-500/30 ring-2 ring-blue-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-blue-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <MapPin className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              const next = interactionMode === 'line' ? 'draw' : 'line';
+              onSetInteractionMode(next);
+              if (next === 'line') openSection('lines');
+            }}
+            title={isUa ? 'Малювання ліній зі зглажуванням' : 'Draw Smoothed Lines'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              interactionMode === 'line'
+                ? 'bg-emerald-500 text-white font-bold shadow-md shadow-emerald-500/30 ring-2 ring-emerald-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-emerald-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <Spline className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              const next = interactionMode === 'measure' ? 'draw' : 'measure';
+              onSetInteractionMode(next);
+              if (next === 'measure') openSection('mode');
+            }}
+            title={isUa ? 'Виміряти відстань' : 'Measure Distance'}
+            className={`w-9 h-9 sm:w-10 sm:h-10 mx-auto rounded-full flex items-center justify-center backdrop-blur-xl transition-all cursor-pointer active:scale-95 ${
+              interactionMode === 'measure'
+                ? 'bg-amber-500 text-slate-950 font-bold shadow-md shadow-amber-500/30 ring-2 ring-amber-400'
+                : 'bg-white/60 dark:bg-white/5 text-slate-500 hover:text-amber-500 border border-slate-200/80 dark:border-white/10 shadow-xs'
+            }`}
+          >
+            <Ruler className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* 1. РЕЖИМ РОБОТИ ТА ІНСТРУМЕНТИ (MAP MODES & TOOLS) */}
+        <div 
+          id="section-mode"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.mode
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
+          <button
+            onClick={() => toggleSection('mode')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.mode
+                ? (theme === 'light'
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Move className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'Інструменти та режими' : 'Map Tools & Modes'}</span>
+            </div>
+            {expandedSections.mode ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.mode && (
+            <div className="p-3 space-y-2.5">
+                <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => onSetInteractionMode('draw')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'draw'
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <PenTool className="w-4 h-4" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання значків' : 'Draw Markers'}</span>
+                </button>
+
+                <button
+                  onClick={() => onSetInteractionMode('line')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'line'
+                      ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 dark:text-emerald-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Spline className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Малювання ліній' : 'Draw Lines'}</span>
+                </button>
+
+                <button
+                  onClick={() => onSetInteractionMode('pan')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'pan'
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 font-extrabold shadow-sm'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Hand className="w-4 h-4" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Переміщення' : 'Pan Map'}</span>
+                </button>
+
+                <button
+                  onClick={() => onSetInteractionMode('redzone')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'redzone'
+                      ? 'bg-red-500 text-white font-extrabold shadow-md shadow-red-500/20 border-red-400'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <ShieldAlert className="w-4 h-4 text-red-500 dark:text-red-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Червоні зони' : 'Red Zones'}</span>
+                </button>
+
+                <button
+                  onClick={() => onSetInteractionMode('measure')}
+                  className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all cursor-pointer ${
+                    interactionMode === 'measure'
+                      ? 'bg-amber-500 text-slate-950 font-extrabold shadow-md shadow-amber-500/20 border-amber-400'
+                      : (theme === 'light' ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Ruler className="w-4 h-4 text-amber-500 dark:text-amber-400" />
+                  <span className="text-[11px] font-bold">{isUa ? 'Вимірювання' : 'Measure'}</span>
+                </button>
+              </div>
+
+              {interactionMode === 'measure' && (
+                <div className="mt-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-1.5">
+                  <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs">
+                    <Ruler className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Режим лінійки (Вимірювання)' : 'Ruler Mode (Measurement)'}</span>
+                  </div>
+                  <ul className="text-[11px] text-slate-600 dark:text-slate-300 space-y-1 pl-3.5 list-disc leading-tight">
+                    <li>{isUa ? 'Клікайте по карті для додавання точок' : 'Click on map to add points'}</li>
+                    <li>{isUa ? 'Перетягуйте нанесені точки мишкою' : 'Drag placed points with mouse'}</li>
+                    <li>{isUa ? 'Клік по точці відкриває меню видалення (або ПКМ)' : 'Click point to delete (or right-click)'}</li>
+                    <li>{isUa ? 'Backspace — скасувати точку, Esc — очистити' : 'Backspace removes last point, Esc clears all'}</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 1.5 НАЛАШТУВАННЯ ЛІНІЙ (LINE DRAWING & CONFIGURATION) */}
+        <div 
+          id="section-lines"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            isLinesOpen
+              ? (interactionMode === 'line' || selectedLineId !== null
+                  ? (theme === 'light'
+                      ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-white shadow-md'
+                      : 'ring-2 ring-emerald-500/60 border-emerald-500 bg-[#141824] shadow-lg')
+                  : (theme === 'light'
+                      ? 'border-slate-300 bg-white shadow-md'
+                      : 'border-white/15 bg-[#141824] shadow-lg'))
+              : (interactionMode === 'line' || selectedLineId !== null
+                  ? 'ring-2 ring-emerald-500/60 border-emerald-500 bg-emerald-500/10'
+                  : (theme === 'light' 
+                      ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' 
+                      : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50'))
+          }`}>
+          <button
+            onClick={() => toggleSection('lines')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              isLinesOpen
+                ? (interactionMode === 'line'
+                    ? (theme === 'light' 
+                        ? 'rounded-t-2xl bg-emerald-50 text-emerald-800 border-b border-emerald-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#13221d] text-emerald-400 border-b border-emerald-500/20 shadow-xs')
+                    : (theme === 'light'
+                        ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs'
+                        : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs'))
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Spline className="w-3.5 h-3.5 text-emerald-500" />
+              <span>{isUa ? 'Малювання та стиль ліній' : 'Line Drawing & Styles'}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {drawnLines.length > 0 && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold">
+                  {drawnLines.length}
+                </span>
+              )}
+              {isLinesOpen ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+            </div>
+          </button>
+
+          {isLinesOpen && (
+            <div className="p-3.5 space-y-4 text-xs">
+              
+              {/* Target indicator */}
+              <div className="flex items-center justify-between pb-2 border-b border-dashed border-slate-200 dark:border-white/10">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {isUa ? 'Об\'єкт лінії:' : 'Line Object:'}
+                </span>
+                {selectedLine ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-extrabold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-md">
+                      {isUa ? 'Обрано лінію' : 'Selected Line'}
+                    </span>
+                    <button
+                      onClick={() => onDeleteLine(selectedLine.id)}
+                      title={isUa ? 'Видалити обрану лінію' : 'Delete Selected Line'}
+                      className="p-1 rounded-md bg-red-500/20 hover:bg-red-500 text-red-400 hover:text-white transition-all cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-[10px] font-extrabold text-slate-400 bg-slate-500/10 px-2 py-0.5 rounded-md">
+                    {isUa ? 'Шаблон нової лінії' : 'New Line Template'}
+                  </span>
+                )}
+              </div>
+
+              {/* Mode button shortcut */}
+              {interactionMode !== 'line' && !selectedLine && (
+                <button
+                  onClick={() => onSetInteractionMode('line')}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 transition-all cursor-pointer"
+                >
+                  <Spline className="w-4 h-4" />
+                  <span>{isUa ? 'Увімкнути режим малювання лінії' : 'Activate Line Drawing Mode'}</span>
+                </button>
+              )}
+
+              {/* Спосіб нанесення лінії (Від руки як в Paint чи По точках) */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Спосіб малювання' : 'Drawing Technique'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('freehand')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'freehand'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'Від руки (Paint)' : 'Freehand (Paint)'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeLineDrawMethod?.('points')}
+                    className={`py-2 px-2.5 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                      lineDrawMethod === 'points'
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md font-extrabold ring-1 ring-emerald-400/40'
+                        : 'bg-slate-900/30 border-slate-200 dark:border-white/10 text-slate-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <PenTool className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{isUa ? 'По точках' : 'Point-by-point'}</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight">
+                  {lineDrawMethod === 'freehand'
+                    ? (isUa 
+                        ? '✨ Проведіть мишкою або пальцем по екрану (як в Paint). Після відпускання лінія автоматично згладиться сама.' 
+                        : '✨ Draw with mouse or finger (like Paint). Once released, the line will automatically smooth itself.')
+                    : (isUa 
+                        ? '📐 Послідовні натискання на карті для точного нанесення лінії по вузлових точках.' 
+                        : '📐 Click sequentially on the map to place precise path vertices.')}
+                </p>
+              </div>
+
+              {/* 1. Color Picker */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  {isUa ? 'Колір лінії' : 'Line Color'}
+                </label>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {PRESET_COLORS.map((c) => (
+                    <button
+                      key={c.hex}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, color: c.hex });
+                        else onChangeLineColor(c.hex);
+                      }}
+                      className={`w-6 h-6 rounded-full border border-white/20 transition-all cursor-pointer relative ${
+                        currLineColor === c.hex ? 'ring-2 ring-emerald-400 scale-110 shadow-md' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                      }`}
+                      style={{ backgroundColor: c.hex }}
+                      title={isUa ? c.nameUa : c.nameEn}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={currLineColor.startsWith('#') ? currLineColor : '#ef4444'}
+                    onChange={(e) => {
+                      if (selectedLine) onUpdateLine({ ...selectedLine, color: e.target.value });
+                      else onChangeLineColor(e.target.value);
+                    }}
+                    className="w-7 h-7 rounded-lg border-0 bg-transparent cursor-pointer p-0"
+                    title={isUa ? 'Свій колір' : 'Custom Color'}
+                  />
+                </div>
+              </div>
+
+              {/* 2. Weight / Thickness Slider */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    {isUa ? 'Товщина лінії' : 'Line Thickness'}
+                  </label>
+                  <span className="text-[11px] font-mono font-extrabold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                    {currLineWeight} px
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="20"
+                  value={currLineWeight}
+                  onChange={(e) => {
+                    const w = parseInt(e.target.value, 10);
+                    if (selectedLine) onUpdateLine({ ...selectedLine, weight: w });
+                    else onChangeLineWeight(w);
+                  }}
+                  className="w-full accent-emerald-500 cursor-pointer"
+                />
+              </div>
+
+              {/* 3. Corner Smoothing Toggle */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-1">
+                <div className="flex items-center justify-between cursor-pointer" onClick={() => {
+                  const val = !currLineSmoothed;
+                  if (selectedLine) onUpdateLine({ ...selectedLine, smoothed: val });
+                  else onChangeLineSmoothed(val);
+                }}>
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400" />
+                    <span className="font-extrabold text-slate-800 dark:text-slate-200">
+                      {isUa ? 'Згладжувати повороти (кути)' : 'Smooth Corners & Turns'}
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={currLineSmoothed}
+                    onChange={(e) => {
+                      const val = e.target.checked;
+                      if (selectedLine) onUpdateLine({ ...selectedLine, smoothed: val });
+                      else onChangeLineSmoothed(val);
+                    }}
+                    className="w-4 h-4 accent-emerald-500 rounded cursor-pointer"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400 leading-tight pl-6">
+                  {isUa ? 'Повороти та кути сильно згладжуються плавною дугою' : 'Turn angles and corners are strongly smoothed into curves'}
+                </p>
+              </div>
+
+              {/* 3.1 Point Simplification for Hand-Drawn Lines / Easy Editing */}
+              {selectedLine && (
+                <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-[11px] font-extrabold text-slate-800 dark:text-slate-200">
+                        {isUa ? 'Точки редагування лінії' : 'Editing Control Points'}
+                      </span>
+                    </div>
+                    <span className={`text-[11px] font-black px-2 py-0.5 rounded-md ${
+                      selectedLine.points.length > 22
+                        ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                        : 'bg-emerald-500/20 text-emerald-400'
+                    }`}>
+                      {selectedLine.points.length} {isUa ? 'точок' : 'pts'}
+                    </span>
+                  </div>
+
+                  {selectedLine.points.length > 20 ? (
+                    <p className="text-[10px] text-amber-400 leading-snug font-medium">
+                      {isUa
+                        ? 'У лінії забагато точок для зручного редагування. Оберіть кількість вузлів для оптимізації:'
+                        : 'Too many points for comfortable editing. Choose desired point count to optimize:'}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 leading-snug">
+                      {isUa
+                        ? 'Зменшення точок робить перетягування та зміну форми лінії легким і точним:'
+                        : 'Fewer points make shaping and adjusting the line much easier:'}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(10)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Зменшити до ~10 ключових точок' : 'Reduce to ~10 points'}
+                    >
+                      {isUa ? 'Мінімум (~10)' : 'Min (~10)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(16)}
+                      className="py-1.5 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 text-[10px] font-extrabold transition-all cursor-pointer text-center shadow-sm active:scale-95"
+                      title={isUa ? 'Оптимально: ~16 точок для гарної форми' : 'Optimal: ~16 points'}
+                    >
+                      {isUa ? 'Оптимально (~16)' : 'Optimal (~16)'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSimplifySelectedLine(24)}
+                      className="py-1.5 px-2 rounded-lg bg-slate-500/10 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-300 border border-slate-200 dark:border-white/10 text-[10px] font-bold transition-all cursor-pointer text-center active:scale-95"
+                      title={isUa ? 'Детальніше: ~24 точки' : 'Detailed: ~24 points'}
+                    >
+                      {isUa ? 'Детально (~24)' : 'Detailed (~24)'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Dash Style */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  {isUa ? 'Стиль лінії' : 'Line Pattern'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'solid', labelUa: 'Суцільна', labelEn: 'Solid' },
+                    { id: 'dashed', labelUa: 'Штрихова', labelEn: 'Dashed' },
+                    { id: 'dotted', labelUa: 'Пунктирна', labelEn: 'Dotted' },
+                  ].map((st) => (
+                    <button
+                      key={st.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, dashStyle: st.id as any });
+                        else onChangeLineDashStyle(st.id as any);
+                      }}
+                      className={`py-1.5 px-2 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
+                        currLineDashStyle === st.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                          : 'bg-slate-500/5 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-slate-500/10'
+                      }`}
+                    >
+                      {isUa ? st.labelUa : st.labelEn}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 5. Start Point Style */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2.5">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Початкова точка лінії' : 'Line Start Endpoint'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'fade', nameUa: 'Затухання', nameEn: 'Fade', icon: '✨' },
+                    { id: 'explosion', nameUa: 'Вибух', nameEn: 'Explosion', icon: '💥' },
+                    { id: 'custom_icon', nameUa: 'Іконка', nameEn: 'Custom Icon', icon: '🖼️' },
+                    { id: 'arrow', nameUa: 'Стрілка', nameEn: 'Arrow', icon: '➔' },
+                    { id: 'dot', nameUa: 'Точка', nameEn: 'Dot', icon: '⏺' },
+                    { id: 'none', nameUa: 'Без значка', nameEn: 'None', icon: '—' },
+                  ].map((ep) => (
+                    <button
+                      key={ep.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startPointStyle: ep.id as any });
+                        else onChangeLineStartStyle(ep.id as any);
+                      }}
+                      className={`p-1.5 rounded-lg border flex flex-col items-center gap-0.5 text-[10px] font-bold transition-all cursor-pointer ${
+                        currLineStartStyle === ep.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold shadow-sm'
+                          : 'bg-slate-900/20 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{ep.icon}</span>
+                      <span>{isUa ? ep.nameUa : ep.nameEn}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Icon picker for Start Point */}
+                {currLineStartStyle === 'custom_icon' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{isUa ? 'Оберіть іконку з бібліотеки:' : 'Select custom icon:'}</span>
+                      <label className="text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 font-bold">
+                        <Plus className="w-3 h-3" />
+                        <span>{isUa ? 'Завантажити' : 'Upload'}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/svg+xml,image/jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (dataUrl) {
+                                saveToLibrary(file.name.replace(/\.[^/.]+$/, ""), dataUrl);
+                                if (selectedLine) onUpdateLine({ ...selectedLine, startCustomIconUrl: dataUrl });
+                                else onChangeLineStartCustomIcon(dataUrl);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {customLibrary.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic">
+                        {isUa ? 'У бібліотеці немає власних іконок. Натисніть "Завантажити" вище.' : 'No custom icons. Click "Upload" above.'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-5 gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/20 rounded-xl">
+                        {customLibrary.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (selectedLine) onUpdateLine({ ...selectedLine, startCustomIconUrl: item.dataUrl });
+                              else onChangeLineStartCustomIcon(item.dataUrl);
+                            }}
+                            className={`p-1 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                              currLineStartCustomIcon === item.dataUrl ? 'border-emerald-400 bg-emerald-500/30 ring-1 ring-emerald-400' : 'border-white/10 hover:bg-white/10'
+                            }`}
+                            title={item.name}
+                          >
+                            <img src={item.dataUrl} className="w-6 h-6 object-contain" alt={item.name} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(currLineStartStyle === 'custom_icon' || currLineStartStyle === 'arrow') && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Поворот / напрям іконки' : 'Icon Rotation'}</span>
+                      <span className="font-mono text-emerald-400">{currLineStartIconRotation}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="359"
+                      value={currLineStartIconRotation}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startIconRotation: val });
+                        else onChangeLineStartIconRotation(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {currLineStartStyle !== 'none' && currLineStartStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір початкової іконки' : 'Start Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineStartIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineStartIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, startIconSize: val });
+                        else onChangeLineStartIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 6. End Point Style */}
+              <div className="p-3 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2.5">
+                <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                  {isUa ? 'Кінцева точка лінії' : 'Line End Endpoint'}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { id: 'fade', nameUa: 'Затухання', nameEn: 'Fade', icon: '✨' },
+                    { id: 'explosion', nameUa: 'Вибух', nameEn: 'Explosion', icon: '💥' },
+                    { id: 'custom_icon', nameUa: 'Іконка', nameEn: 'Custom Icon', icon: '🖼️' },
+                    { id: 'arrow', nameUa: 'Стрілка', nameEn: 'Arrow', icon: '➔' },
+                    { id: 'dot', nameUa: 'Точка', nameEn: 'Dot', icon: '⏺' },
+                    { id: 'none', nameUa: 'Без значка', nameEn: 'None', icon: '—' },
+                  ].map((ep) => (
+                    <button
+                      key={ep.id}
+                      onClick={() => {
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endPointStyle: ep.id as any });
+                        else onChangeLineEndStyle(ep.id as any);
+                      }}
+                      className={`p-1.5 rounded-lg border flex flex-col items-center gap-0.5 text-[10px] font-bold transition-all cursor-pointer ${
+                        currLineEndStyle === ep.id
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold shadow-sm'
+                          : 'bg-slate-900/20 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{ep.icon}</span>
+                      <span>{isUa ? ep.nameUa : ep.nameEn}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Icon picker for End Point */}
+                {currLineEndStyle === 'custom_icon' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-slate-400">
+                      <span>{isUa ? 'Оберіть іконку з бібліотеки:' : 'Select custom icon:'}</span>
+                      <label className="text-emerald-400 hover:underline cursor-pointer flex items-center gap-1 font-bold">
+                        <Plus className="w-3 h-3" />
+                        <span>{isUa ? 'Завантажити' : 'Upload'}</span>
+                        <input
+                          type="file"
+                          accept="image/png,image/svg+xml,image/jpeg"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              const dataUrl = ev.target?.result as string;
+                              if (dataUrl) {
+                                saveToLibrary(file.name.replace(/\.[^/.]+$/, ""), dataUrl);
+                                if (selectedLine) onUpdateLine({ ...selectedLine, endCustomIconUrl: dataUrl });
+                                else onChangeLineEndCustomIcon(dataUrl);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {customLibrary.length === 0 ? (
+                      <p className="text-[10px] text-slate-500 italic">
+                        {isUa ? 'У бібліотеці немає власних іконок. Натисніть "Завантажити" вище.' : 'No custom icons. Click "Upload" above.'}
+                      </p>
+                    ) : (
+                      <div className="grid grid-cols-5 gap-1.5 max-h-32 overflow-y-auto p-1 bg-black/20 rounded-xl">
+                        {customLibrary.map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => {
+                              if (selectedLine) onUpdateLine({ ...selectedLine, endCustomIconUrl: item.dataUrl });
+                              else onChangeLineEndCustomIcon(item.dataUrl);
+                            }}
+                            className={`p-1 rounded-lg border flex items-center justify-center transition-all cursor-pointer ${
+                              currLineEndCustomIcon === item.dataUrl ? 'border-emerald-400 bg-emerald-500/30 ring-1 ring-emerald-400' : 'border-white/10 hover:bg-white/10'
+                            }`}
+                            title={item.name}
+                          >
+                            <img src={item.dataUrl} className="w-6 h-6 object-contain" alt={item.name} />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {(currLineEndStyle === 'custom_icon' || currLineEndStyle === 'arrow') && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Поворот / напрям іконки' : 'Icon Rotation'}</span>
+                      <span className="font-mono text-emerald-400">{currLineEndIconRotation}°</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="359"
+                      value={currLineEndIconRotation}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endIconRotation: val });
+                        else onChangeLineEndIconRotation(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {currLineEndStyle !== 'none' && currLineEndStyle !== 'fade' && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-1.5">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір кінцевої іконки' : 'End Icon Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineEndIconSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="16"
+                      max="64"
+                      value={currLineEndIconSize}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (selectedLine) onUpdateLine({ ...selectedLine, endIconSize: val });
+                        else onChangeLineEndIconSize(val);
+                      }}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+
+                {/* Selected line text label */}
+                {selectedLine && (
+                  <div className="pt-2 border-t border-slate-200 dark:border-white/10 space-y-2">
+                    <label className="block text-[10px] font-extrabold text-emerald-400 uppercase tracking-wider">
+                      {isUa ? 'Підпис лінії на карті' : 'Line Label Text'}
+                    </label>
+                    <input
+                      type="text"
+                      value={currLineLabel}
+                      placeholder={isUa ? 'Введіть підпис лінії...' : 'Enter line label...'}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, label: e.target.value })}
+                      className={`w-full border px-2.5 py-1.5 rounded-lg text-xs focus:outline-none focus:border-emerald-500 ${
+                        theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                      }`}
+                    />
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <span>{isUa ? 'Розмір шрифту підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-emerald-400">{currLineLabelSize}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="9"
+                      max="24"
+                      value={currLineLabelSize}
+                      onChange={(e) => onUpdateLine({ ...selectedLine, labelSize: Number(e.target.value) })}
+                      className="w-full h-1 bg-slate-700 rounded appearance-none cursor-pointer accent-emerald-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* 7. Drawn Lines List & Clear All */}
+              {drawnLines.length > 0 && (
+                <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2">
+                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <span>{isUa ? `Намальовані лінії (${drawnLines.length})` : `Drawn Lines (${drawnLines.length})`}</span>
+                    <button
+                      onClick={onClearDrawnLines}
+                      className="text-red-400 hover:text-red-300 hover:underline flex items-center gap-1 text-[10px] cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>{isUa ? 'Видалити всі' : 'Clear All'}</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                    {drawnLines.map((line, idx) => {
+                      const isSel = selectedLineId === line.id;
+                      return (
+                        <div
+                          key={line.id}
+                          onClick={() => onSelectLine(isSel ? null : line.id)}
+                          className={`p-2 rounded-xl border flex items-center justify-between transition-all cursor-pointer ${
+                            isSel
+                              ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-extrabold'
+                              : 'bg-slate-500/5 border-slate-200 dark:border-white/5 text-slate-400 hover:bg-slate-500/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-3.5 h-3.5 rounded-full border border-white/30" style={{ backgroundColor: line.color }}></span>
+                            <span className="text-[11px]">
+                              {isUa ? `Лінія #${idx + 1} (${line.points.length} точок)` : `Line #${idx + 1} (${line.points.length} pts)`}
+                            </span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteLine(line.id);
+                            }}
+                            className="p-1 text-slate-500 hover:text-red-400 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 2. СТИЛІ (STYLES) - ALWAYS AVAILABLE FOR CONFIGURATION */}
+        <div 
+          id="section-styles"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.styles
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
+          <button
+            onClick={() => toggleSection('styles')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.styles
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Sliders className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secStyles}</span>
+            </div>
+            {expandedSections.styles ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.styles && (
+            <div className="p-3 space-y-3.5">
+              
+              {/* Editing Target Indicator */}
+              <div className="flex items-center justify-between pb-1 border-b border-dashed border-slate-200 dark:border-white/5">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  {isUa ? 'Ціль налаштування:' : 'Configuring target:'}
+                </span>
+                <span className="text-[10px] font-extrabold text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-md">
+                  {selectedMarker 
+                    ? (isUa ? `Маркер: "${selectedMarker.title}"` : `Marker: "${selectedMarker.title}"`) 
+                    : (isUa ? 'Стиль за замовчуванням' : 'Active Symbol template')}
+                </span>
+              </div>
+
+              {/* Point shape selector */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  {t.lblPointIcon}
+                </label>
+                <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto p-0.5 border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-500/5 mb-2.5">
+                  {ICON_TYPES.map((type) => {
+                    const isActive = activeIconType === type.id && !activeCustomIconUrl;
+                    const hasCustomPreset = !!iconPresets[type.id];
+                    return (
+                      <button
+                        key={type.id}
+                        onClick={() => handleSelectIconType(type.id)}
+                        title={`${isUa ? type.nameUa : type.nameEn}${hasCustomPreset ? (isUa ? ' (власні налаштування збережено)' : ' (custom settings saved)') : ''}`}
+                        className={`h-9 border rounded-xl transition-all relative flex items-center justify-center cursor-pointer ${
+                          isActive
+                            ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.35)] scale-105 z-10'
+                            : (theme === 'light' 
+                              ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700' 
+                              : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-200')
+                        }`}
+                      >
+                        <div 
+                          className="w-5 h-5 flex items-center justify-center"
+                          dangerouslySetInnerHTML={{ __html: getIconSvgContent(type.id, 'currentColor', theme === 'light' ? '#0f172a' : '#ffffff') }}
+                        />
+                        {hasCustomPreset && (
+                          <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white/50" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Per-icon Memory Status Bar & Dedicated Customizer Header */}
+                <div className={`p-2.5 rounded-2xl border transition-all mb-3.5 ${
+                  theme === 'light'
+                    ? 'bg-blue-50/70 border-blue-200/80 shadow-sm'
+                    : 'bg-blue-950/20 border-blue-500/20'
+                }`}>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* Active Icon Preview Circle */}
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 border p-1 ${
+                        theme === 'light' ? 'bg-white border-blue-200 shadow-sm' : 'bg-[#1a202c] border-blue-500/30'
+                      }`}>
+                        {activeCustomItem ? (
+                          <img src={activeCustomItem.dataUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : activeCustomIconUrl ? (
+                          <img src={activeCustomIconUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                        ) : (
+                          <div 
+                            className="w-full h-full flex items-center justify-center"
+                            dangerouslySetInnerHTML={{ __html: getIconSvgContent(activeIconType, activeColor, activeBorderColor) }}
+                          />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
+                          {activeCustomItem 
+                            ? activeCustomItem.name 
+                            : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                        </div>
+                        <div className="text-[9px] text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                          <span>{isUa ? 'Окремі налаштування для цієї іконки' : 'Dedicated icon settings active'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      {onResetIconPreset && (
+                        <button
+                          type="button"
+                          onClick={() => onResetIconPreset(currentPresetKey)}
+                          title={isUa ? 'Скинути налаштування цієї іконки до стандартних' : 'Reset this icon to defaults'}
+                          className="px-2 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] font-bold transition-all cursor-pointer border border-blue-500/20"
+                        >
+                          {isUa ? 'Скинути' : 'Reset'}
+                        </button>
+                      )}
+                      {onApplyPresetToAllIcons && (
+                        <button
+                          type="button"
+                          onClick={() => onApplyPresetToAllIcons({
+                            color: activeColor,
+                            borderColor: activeBorderColor,
+                            size: activeSize,
+                            rotation: activeRotation,
+                            draggable: activeDraggable,
+                            labelVisible: activeLabelVisible,
+                            endPointStyle: activeEndPointStyle,
+                            lineWidth: activeLineWidth,
+                            hasZone: activeHasZone,
+                            zoneColor: activeZoneColor,
+                            zoneSize: activeZoneSize,
+                          })}
+                          title={isUa ? 'Застосувати поточні налаштування до всіх іконок' : 'Apply current settings to all icons'}
+                          className="px-2 py-1 rounded-lg bg-slate-500/10 hover:bg-slate-500/20 text-slate-700 dark:text-slate-300 text-[10px] font-semibold transition-all cursor-pointer border border-slate-500/20"
+                        >
+                          {isUa ? 'Для всіх' : 'To all'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-[9px] text-slate-500 dark:text-slate-400 px-0.5">
+                    {isUa 
+                      ? 'Всі зміни нижче (розмір, колір, кут, зона) зберігаються окремо для цієї іконки.' 
+                      : 'All changes below (size, color, angle, zone) are saved individually for this icon.'}
+                  </div>
+                </div>
+
+                {/* Custom Upload PNG button */}
+                <button
+                  onClick={handlePngUploadClick}
+                  title={isUa ? 'Завантажити свій PNG' : 'Upload custom PNG'}
+                  className={`w-full py-2 px-3 border rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer text-xs font-bold ${
+                    activeCustomIconUrl
+                      ? 'bg-blue-600/20 border-blue-500 text-blue-500 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.25)]'
+                      : (theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50' 
+                        : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5')
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5 text-blue-500" />
+                  <span>{isUa ? 'Додати власний PNG малюнок' : 'Upload custom PNG marker'}</span>
+                </button>
+
+                {/* Uploaded custom library thumbnails */}
+                {customLibrary.length > 0 && (
+                  <div className="mt-3.5 space-y-2">
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      {isUa ? 'Власна бібліотека' : 'Custom Library'}
+                    </span>
+                    <div className="grid grid-cols-2 gap-2 max-h-36 overflow-y-auto pr-1">
+                      {customLibrary.map((item) => {
+                        const isActive = activeCustomIconUrl === item.dataUrl || activeIconType === item.id;
+                        const hasCustomPreset = !!iconPresets[item.id];
+                        return (
+                          <div
+                            key={item.id}
+                            onClick={() => handleSelectCustomIcon(item)}
+                            className={`group p-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-pointer relative ${
+                              isActive
+                                ? 'border-blue-500 bg-blue-600/15 text-blue-600 dark:text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.25)] scale-[1.02]'
+                                : (theme === 'light' 
+                                  ? 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-700' 
+                                  : 'border-white/5 bg-[#181d28]/40 hover:border-white/10 text-slate-300')
+                            }`}
+                          >
+                            <div className="w-6 h-6 p-0.5 rounded-lg bg-[#1c2230] border border-white/5 flex items-center justify-center flex-shrink-0">
+                              <img src={item.dataUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                            </div>
+                            <span className="text-[10px] truncate flex-1 font-semibold" title={item.name}>
+                              {iconPresets[item.id]?.title || item.name}
+                            </span>
+                            {hasCustomPreset && (
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-500 ring-1 ring-white/50 shrink-0" title={isUa ? 'Збережені налаштування' : 'Saved settings'} />
+                            )}
+                            <button
+                              onClick={(e) => deleteFromLibrary(item.id, e)}
+                              className="text-slate-500 hover:text-red-400 p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title={isUa ? 'Видалити іконку' : 'Delete icon'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Color selectors side-by-side */}
+              <div className="grid grid-cols-2 gap-3">
+                {/* Fill color */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    {t.lblPointColor}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={activeColor === 'transparent' ? '#ef4444' : activeColor}
+                      onChange={(e) => handlePropChange('color', e.target.value)}
+                      disabled={activeColor === 'transparent'}
+                      className="w-10 h-10 bg-transparent cursor-pointer rounded-xl border border-white/10 overflow-hidden p-0"
+                    />
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                      {activeColor === 'transparent' ? 'None' : activeColor}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Border/Line color */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                    {t.lblLineColor}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={activeBorderColor}
+                      onChange={(e) => handlePropChange('borderColor', e.target.value)}
+                      className="w-10 h-10 bg-transparent cursor-pointer rounded-xl border border-white/10 overflow-hidden p-0"
+                    />
+                    <span className="text-[10px] font-mono text-slate-500 uppercase tracking-tight">
+                      {activeBorderColor}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* No Color & Preset Colors Row */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => handlePropChange('color', 'transparent')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[11px] font-bold transition-all cursor-pointer ${
+                      activeColor === 'transparent'
+                        ? 'bg-blue-600/15 border-blue-500 text-blue-500 dark:text-blue-400'
+                        : (theme === 'light' 
+                          ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50' 
+                          : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-300')
+                    }`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{t.btnNoColor}</span>
+                  </button>
+
+                  {/* Quick Color Presets */}
+                  <div className="flex gap-1">
+                    {['#eab308', '#ef4444', '#3b82f6', '#ffffff'].map((hex) => (
+                      <button
+                        key={hex}
+                        onClick={() => handlePropChange('color', hex)}
+                        style={{ backgroundColor: hex }}
+                        className={`w-5 h-5 rounded-full border border-white/10 hover:scale-110 transition-transform ${
+                          activeColor === hex ? 'ring-2 ring-blue-500' : ''
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* End Point selector */}
+              <div className="pt-1.5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                  {t.lblEndPoint}
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['line', 'explosion', 'none'].map((style) => (
+                    <button
+                      key={style}
+                      onClick={() => handlePropChange('endPointStyle', style)}
+                      className={`py-2 px-1 border rounded-xl text-[10px] sm:text-xs font-bold transition-all cursor-pointer truncate ${
+                        activeEndPointStyle === style
+                          ? 'bg-blue-600/20 border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold shadow-[0_0_8px_rgba(59,130,246,0.1)]'
+                          : (theme === 'light' 
+                            ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50' 
+                            : 'bg-[#181d28] border-white/5 text-slate-400 hover:bg-white/5 hover:text-slate-200')
+                      }`}
+                      title={
+                        style === 'line' ? (isUa ? 'Полоса' : 'Dashed Line') :
+                        style === 'explosion' ? (isUa ? 'Вибух 💥' : 'Explosion 💥') :
+                        (isUa ? 'Ні' : 'None')
+                      }
+                    >
+                      {
+                        style === 'line' ? (isUa ? 'Полоса' : 'Line') :
+                        style === 'explosion' ? (isUa ? 'Вибух 💥' : 'Explosion') :
+                        (isUa ? 'Ні' : 'None')
+                      }
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dividing Line Thickness (Товщина роздільної лінії) */}
+                {activeEndPointStyle === 'line' && (
+                  <div className="pt-2 mt-2 border-t border-slate-200 dark:border-white/5 space-y-1.5 animate-fade-in">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span>{t.lblLineWidth}</span>
+                      <span className="font-mono text-blue-500 font-bold">{activeLineWidth}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="15"
+                      value={activeLineWidth}
+                      onChange={(e) => handlePropChange('lineWidth', Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-[#181d28] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* TACTICAL ZONE CONTROLS */}
+              <div className="pt-2 border-t border-slate-200 dark:border-white/5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer text-[11px] font-bold text-slate-500 uppercase tracking-wider select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeHasZone}
+                      onChange={(e) => handlePropChange('hasZone', e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblHasZone}</span>
+                  </label>
+                </div>
+
+                {activeHasZone && (
+                  <div className="space-y-3 pl-1.5 border-l-2 border-blue-500/30 animate-fade-in">
+                    {/* Zone Color */}
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1.5">
+                        <span>{t.lblZoneColor}</span>
+                        <span className="font-mono text-blue-500">{activeZoneColor}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={activeZoneColor}
+                          onChange={(e) => handlePropChange('zoneColor', e.target.value)}
+                          className="w-8 h-8 bg-transparent cursor-pointer rounded-lg border border-white/10 overflow-hidden p-0"
+                        />
+                        <div className="flex gap-1 flex-1 justify-end">
+                          {['#eab308', '#ef4444', '#3b82f6', '#22c55e'].map((hex) => (
+                            <button
+                              key={hex}
+                              onClick={() => handlePropChange('zoneColor', hex)}
+                              style={{ backgroundColor: hex }}
+                              className={`w-4 h-4 rounded-full border border-white/10 hover:scale-110 transition-transform ${
+                                activeZoneColor === hex ? 'ring-2 ring-blue-500' : ''
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Zone Size */}
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{t.lblZoneSize}</span>
+                        <span className="font-mono text-blue-500">{activeZoneSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="300"
+                        value={activeZoneSize}
+                        onChange={(e) => handlePropChange('zoneSize', Number(e.target.value))}
+                        className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Marker detail sliders */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-white/5">
+                {/* Title (Always editable - either for the selected point or the active style/icon type template) */}
+                <div>
+                  <span className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    {selectedMarker ? t.lblTitle : (isUa ? 'Назва для іконки' : 'Icon Name/Label')}
+                  </span>
+                  <input
+                    type="text"
+                    value={selectedMarker ? activeTitle : (activeStyle.title || customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (selectedMarker) {
+                        handlePropChange('title', val);
+                      } else {
+                        handlePropChange('title', val);
+                        onUpdateCustomIconTitle(activeIconType, val);
+                      }
+                    }}
+                    placeholder="..."
+                    className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                      theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-800' 
+                        : 'bg-[#181d28] border-white/5 text-slate-200'
+                    }`}
+                  />
+                </div>
+
+                {/* Size slider */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    <span>{t.lblSize}</span>
+                    <span className="font-mono text-blue-500">{activeSize}px</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="16"
+                    max="64"
+                    value={activeSize}
+                    onChange={(e) => handlePropChange('size', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Rotation slider */}
+                <div>
+                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                    <span>{t.lblRotation}</span>
+                    <span className="font-mono text-blue-500">{activeRotation}°</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="359"
+                    value={activeRotation}
+                    onChange={(e) => handlePropChange('rotation', Number(e.target.value))}
+                    className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Movement controls */}
+                <div className="mt-2 p-2.5 rounded-xl border border-blue-500/20 bg-blue-500/5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase">
+                      {isUa ? 'Рух' : 'Movement'}
+                    </span>
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold text-blue-500 select-none">
+                      <input
+                        type="checkbox"
+                        checked={activeMovementEnabled}
+                        onChange={(e) => handlePropChange('movementEnabled', e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                      />
+                      <span>{isUa ? 'Увімкнути' : 'Enable'}</span>
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                      <span>{isUa ? 'Швидкість' : 'Speed'}</span>
+                      <span className="font-mono text-blue-500">{Number(activeMovementSpeed).toFixed(1)} км/год</span>
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5000"
+                      step="0.1"
+                      value={activeMovementSpeed}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Math.max(0, Math.min(5000, Number(e.target.value) || 0)))}
+                      className={`w-full border px-3 py-1.5 rounded-xl text-xs font-mono focus:outline-none focus:border-blue-500 ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-800'
+                          : 'bg-[#181d28] border-white/5 text-slate-200'
+                      }`}
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="3000"
+                      step="1"
+                      value={Math.min(3000, Math.max(0, Number(activeMovementSpeed) || 0))}
+                      onChange={(e) => handlePropChange('movementSpeedKmh', Number(e.target.value))}
+                      className="w-full h-1 mt-1.5 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+                  </div>
+
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeMovementTrailEnabled}
+                      onChange={(e) => handlePropChange('movementTrailEnabled', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{isUa ? 'Залишати слід руху' : 'Leave movement trail'}</span>
+                  </label>
+
+                  {activeMovementTrailEnabled && (
+                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Колір' : 'Color'}
+                        <input
+                          type="color"
+                          value={activeMovementTrailColor}
+                          onChange={(e) => handlePropChange('movementTrailColor', e.target.value)}
+                          className="block w-full h-8 mt-1 p-0.5 rounded-lg border border-slate-200 dark:border-white/10 bg-transparent cursor-pointer"
+                        />
+                      </label>
+
+                      <label className="text-[9px] font-bold text-slate-400 uppercase">
+                        {isUa ? 'Товщина' : 'Width'}
+                        <span className="block mt-1 font-mono text-blue-500 text-[10px]">{activeMovementTrailWidth}px</span>
+                        <input
+                          type="range"
+                          min="1"
+                          max="15"
+                          step="1"
+                          value={activeMovementTrailWidth}
+                          onChange={(e) => handlePropChange('movementTrailWidth', Number(e.target.value))}
+                          className="w-full h-1 mt-2 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                        />
+                      </label>
+
+                      <div className="col-span-2">
+                        <span className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Тип лінії' : 'Line style'}
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[
+                            { id: 'solid', ua: 'Суцільна', en: 'Solid' },
+                            { id: 'dashed', ua: 'Пунктир', en: 'Dashed' },
+                            { id: 'dotted', ua: 'Крапки', en: 'Dotted' },
+                          ].map((style) => (
+                            <button
+                              key={style.id}
+                              type="button"
+                              onClick={() => handlePropChange('movementTrailDashStyle', style.id)}
+                              className={`py-1.5 rounded-lg text-[9px] font-bold transition-all ${
+                                activeMovementTrailDashStyle === style.id
+                                  ? 'bg-blue-500 text-white'
+                                  : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {isUa ? style.ua : style.en}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Toggles */}
+                <div className="grid grid-cols-2 gap-2 pt-1.5">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeDraggable}
+                      onChange={(e) => handlePropChange('draggable', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblDraggable}</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 dark:text-slate-400 select-none">
+                    <input
+                      type="checkbox"
+                      checked={activeLabelVisible}
+                      onChange={(e) => handlePropChange('labelVisible', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500"
+                    />
+                    <span>{t.lblShowLabel}</span>
+                  </label>
+                </div>
+
+                {/* Label Font Size & Orientation Controls */}
+                {activeLabelVisible && (
+                  <div className="p-2.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-500/5 space-y-2">
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase">
+                      <span>{isUa ? 'Розмір підпису' : 'Label Font Size'}</span>
+                      <span className="font-mono text-blue-500 font-bold">{Math.round(activeLabelFontSize)}px</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max="28"
+                      step="0.5"
+                      value={activeLabelFontSize}
+                      onChange={(e) => handlePropChange('labelFontSize', Number(e.target.value))}
+                      className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
+                    />
+
+                    <div className="pt-1.5 border-t border-slate-200 dark:border-white/5">
+                      <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        {isUa ? 'Орієнтація підпису' : 'Label Orientation'}
+                      </span>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: 'auto', nameUa: 'Читабельно', nameEn: 'Readable' },
+                          { id: 'upright', nameUa: 'Горизонтально', nameEn: 'Horizontal' },
+                          { id: 'follow_icon', nameUa: 'З іконкою', nameEn: 'Follow' },
+                        ].map((opt) => (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => handlePropChange('labelOrientation', opt.id as any)}
+                            className={`py-1 px-1 rounded-lg text-[9px] font-bold transition-all text-center ${
+                              activeLabelOrientation === opt.id
+                                ? 'bg-blue-500 text-white shadow-xs'
+                                : 'bg-slate-200/50 dark:bg-white/5 text-slate-400 hover:text-white'
+                            }`}
+                          >
+                            {isUa ? opt.nameUa : opt.nameEn}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Delete Current Selected Marker button */}
+                {selectedMarker && (
+                  <button
+                    onClick={() => onDeleteMarker(selectedMarker.id)}
+                    className="w-full py-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 text-xs font-bold rounded-xl border border-red-500/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Видалити точку' : 'Delete Point'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3. ОБ'ЄКТИ (OBJECTS) */}
+        <div 
+          id="section-objects"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.objects
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
+          <button
+            onClick={() => toggleSection('objects')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.objects
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secObjects} ({markers.length})</span>
+            </div>
+            {expandedSections.objects ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.objects && (
+            <div className="p-3 space-y-2">
+              {markers.length === 0 ? (
+                <div className="text-center py-4 text-xs text-slate-500">
+                  {t.noObjects}
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {markers.map((m) => (
+                    <div
+                      key={m.id}
+                      onClick={() => onSelectMarker(m.id)}
+                      className={`p-2 rounded-xl border text-xs flex items-center justify-between transition-all cursor-pointer ${
+                        selectedMarkerId === m.id
+                          ? 'bg-blue-600/10 border-blue-500/40 text-blue-600 dark:text-white font-semibold'
+                          : (theme === 'light'
+                            ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                            : 'bg-[#181d28]/60 border-white/5 text-slate-300 hover:bg-white/5')
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <span
+                          style={{ backgroundColor: m.color === 'transparent' ? '#ffffff' : m.color }}
+                          className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${m.color === 'transparent' ? 'border border-dashed border-slate-300' : ''}`}
+                        ></span>
+                        {renamingMarkerId === m.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={m.title}
+                            onChange={(e) => onUpdateMarker({ ...m, title: e.target.value })}
+                            onBlur={() => setRenamingMarkerId(null)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') setRenamingMarkerId(null);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-white/20 dark:bg-black/40 border border-blue-500 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-900 dark:text-white w-full focus:outline-none"
+                          />
+                        ) : (
+                          <span 
+                            className="font-semibold truncate"
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingMarkerId(m.id);
+                            }}
+                          >
+                            {m.title || (isUa ? 'Без назви' : 'Untitled')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenamingMarkerId(renamingMarkerId === m.id ? null : m.id);
+                          }}
+                          className="text-slate-400 hover:text-blue-500 p-1 rounded transition-colors"
+                          title={isUa ? 'Перейменувати' : 'Rename'}
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteMarker(m.id);
+                          }}
+                          className="text-slate-400 hover:text-red-500 p-1 rounded transition-colors"
+                          title={isUa ? 'Видалити' : 'Delete'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 4. КАРТА (MAP) */}
+        <div 
+          id="section-map"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.map
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
+          <button
+            onClick={() => toggleSection('map')}
+            className={`w-full px-3.5 py-3 flex items-center justify-between text-left font-bold text-xs uppercase tracking-wider transition-all cursor-pointer select-none ${
+              expandedSections.map
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <MapIcon className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t.secMap}</span>
+            </div>
+            {expandedSections.map ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.map && (
+            <div className="p-3 space-y-3">
+              
+              {/* Tile Layer selector */}
+              <div className="space-y-1.5">
+                {tileLayers.map((layer) => (
+                  <button
+                    key={layer.id}
+                    onClick={() => onSelectTileLayer(layer)}
+                    className={`w-full text-left p-2 px-3 border rounded-xl flex items-center justify-between transition-all cursor-pointer ${
+                      activeTileLayer.id === layer.id
+                        ? 'bg-blue-600/10 border-blue-500 text-blue-600 dark:text-blue-400 font-extrabold'
+                        : (theme === 'light'
+                          ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          : 'bg-[#181d28]/60 border-white/5 text-slate-300 hover:bg-white/5')
+                    }`}
+                  >
+                    <span className="text-xs font-bold">
+                      {isUa ? layer.nameUa : layer.nameEn}
+                    </span>
+                    {activeTileLayer.id === layer.id && <span className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_#3b82f6]" />}
+                  </button>
+                ))}
+              </div>
+
+              {/* Apple Maps Info & Direct Link */}
+              {activeTileLayer.id.startsWith('apple_maps') && (
+                <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 animate-fade-in ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base select-none">🍎</span>
+                    <div>
+                      <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                        <span>Apple Maps</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20">
+                          {isUa ? 'Офіційні тайли' : 'Official MapKit'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Офіційні карти Apple без водяних знаків' : 'Clean Apple tiles, no watermark'}
+                      </div>
+                    </div>
+                  </div>
+                  <a
+                    href="https://maps.apple.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 border border-blue-500/20 shrink-0"
+                    title="Відкрити maps.apple.com"
+                  >
+                    <span>maps.apple.com</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* DeepStateMap Info & Direct Link */}
+              {activeTileLayer.id === 'deepstatemap' && (
+                <div className={`p-2.5 rounded-2xl border flex items-center justify-between gap-2 animate-fade-in ${
+                  theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base select-none">🇺🇦</span>
+                    <div>
+                      <div className="text-[11px] font-extrabold flex items-center gap-1.5">
+                        <span>DeepStateMap.live</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
+                          {isUa ? 'Офіційні тайли' : 'Official Tiles'}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Оригінальна тактична карта України' : 'Original Ukrainian tactical map style'}
+                      </div>
+                    </div>
+                  </div>
+                  <a
+                    href="https://deepstatemap.live/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-blue-600/10 text-blue-600 dark:text-blue-400 hover:bg-blue-600 hover:text-white transition-all flex items-center gap-1 border border-blue-500/20 shrink-0"
+                    title="Відкрити deepstatemap.live"
+                  >
+                    <span>deepstate</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* Visicom API Key / Token Setting */}
+              <div className={`p-3 rounded-2xl border space-y-2.5 ${
+                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28]/70 border-white/10 text-slate-200'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className={`w-2 h-2 rounded-full ${visicomKey ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-amber-500'}`} />
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider">
+                      {isUa ? 'API-токен Visicom' : 'Visicom API Token'}
+                    </span>
+                  </div>
+                  {visicomKey ? (
+                    <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {isUa ? 'Підключено' : 'Active'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                      {isUa ? 'Не вказано' : 'Missing'}
+                    </span>
+                  )}
+                </div>
+
+                {!isEditingVisicomKey ? (
+                  <div className="flex items-center justify-between gap-2 pt-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewVisicomKeyInput(visicomKey || '');
+                        setIsEditingVisicomKey(true);
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                    >
+                      <KeyRound className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Ввести новий API' : 'Enter new API key'}</span>
+                    </button>
+
+                    <a
+                      href="https://developer.visicom.ua"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-2.5 py-2 text-[11px] rounded-xl text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-white/5 transition-colors"
+                      title={isUa ? 'Отримати ключ на Visicom' : 'Get key from Visicom'}
+                    >
+                      {isUa ? 'Отримати' : 'Get key'} ↗
+                    </a>
+                  </div>
+                ) : (
+                  <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-white/10">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span>{isUa ? 'Новий API ключ:' : 'New API key:'}</span>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={newVisicomKeyInput}
+                      onChange={(e) => setNewVisicomKeyInput(e.target.value.trim())}
+                      placeholder={isUa ? 'Вставте ваш токен сюди...' : 'Paste your token here...'}
+                      autoFocus
+                      className={`w-full font-mono text-xs px-2.5 py-2 rounded-xl border focus:outline-none focus:border-blue-500 transition-colors ${
+                        theme === 'light'
+                          ? 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'
+                          : 'bg-slate-900 border-white/15 text-slate-100 placeholder-slate-600'
+                      }`}
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey(newVisicomKeyInput.trim());
+                          setIsEditingVisicomKey(false);
+                          setVisicomKeySavedSuccess(true);
+                          setTimeout(() => setVisicomKeySavedSuccess(false), 2500);
+                        }}
+                        className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-xs flex items-center justify-center gap-1 shadow-sm transition-all cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                        <span>{isUa ? 'Зберегти' : 'Save'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onUpdateVisicomKey('da8a72ade6f663ff3743cd79f3c2d9f3');
+                          setIsEditingVisicomKey(false);
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                        title={isUa ? 'Встановити стандартний ключ' : 'Set default key'}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingVisicomKey(false)}
+                        className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer ${
+                          theme === 'light'
+                            ? 'bg-white hover:bg-slate-100 border-slate-300 text-slate-600'
+                            : 'bg-slate-800 hover:bg-slate-700 border-white/10 text-slate-300'
+                        }`}
+                      >
+                        {isUa ? 'Скасувати' : 'Cancel'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {visicomKeySavedSuccess && (
+                  <div className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'API-ключ успішно збережено!' : 'API key saved successfully!'}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Visicom Watermark Notice */}
+              {activeTileLayer.id === 'visicom' && !visicomKey && (
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-[11px] leading-relaxed">
+                  <p className="font-bold flex items-center gap-1 mb-1">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500" />
+                    <span>{isUa ? 'Водяний знак Visicom' : 'Visicom Watermark'}</span>
+                  </p>
+                  <span>
+                    {isUa 
+                      ? 'Введіть API-ключ з developer.visicom.ua вище, або оберіть шар CartoDB чи Esri для чистої карти без водяного знаку.'
+                      : 'Enter your API key above or select CartoDB/Esri layer for a clean map.'}
+                  </span>
+                </div>
+              )}
+
+              {/* Load Custom URL Map */}
+              <div className="space-y-1.5 pt-2.5 border-t border-slate-200 dark:border-white/5">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                  {t.lblMapUrl}
+                </label>
+                <input
+                  type="text"
+                  value={customTileUrl}
+                  onChange={(e) => setCustomTileUrl(e.target.value)}
+                  placeholder="Вставте URL.."
+                  className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                    theme === 'light' 
+                      ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                      : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                  }`}
+                />
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleLoadCustomTile}
+                    className={`flex-1 py-1.5 px-3 border text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                        : 'bg-[#1c2230] hover:bg-[#232a3c] border-white/5 text-slate-300'
+                    }`}
+                  >
+                    {t.btnLoad}
+                  </button>
+                  <button
+                    onClick={handleResetTile}
+                    className={`py-1.5 px-3 border text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      theme === 'light'
+                        ? 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-500'
+                        : 'bg-[#1c2230] hover:bg-[#232a3c] border-white/5 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* MAP OVERLAYS & SETTINGS SECTION */}
+        <div 
+          id="section-overlays"
+          className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 flex-shrink-0 ${
+            expandedSections.overlays
+              ? (theme === 'light' ? 'border-slate-300 bg-white shadow-md' : 'border-white/15 bg-[#141824] shadow-lg')
+              : (theme === 'light' ? 'border-slate-200 bg-slate-50/60 hover:bg-slate-50' : 'border-[#262c38] bg-[#0e1117]/30 hover:bg-[#0e1117]/50')
+          }`}>
+          <button
+            onClick={() => toggleSection('overlays')}
+            className={`w-full px-4 py-3.5 flex items-center justify-between text-xs font-bold transition-all cursor-pointer select-none ${
+              expandedSections.overlays
+                ? (theme === 'light' 
+                    ? 'rounded-t-2xl bg-white text-slate-900 border-b border-slate-200 shadow-xs' 
+                    : 'rounded-t-2xl bg-[#141824] text-white border-b border-white/10 shadow-xs')
+                : (theme === 'light' 
+                    ? 'rounded-2xl bg-slate-100/50 hover:bg-slate-100 text-slate-800' 
+                    : 'rounded-2xl bg-[#0e1117]/40 hover:bg-[#0e1117]/60 text-white')
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="w-3.5 h-3.5 text-blue-500" />
+              <span>{isUa ? 'НАЛАШТУВАННЯ' : 'SETTINGS'}</span>
+            </div>
+            {expandedSections.overlays ? <ChevronDown className="w-4 h-4 text-slate-500" /> : <ChevronRight className="w-4 h-4 text-slate-500" />}
+          </button>
+
+          {expandedSections.overlays && (
+            <div className="p-3 space-y-3.5">
+              {/* Live Mode (neptun.in.ua) Block */}
+              <div className="p-3 rounded-xl bg-red-600/10 border border-red-500/30 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      {isLiveMode && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${isLiveMode ? 'bg-red-500' : 'bg-slate-400'}`}></span>
+                    </span>
+                    <span className="text-[10px] font-extrabold text-red-400 uppercase tracking-wider flex items-center gap-1">
+                      <span>{isUa ? 'Режим Live' : 'Live Mode'}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {isLiveMode && onRefreshLive && (
+                      <button
+                        type="button"
+                        onClick={onRefreshLive}
+                        disabled={isLoadingLive}
+                        className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                        title={isUa ? 'Оновити дані Live' : 'Refresh live data'}
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isLoadingLive ? 'animate-spin' : ''}`} />
+                      </button>
+                    )}
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={isLiveMode} 
+                        onChange={() => onToggleLiveMode?.()}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-8 h-4 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-red-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                  <span>{isUa ? 'Виявлено цілей у реальному часі:' : 'Live threats detected:'}</span>
+                  <span className="font-mono font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded-md">
+                    {liveThreats.length}
+                  </span>
+                </div>
+
+                {isLiveMode && (
+                  <div className="space-y-2 pt-2 border-t border-red-500/20 animate-fade-in">
+                    {/* Trails Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Траєкторії польоту (треки)' : 'Flight Trails'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveTrails} 
+                          onChange={() => onToggleShowLiveTrails?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Side Messages Feed Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Оперативна стрічка збоку' : 'Side Radar Feed'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showLiveMessagesFeed} 
+                          onChange={() => onToggleShowLiveMessagesFeed?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-cyan-500"></div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Air Raid Alerts (alerts.in.ua) Block */}
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-2.5 w-2.5">
+                      {showAlerts && activeAlerts.length > 0 && (
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      )}
+                      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${activeAlerts.length > 0 ? 'bg-red-500' : 'bg-emerald-500'}`}></span>
+                    </span>
+                    <span className="text-[10px] font-extrabold text-red-500 dark:text-red-400 uppercase tracking-wider">
+                      {isUa ? 'Повітряні тривоги (alerts.in.ua)' : 'Air Raid Alerts (alerts.in.ua)'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={onRefreshAlerts}
+                      disabled={isLoadingAlerts}
+                      className="p-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-400 text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                      title={isUa ? 'Оновити дані тривог' : 'Refresh alert data'}
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingAlerts ? 'animate-spin' : ''}`} />
+                    </button>
+                    <label className="relative inline-flex items-center cursor-pointer select-none">
+                      <input 
+                        type="checkbox" 
+                        checked={showAlerts} 
+                        onChange={() => onToggleShowAlerts?.()}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-8 h-4 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-red-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-red-500"></div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[9px] text-slate-400">
+                  <span>{isUa ? 'Активних тривог у країні:' : 'Active alerts:'}</span>
+                  <span className="font-mono font-bold text-red-400 bg-red-500/20 px-1.5 py-0.5 rounded-md">
+                    {activeAlerts.length}
+                  </span>
+                </div>
+
+                {showAlerts && (
+                  <div className="space-y-2 pt-2 border-t border-red-500/20 animate-fade-in">
+                    {/* Floating Panel Toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Віджет панелі тривог' : 'Floating Alert Widget'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAirAlertsPanel} 
+                          onChange={() => onToggleShowAirAlertsPanel?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Polygon highlights toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Підсвітка областей/районів' : 'Highlight Polygons'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAlertPolygons} 
+                          onChange={() => onToggleShowAlertPolygons?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Siren markers toggle */}
+                    <div className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-slate-300">
+                        {isUa ? 'Радарні значки сирен' : 'Radar Siren Markers'}
+                      </span>
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={showAlertMarkers} 
+                          onChange={() => onToggleShowAlertMarkers?.()}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-7 h-3.5 bg-slate-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-red-500"></div>
+                      </label>
+                    </div>
+
+                    {/* Opacity slider */}
+                    <div className="space-y-1 pt-1">
+                      <div className="flex justify-between items-center text-[9px] text-slate-400">
+                        <span>{isUa ? 'Прозорість заливки зон' : 'Zone Fill Opacity'}</span>
+                        <span className="font-mono text-red-400 font-bold">{Math.round(alertsOpacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="5"
+                        max="80"
+                        step="5"
+                        value={Math.round(alertsOpacity * 100)}
+                        onChange={(e) => onChangeAlertsOpacity?.(Number(e.target.value) / 100)}
+                        className="w-full accent-red-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Border / Outline Thickness slider (Товщина роздільної лінії / контуру) */}
+                    <div className="space-y-1 pt-1 border-t border-red-500/10">
+                      <div className="flex justify-between items-center text-[9px] text-slate-400">
+                        <span>{isUa ? 'Товщина роздільної лінії / контуру' : 'Border / Outline Thickness'}</span>
+                        <span className="font-mono text-red-400 font-bold">{alertsStrokeWidth}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="1"
+                        max="10"
+                        step="0.5"
+                        value={alertsStrokeWidth}
+                        onChange={(e) => onChangeAlertsStrokeWidth?.(Number(e.target.value))}
+                        className="w-full accent-red-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Full Settings & Data Export / Import Block */}
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 space-y-2">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-blue-500 uppercase tracking-wider">
+                    {isUa ? 'Експорт ZIP (все + власні іконки)' : 'Export ZIP (All Settings + Icons)'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Архів ZIP з усіма налаштуваннями, мітками, лініями та доданими іконками для іншого пристрою' : 'ZIP archive with settings, markers, lines & custom icons for migration'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={onExportAllSettings}
+                    className="py-2 px-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow transition-all cursor-pointer"
+                    title={isUa ? 'Експортувати всі налаштування та додані іконки у ZIP-архів' : 'Export all settings and custom icons as ZIP archive'}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>{isUa ? 'Експорт ZIP' : 'Export ZIP'}</span>
+                  </button>
+
+                  <label
+                    className="py-2 px-2 rounded-lg bg-slate-100 dark:bg-white/10 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/20 font-bold text-xs text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Імпортувати ZIP або JSON з налаштуваннями та власними іконками' : 'Import ZIP or JSON with settings & custom icons'}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isUa ? 'Імпорт' : 'Import'}</span>
+                    <input
+                      type="file"
+                      accept=".zip,.json"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file && onImportAllSettings) {
+                          onImportAllSettings(file);
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+              {/* Watermark Configuration Block */}
+              <div className="p-3 rounded-xl bg-slate-100 dark:bg-white/[0.04] border border-slate-200 dark:border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    {isUa ? 'Водяний знак' : 'Watermark'}
+                  </span>
+                  
+                  {/* Segmented Switcher: Text vs Image */}
+                  <div className="flex p-0.5 bg-slate-200/80 dark:bg-black/40 rounded-lg border border-slate-300/50 dark:border-white/5">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateWatermarkType('text')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        watermarkType === 'text'
+                          ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{isUa ? 'Текст' : 'Text'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateWatermarkType('image')}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        watermarkType === 'image'
+                          ? 'bg-white dark:bg-blue-600 text-blue-600 dark:text-white shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white'
+                      }`}
+                    >
+                      <ImageIcon className="w-3 h-3" />
+                      <span>{isUa ? 'Зображення' : 'Image'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {watermarkType === 'text' ? (
+                  <div className="space-y-2.5">
+                    {/* Text Input */}
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Текст водяного знаку' : 'Watermark Text'}
+                      </label>
+                      <input
+                        type="text"
+                        value={watermarkText}
+                        onChange={(e) => onUpdateWatermarkText(e.target.value)}
+                        placeholder={isUa ? 'Наприклад, UA Mapper...' : 'E.g., UA Mapper...'}
+                        className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 ${
+                          theme === 'light' 
+                            ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                            : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                        }`}
+                      />
+                    </div>
+
+                    {/* Font Size slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Розмір тексту' : 'Text Size'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{watermarkSize || 14}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="8"
+                        max="36"
+                        step="1"
+                        value={watermarkSize || 14}
+                        onChange={(e) => onUpdateWatermarkSize(Number(e.target.value))}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Opacity slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Прозорість' : 'Opacity'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{Math.round((watermarkOpacity ?? 0.10) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round((watermarkOpacity ?? 0.10) * 100)}
+                        onChange={(e) => onUpdateWatermarkOpacity(Number(e.target.value) / 100)}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {/* Image Upload / Preview Area */}
+                    <div className="space-y-1">
+                      <label className="block text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        {isUa ? 'Зображення водяного знаку' : 'Watermark Image'}
+                      </label>
+                      
+                      {watermarkImageUrl ? (
+                        <div className="flex items-center justify-between p-2 rounded-xl bg-white dark:bg-[#181d28] border border-slate-200 dark:border-white/10 shadow-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 flex items-center justify-center overflow-hidden p-1 shrink-0">
+                              <img 
+                                src={watermarkImageUrl} 
+                                alt="Watermark Preview" 
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">
+                                {isUa ? 'Власне зображення' : 'Custom Image'}
+                              </span>
+                              <span className="text-[8.5px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                {isUa ? 'Активне на карті' : 'Active on map'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <label
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-white/5 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 cursor-pointer transition-all flex items-center gap-1 text-[9px] font-semibold"
+                              title={isUa ? 'Замінити зображення' : 'Replace image'}
+                            >
+                              <Upload className="w-3.5 h-3.5 text-blue-500" />
+                              <span className="hidden sm:inline">{isUa ? 'Замінити' : 'Replace'}</span>
+                              <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                                onChange={handleWatermarkImageUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateWatermarkImageUrl('')}
+                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 cursor-pointer transition-all"
+                              title={isUa ? 'Видалити зображення' : 'Delete image'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label
+                          className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-300 dark:border-white/15 rounded-xl hover:border-blue-500 dark:hover:border-blue-400 bg-white/60 dark:bg-white/[0.02] cursor-pointer transition-all group"
+                        >
+                          <Upload className="w-5 h-5 text-slate-400 group-hover:text-blue-500 dark:group-hover:text-blue-400 mb-1 transition-colors" />
+                          <span className="text-[10px] font-bold text-slate-700 dark:text-slate-300 text-center">
+                            {isUa ? 'Завантажити логотип (PNG, JPG, SVG)' : 'Upload image (PNG, JPG, SVG)'}
+                          </span>
+                          <span className="text-[8.5px] text-slate-400 text-center mt-0.5">
+                            {isUa ? 'Натисніть для вибору файлу' : 'Click to browse file'}
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                            onChange={handleWatermarkImageUpload}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* Image Size slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Розмір зображення' : 'Image Size'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{watermarkSize || 48}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="16"
+                        max="160"
+                        step="2"
+                        value={watermarkSize || 48}
+                        onChange={(e) => onUpdateWatermarkSize(Number(e.target.value))}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+
+                    {/* Image Opacity slider */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>{isUa ? 'Прозорість' : 'Opacity'}</span>
+                        <span className="font-mono text-slate-700 dark:text-slate-300 font-bold">{Math.round((watermarkOpacity ?? 0.20) * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="2"
+                        max="100"
+                        step="1"
+                        value={Math.round((watermarkOpacity ?? 0.20) * 100)}
+                        onChange={(e) => onUpdateWatermarkOpacity(Number(e.target.value) / 100)}
+                        className="w-full accent-blue-500 h-1.5 bg-slate-200 dark:bg-white/10 rounded-lg cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Show Logo & Legend on Live Map toggle */}
+              <div className="flex items-center justify-between py-1.5 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col pr-2">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Лого та легенда на карті' : 'Logo & Legend on Map'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Приховує на екрані; при копіюванні та експорті завжди відображаються' : 'Hides on screen; always visible in buffer & export'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none flex-shrink-0">
+                  <input 
+                    type="checkbox" 
+                    checked={showLogoAndLegendOnMap} 
+                    onChange={(e) => onUpdateShowLogoAndLegendOnMap(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Show Legend toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Показувати легенду' : 'Show Map Legend'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Картка-роз\'яснення збоку' : 'Map explanation card'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={showLegendOverlay} 
+                    onChange={(e) => onUpdateShowLegendOverlay(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Blur Map on Export Toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Розмиття карти при експорті' : 'Blur map on export'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Робить фон карти м\'яким' : 'Softens background map on export'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={blurMapOnExport} 
+                    onChange={(e) => onUpdateBlurMapOnExport(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Boundary Outlines Sub-Group */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  {isUa ? 'Обводки та межі території' : 'Territory Boundary Outlines'}
+                </label>
+
+                {/* 1. Ukraine State Border Toggle (Обводка України) */}
+                <div className="py-1">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: ukraineBoundaryConfig?.color || '#f59e0b' }}
+                        ></span>
+                        {isUa ? 'Обводка України' : 'Ukraine Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Державний кордон України (межі 1991 року)' : 'State border of Ukraine (1991 borders)'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showUkraineBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsUkraineSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isUkraineSettingsOpen 
+                              ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 ring-1 ring-amber-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю кордону' : 'Border style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showUkraineBoundary)} 
+                          onChange={(e) => onUpdateShowUkraineBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-amber-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for Ukraine Border */}
+                  {Boolean(showUkraineBoundary) && isUkraineSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір кордону' : 'Border Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {ukraineBoundaryConfig?.color || '#f59e0b'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Жовтий', color: '#eab308' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateUkraineBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (ukraineBoundaryConfig?.color || '#f59e0b').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-amber-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={ukraineBoundaryConfig?.color || '#f59e0b'}
+                              onChange={(e) => onUpdateUkraineBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: ukraineBoundaryConfig?.color || '#f59e0b' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Line Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Width'}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 font-bold">
+                            {(ukraineBoundaryConfig?.weight ?? 2.8).toFixed(1)} px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={ukraineBoundaryConfig?.weight ?? 2.8}
+                          onChange={(e) => onUpdateUkraineBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (ukraineBoundaryConfig?.strokeStyle || 'solid') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateUkraineBoundaryConfig?.({ strokeStyle: style.id as UkraineBoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-amber-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-amber-600 dark:text-amber-400 font-bold">
+                            {Math.round((ukraineBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={ukraineBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateUkraineBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2. City Boundary Toggle (Обводка міста) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: cityBoundaryConfig?.color || '#38bdf8' }}
+                        ></span>
+                        {isUa ? 'Обводка міста' : 'City Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межа міста (Кривий Ріг)' : 'City boundary (Kryvyi Rih)'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showCityBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsCitySettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isCitySettingsOpen 
+                              ? 'bg-sky-500/20 text-sky-600 dark:text-sky-400 ring-1 ring-sky-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки міста' : 'City boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showCityBoundary)} 
+                          onChange={(e) => onUpdateShowCityBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-sky-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for City Boundary */}
+                  {Boolean(showCityBoundary) && isCitySettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки міста' : 'City Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {cityBoundaryConfig?.color || '#38bdf8'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Жовтий', color: '#eab308' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateCityBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (cityBoundaryConfig?.color || '#38bdf8').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-sky-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={cityBoundaryConfig?.color || '#38bdf8'}
+                              onChange={(e) => onUpdateCityBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: cityBoundaryConfig?.color || '#38bdf8' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-sky-600 dark:text-sky-400 font-bold">
+                            {(cityBoundaryConfig?.weight ?? 2.0).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={cityBoundaryConfig?.weight ?? 2.0}
+                          onChange={(e) => onUpdateCityBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (cityBoundaryConfig?.strokeStyle || 'dashed') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateCityBoundaryConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-sky-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-sky-600 dark:text-sky-400 font-bold">
+                            {Math.round((cityBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={cityBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateCityBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. District Boundary Toggle (Обводка району) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: districtBoundaryConfig?.color || '#10b981' }}
+                        ></span>
+                        {isUa ? 'Обводка району' : 'District Boundary'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межа Криворізького району' : 'Kryvyi Rih district boundary line'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showDistrictBoundary) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsDistrictSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isDistrictSettingsOpen 
+                              ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки району' : 'District boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showDistrictBoundary)} 
+                          onChange={(e) => onUpdateShowDistrictBoundary?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-emerald-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for District Boundary */}
+                  {Boolean(showDistrictBoundary) && isDistrictSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки району' : 'District Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {districtBoundaryConfig?.color || '#10b981'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Зелений', color: '#22c55e' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                            { name: 'Темно-сірий', color: '#475569' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateDistrictBoundaryConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (districtBoundaryConfig?.color || '#10b981').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-emerald-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={districtBoundaryConfig?.color || '#10b981'}
+                              onChange={(e) => onUpdateDistrictBoundaryConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: districtBoundaryConfig?.color || '#10b981' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            {(districtBoundaryConfig?.weight ?? 2.2).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="1"
+                          max="6"
+                          step="0.2"
+                          value={districtBoundaryConfig?.weight ?? 2.2}
+                          onChange={(e) => onUpdateDistrictBoundaryConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (districtBoundaryConfig?.strokeStyle || 'solid') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateDistrictBoundaryConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-emerald-500 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-bold">
+                            {Math.round((districtBoundaryConfig?.opacity ?? 0.95) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={districtBoundaryConfig?.opacity ?? 0.95}
+                          onChange={(e) => onUpdateDistrictBoundaryConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Settlements & Hromadas Boundary Toggle (Обводка н/п та громад) */}
+                <div className="py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full inline-block border border-black/20 dark:border-white/20 shadow-sm"
+                          style={{ backgroundColor: hromadaBoundariesConfig?.color || '#475569' }}
+                        ></span>
+                        {isUa ? 'Обводка н/п та громад' : 'Hromada Boundaries'}
+                      </span>
+                      <span className="text-[9px] text-slate-400 leading-normal">
+                        {isUa ? 'Межі об\'єднаних громад та населених пунктів' : 'Community boundary lines'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {Boolean(showHromadaBoundaries) && (
+                        <button
+                          type="button"
+                          onClick={() => setIsHromadaSettingsOpen(prev => !prev)}
+                          className={`p-1.5 rounded-lg text-[10px] transition-all cursor-pointer ${
+                            isHromadaSettingsOpen 
+                              ? 'bg-slate-500/20 text-slate-700 dark:text-slate-300 ring-1 ring-slate-500/30' 
+                              : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5'
+                          }`}
+                          title={isUa ? 'Налаштування стилю обводки н/п та громад' : 'Hromada boundary style settings'}
+                        >
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(showHromadaBoundaries)} 
+                          onChange={(e) => onUpdateShowHromadaBoundaries?.(e.target.checked)}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-slate-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-slate-500"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Expandable Customization Settings for Hromada Boundaries */}
+                  {Boolean(showHromadaBoundaries) && isHromadaSettingsOpen && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-slate-50 dark:bg-[#12161f] border border-slate-200/70 dark:border-white/10 space-y-2.5">
+                      {/* Color Picker & Tactical Presets */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Колір обводки громад' : 'Hromada Boundary Color'}
+                          </span>
+                          <span className="text-[9px] font-mono text-slate-400">
+                            {hromadaBoundariesConfig?.color || '#475569'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { name: 'Темно-сірий', color: '#475569' },
+                            { name: 'Світло-сірий', color: '#94a3b8' },
+                            { name: 'Синій', color: '#2563eb' },
+                            { name: 'Блакитний', color: '#38bdf8' },
+                            { name: 'Смарагд', color: '#10b981' },
+                            { name: 'Бурштин', color: '#f59e0b' },
+                            { name: 'Червоний', color: '#ef4444' },
+                            { name: 'Білий', color: '#ffffff' },
+                          ].map((p) => (
+                            <button
+                              key={p.color}
+                              type="button"
+                              onClick={() => onUpdateHromadaBoundariesConfig?.({ color: p.color })}
+                              className={`w-5 h-5 rounded-full border transition-all cursor-pointer ${
+                                (hromadaBoundariesConfig?.color || '#475569').toLowerCase() === p.color.toLowerCase()
+                                  ? 'scale-125 border-white ring-2 ring-slate-500/50 shadow-sm'
+                                  : 'border-black/10 dark:border-white/10 hover:scale-110 opacity-80 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: p.color }}
+                              title={p.name}
+                            />
+                          ))}
+                          <div className="relative w-5 h-5 rounded-full overflow-hidden border border-black/15 dark:border-white/15 cursor-pointer ml-auto">
+                            <input
+                              type="color"
+                              value={hromadaBoundariesConfig?.color || '#475569'}
+                              onChange={(e) => onUpdateHromadaBoundariesConfig?.({ color: e.target.value })}
+                              className="absolute -top-2 -left-2 w-9 h-9 cursor-pointer opacity-0"
+                            />
+                            <div 
+                              className="w-full h-full" 
+                              style={{ backgroundColor: hromadaBoundariesConfig?.color || '#475569' }} 
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Stroke Width Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Товщина лінії' : 'Line Weight'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-bold">
+                            {(hromadaBoundariesConfig?.weight ?? 1.4).toFixed(1)}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.8"
+                          max="4.5"
+                          step="0.2"
+                          value={hromadaBoundariesConfig?.weight ?? 1.4}
+                          onChange={(e) => onUpdateHromadaBoundariesConfig?.({ weight: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                        />
+                      </div>
+
+                      {/* Stroke Style */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Стиль лінії' : 'Stroke Style'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-4 gap-1">
+                          {[
+                            { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', icon: '————' },
+                            { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', icon: '- - -' },
+                            { id: 'dotted', label: isUa ? 'Крапки' : 'Dotted', icon: '• • •' },
+                            { id: 'dash-dot', label: isUa ? 'Штрих-крапка' : 'Dash-dot', icon: '— • —' },
+                          ].map(style => {
+                            const isSelected = (hromadaBoundariesConfig?.strokeStyle || 'dashed') === style.id;
+                            return (
+                              <button
+                                key={style.id}
+                                type="button"
+                                onClick={() => onUpdateHromadaBoundariesConfig?.({ strokeStyle: style.id as BoundaryStrokeStyle })}
+                                className={`py-1 px-1 rounded-md text-[9px] font-semibold text-center transition-all cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-slate-600 text-white shadow-sm'
+                                    : 'bg-white dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5'
+                                }`}
+                              >
+                                <span className="block font-mono text-[9px] leading-tight">{style.icon}</span>
+                                <span className="block text-[8px] truncate">{style.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Line Opacity Slider */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                            {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-600 dark:text-slate-400 font-bold">
+                            {Math.round((hromadaBoundariesConfig?.opacity ?? 0.85) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0.2"
+                          max="1.0"
+                          step="0.05"
+                          value={hromadaBoundariesConfig?.opacity ?? 0.85}
+                          onChange={(e) => onUpdateHromadaBoundariesConfig?.({ opacity: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 4. Quick Settlement Buttons Toggle */}
+                <div className="flex items-center justify-between py-1 border-t border-slate-100/60 dark:border-white/5 pt-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
+                      {isUa ? 'Швидкі кнопки н/п під пошуком' : 'Quick settlement buttons'}
+                    </span>
+                    <span className="text-[9px] text-slate-400 leading-normal">
+                      {isUa ? 'Відображати кнопки міст і сіл під районами Кривого Рогу' : 'Show town buttons under Kryvyi Rih districts'}
+                    </span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={showQuickSettlements} 
+                      onChange={(e) => onToggleQuickSettlements?.(e.target.checked)}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
+
+                {/* 5. DeepStateMap Occupied Territories */}
+                <div className="border-t border-slate-100/80 dark:border-white/5 pt-2.5 mt-2">
+                  <div className="bg-slate-50/70 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/60 rounded-xl p-3 space-y-3 shadow-xs">
+                    {/* Header with Switch */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${
+                          deepStateOccupiedConfig?.enabled 
+                            ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30' 
+                            : 'bg-slate-200/80 dark:bg-slate-700/60 text-slate-500'
+                        }`}>
+                          <ShieldAlert className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <div className="text-[12px] font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                            <span>{isUa ? 'Окуповані території' : 'Occupied Territories'}</span>
+                            <span className="text-[9px] font-bold px-1 py-0.2 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20">
+                              DeepState
+                            </span>
+                          </div>
+                          <div className="text-[9px] text-slate-400">
+                            {isUa ? 'Актуальні дані лінії фронту та ТОТ України' : 'Up-to-date front line and temporarily occupied areas'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <label className="relative inline-flex items-center cursor-pointer select-none">
+                        <input 
+                          type="checkbox" 
+                          checked={Boolean(deepStateOccupiedConfig?.enabled)} 
+                          onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ enabled: e.target.checked })}
+                          className="sr-only peer" 
+                        />
+                        <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-rose-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+                      </label>
+                    </div>
+
+                    {/* Expandable Settings when Enabled */}
+                    {deepStateOccupiedConfig?.enabled && (
+                      <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/50 space-y-3 animate-in fade-in duration-200">
+                        {/* Sub-Tabs: Заливка / Обводка / Сіра зона */}
+                        <div className="grid grid-cols-3 gap-1 bg-slate-200/70 dark:bg-slate-900/60 p-1 rounded-lg text-[10px] font-semibold text-center select-none">
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('fill')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'fill'
+                                ? 'bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Заливка / Штрих' : 'Fill & Pattern'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('stroke')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'stroke'
+                                ? 'bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Обводка' : 'Border'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeepStateSubTab('gray')}
+                            className={`py-1.5 px-1 rounded-md transition-all cursor-pointer ${
+                              deepStateSubTab === 'gray'
+                                ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 shadow-xs font-bold'
+                                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            {isUa ? 'Сіра зона' : 'Gray Zone'}
+                          </button>
+                        </div>
+
+                        {/* TAB 1: ЗАЛИВКА ТА ШТРИХ / СІТКА */}
+                        {deepStateSubTab === 'fill' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Fill Color Picker & Presets */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Колір заливки' : 'Fill Color'}
+                                </span>
+                                <span className="font-mono text-[10px] text-slate-400 uppercase">
+                                  {deepStateOccupiedConfig.fillColor}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="color"
+                                  value={deepStateOccupiedConfig.fillColor || '#b91c1c'}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ fillColor: e.target.value })}
+                                  className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent p-0.5 shrink-0"
+                                  title={isUa ? 'Вибрати довільний колір' : 'Choose custom color'}
+                                />
+                                <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                                  {[
+                                    { color: '#b91c1c', title: 'Tactical Red' },
+                                    { color: '#a52714', title: 'DeepState Classic' },
+                                    { color: '#ef4444', title: 'Bright Red' },
+                                    { color: '#7f1d1d', title: 'Dark Crimson' },
+                                    { color: '#880e4f', title: 'Deep Plum' },
+                                    { color: '#f97316', title: 'Amber Red' },
+                                  ].map(({ color, title }) => (
+                                    <button
+                                      key={color}
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ fillColor: color })}
+                                      title={title}
+                                      className={`w-6 h-6 rounded-md border transition-all cursor-pointer ${
+                                        deepStateOccupiedConfig.fillColor?.toLowerCase() === color.toLowerCase()
+                                          ? 'ring-2 ring-rose-500 scale-110 border-white shadow-xs z-10'
+                                          : 'border-black/10 dark:border-white/10 hover:scale-105'
+                                      }`}
+                                      style={{ backgroundColor: color }}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Pattern Type Selector */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Тип заливки (штрих / сітка)' : 'Fill Pattern Type'}
+                                </span>
+                                <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium">
+                                  {deepStateOccupiedConfig.fillPattern === 'diagonal-right' && (isUa ? 'Штрих ///' : 'Hatch ///')}
+                                  {deepStateOccupiedConfig.fillPattern === 'diagonal-left' && (isUa ? 'Штрих \\\\\\' : 'Hatch \\\\\\')}
+                                  {deepStateOccupiedConfig.fillPattern === 'cross-hatch' && (isUa ? 'Сітка #' : 'Cross-Grid #')}
+                                  {deepStateOccupiedConfig.fillPattern === 'dots' && (isUa ? 'Крапки •' : 'Dots •')}
+                                  {deepStateOccupiedConfig.fillPattern === 'horizontal' && (isUa ? 'Смуги =' : 'Horizontal =')}
+                                  {deepStateOccupiedConfig.fillPattern === 'vertical' && (isUa ? 'Смуги ||' : 'Vertical ||')}
+                                  {(!deepStateOccupiedConfig.fillPattern || deepStateOccupiedConfig.fillPattern === 'solid') && (isUa ? 'Суцільна' : 'Solid')}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-1.5">
+                                {[
+                                  { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', svg: (
+                                    <div className="w-5 h-5 rounded-xs bg-rose-600/80 mx-auto" />
+                                  )},
+                                  { id: 'diagonal-right', label: isUa ? 'Штрих ///' : 'Hatch /', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="20" x2="20" y2="0" stroke="currentColor" strokeWidth="2.5" />
+                                      <line x1="-5" y1="15" x2="15" y2="-5" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="5" y1="25" x2="25" y2="5" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'diagonal-left', label: isUa ? 'Штрих \\' : 'Hatch \\', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="0" x2="20" y2="20" stroke="currentColor" strokeWidth="2.5" />
+                                      <line x1="5" y1="-5" x2="25" y2="15" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="-5" y1="5" x2="15" y2="25" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'cross-hatch', label: isUa ? 'Сітка #' : 'Grid #', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="7" x2="20" y2="7" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="14" x2="20" y2="14" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="7" y1="0" x2="7" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="14" y1="0" x2="14" y2="20" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'dots', label: isUa ? 'Крапки' : 'Dots', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <circle cx="5" cy="5" r="2" fill="currentColor" />
+                                      <circle cx="15" cy="5" r="2" fill="currentColor" />
+                                      <circle cx="10" cy="10" r="2" fill="currentColor" />
+                                      <circle cx="5" cy="15" r="2" fill="currentColor" />
+                                      <circle cx="15" cy="15" r="2" fill="currentColor" />
+                                    </svg>
+                                  )},
+                                  { id: 'horizontal', label: isUa ? 'Смуги =' : 'Horiz', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="0" y1="5" x2="20" y2="5" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="10" x2="20" y2="10" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="0" y1="15" x2="20" y2="15" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                  { id: 'vertical', label: isUa ? 'Смуги ||' : 'Vert', svg: (
+                                    <svg className="w-5 h-5 mx-auto" viewBox="0 0 20 20">
+                                      <line x1="5" y1="0" x2="5" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="10" y1="0" x2="10" y2="20" stroke="currentColor" strokeWidth="2" />
+                                      <line x1="15" y1="0" x2="15" y2="20" stroke="currentColor" strokeWidth="2" />
+                                    </svg>
+                                  )},
+                                ].map((pattern) => {
+                                  const isSelected = (deepStateOccupiedConfig.fillPattern || 'solid') === pattern.id;
+                                  return (
+                                    <button
+                                      key={pattern.id}
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ fillPattern: pattern.id as DeepStatePatternType })}
+                                      className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                                        isSelected
+                                          ? 'bg-rose-500/15 border-rose-500 text-rose-600 dark:text-rose-400 font-bold shadow-xs scale-102'
+                                          : 'bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700/50'
+                                      }`}
+                                    >
+                                      <div className="w-full flex items-center justify-center text-rose-600 dark:text-rose-400">
+                                        {pattern.svg}
+                                      </div>
+                                      <span className="text-[9px] truncate max-w-full">{pattern.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Pattern Density and Stroke Options (Visible when pattern !== 'solid') */}
+                            {deepStateOccupiedConfig.fillPattern && deepStateOccupiedConfig.fillPattern !== 'solid' && (
+                              <div className="p-2 bg-slate-100/70 dark:bg-slate-900/40 rounded-lg border border-slate-200/70 dark:border-slate-700/50 space-y-2">
+                                {/* Pattern Density (Spacing) */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Густота / крок візерунка' : 'Pattern Density / Step'}
+                                    </span>
+                                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                                      {deepStateOccupiedConfig.patternDensity ?? 10} px
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="6"
+                                    max="24"
+                                    step="1"
+                                    value={deepStateOccupiedConfig.patternDensity ?? 10}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ patternDensity: parseInt(e.target.value, 10) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[8px] text-slate-400">
+                                    <span>{isUa ? 'Густий (6px)' : 'Dense (6px)'}</span>
+                                    <span>{isUa ? 'Рідкий (24px)' : 'Spaced (24px)'}</span>
+                                  </div>
+                                </div>
+
+                                {/* Pattern Stroke Width */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Товщина ліній штриха' : 'Hatch Line Width'}
+                                    </span>
+                                    <span className="font-mono font-bold text-slate-600 dark:text-slate-300">
+                                      {deepStateOccupiedConfig.patternStrokeWidth ?? 1.5} px
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-1">
+                                    {[1, 1.5, 2, 2.5].map((w) => (
+                                      <button
+                                        key={w}
+                                        type="button"
+                                        onClick={() => onUpdateDeepStateOccupiedConfig?.({ patternStrokeWidth: w })}
+                                        className={`py-1 text-[9px] rounded font-mono transition-all cursor-pointer ${
+                                          (deepStateOccupiedConfig.patternStrokeWidth ?? 1.5) === w
+                                            ? 'bg-rose-600 text-white font-bold'
+                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                        }`}
+                                      >
+                                        {w} px
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* Under-Pattern Background Tint */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400 font-medium">
+                                      {isUa ? 'Підкладка під штрихом' : 'Under-Pattern Tint'}
+                                    </span>
+                                    <span className="font-bold text-slate-600 dark:text-slate-300">
+                                      {Math.round((deepStateOccupiedConfig.patternBgOpacity ?? 0.1) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0"
+                                    max="0.35"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.patternBgOpacity ?? 0.1}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ patternBgOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[8px] text-slate-400">
+                                    <span>{isUa ? '0% (прозоро)' : '0% (clear)'}</span>
+                                    <span>{isUa ? '35% (фон)' : '35% (tint)'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Fill Opacity Slider */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                  {isUa ? 'Прозорість штриха / заливки' : 'Fill / Pattern Opacity'}
+                                </span>
+                                <span className="font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                  {Math.round((deepStateOccupiedConfig.fillOpacity ?? 0.35) * 100)}%
+                                </span>
+                              </div>
+                              <input
+                                type="range"
+                                min="0.1"
+                                max="0.9"
+                                step="0.05"
+                                value={deepStateOccupiedConfig.fillOpacity ?? 0.35}
+                                onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ fillOpacity: parseFloat(e.target.value) })}
+                                className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                              />
+                              <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                <span>10% ({isUa ? 'прозоро' : 'transparent'})</span>
+                                <span>90% ({isUa ? 'насичено' : 'dense'})</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* TAB 2: ОБВОДКА ТА КОНТУР */}
+                        {deepStateSubTab === 'stroke' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Toggle Stroke On/Off */}
+                            <div className="flex items-center justify-between bg-slate-100/80 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/70 dark:border-slate-700/50">
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                                  {isUa ? 'Контурна лінія (обводка)' : 'Border Outline'}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {isUa ? 'Відображати зовнішній контур' : 'Show boundary stroke'}
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={deepStateOccupiedConfig.showStroke !== false}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ showStroke: e.target.checked })}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-rose-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-rose-600"></div>
+                              </label>
+                            </div>
+
+                            {deepStateOccupiedConfig.showStroke !== false && (
+                              <div className="space-y-3 pt-1">
+                                {/* Border Color & Match Fill Option */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Колір контуру' : 'Border Color'}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeColor: deepStateOccupiedConfig.fillColor || '#b91c1c' })}
+                                      className="text-[9px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+                                      title={isUa ? 'Встановити такий самий колір, як і для заливки' : 'Set same color as fill'}
+                                    >
+                                      {isUa ? 'Як у заливки' : 'Match Fill'}
+                                    </button>
+                                  </div>
+
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="color"
+                                      value={deepStateOccupiedConfig.strokeColor || '#7f1d1d'}
+                                      onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeColor: e.target.value })}
+                                      className="w-8 h-8 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer bg-transparent p-0.5 shrink-0"
+                                      title={isUa ? 'Вибрати довільний колір контуру' : 'Choose custom stroke color'}
+                                    />
+                                    <div className="flex items-center gap-1.5 flex-wrap flex-1">
+                                      {[
+                                        { color: '#7f1d1d', title: 'Dark Crimson' },
+                                        { color: '#b91c1c', title: 'Tactical Red' },
+                                        { color: '#450a0a', title: 'Black Red' },
+                                        { color: '#000000', title: 'Black' },
+                                        { color: '#ffffff', title: 'White' },
+                                        { color: '#f59e0b', title: 'Amber Accent' },
+                                      ].map(({ color, title }) => (
+                                        <button
+                                          key={color}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeColor: color })}
+                                          title={title}
+                                          className={`w-6 h-6 rounded-md border transition-all cursor-pointer ${
+                                            deepStateOccupiedConfig.strokeColor?.toLowerCase() === color.toLowerCase()
+                                              ? 'ring-2 ring-rose-500 scale-110 border-white shadow-xs z-10'
+                                              : 'border-black/15 dark:border-white/15 hover:scale-105'
+                                          }`}
+                                          style={{ backgroundColor: color }}
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Stroke Style (Solid, Dashed, Dotted, Dash-Dot) */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Тип лінії (стиль обводки)' : 'Stroke Style'}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-400">
+                                      {deepStateOccupiedConfig.strokeStyle || 'solid'}
+                                    </span>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-1.5">
+                                    {[
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid', strokeDash: 'none' },
+                                      { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed', strokeDash: '6, 4' },
+                                      { id: 'dotted', label: isUa ? 'Крапкова' : 'Dotted', strokeDash: '2, 3' },
+                                      { id: 'dash-dot', label: isUa ? 'Штрих-пунктир' : 'Dash-Dot', strokeDash: '8, 3, 2, 3' },
+                                    ].map((style) => {
+                                      const isSelected = (deepStateOccupiedConfig.strokeStyle || 'solid') === style.id;
+                                      return (
+                                        <button
+                                          key={style.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ strokeStyle: style.id as DeepStateStrokeStyle })}
+                                          className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col gap-1.5 ${
+                                            isSelected
+                                              ? 'bg-rose-500/15 border-rose-500 text-rose-600 dark:text-rose-400 font-bold shadow-xs'
+                                              : 'bg-white/80 dark:bg-slate-800/80 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px]">{style.label}</span>
+                                            {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-rose-600" />}
+                                          </div>
+                                          <svg className="w-full h-2.5" viewBox="0 0 100 10">
+                                            <line
+                                              x1="0"
+                                              y1="5"
+                                              x2="100"
+                                              y2="5"
+                                              stroke={isSelected ? '#e11d48' : '#64748b'}
+                                              strokeWidth="3"
+                                              strokeDasharray={style.strokeDash === 'none' ? undefined : style.strokeDash}
+                                              strokeLinecap="round"
+                                            />
+                                          </svg>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Stroke Width Slider */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Товщина обводки' : 'Border Width'}
+                                    </span>
+                                    <span className="font-mono font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                      {deepStateOccupiedConfig.strokeWidth ?? 1.5} px
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.5"
+                                    max="5.0"
+                                    step="0.5"
+                                    value={deepStateOccupiedConfig.strokeWidth ?? 1.5}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeWidth: parseFloat(e.target.value) })}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                    <span>0.5 px ({isUa ? 'тонка' : 'thin'})</span>
+                                    <span>5.0 px ({isUa ? 'товста' : 'thick'})</span>
+                                  </div>
+                                </div>
+
+                                {/* Stroke Opacity Slider */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Прозорість обводки' : 'Border Opacity'}
+                                    </span>
+                                    <span className="font-bold text-[10px] text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1.5 py-0.5 rounded">
+                                      {Math.round((deepStateOccupiedConfig.strokeOpacity ?? 0.9) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.2"
+                                    max="1.0"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.strokeOpacity ?? 0.9}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ strokeOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-rose-600"
+                                  />
+                                  <div className="flex justify-between text-[9px] text-slate-400 font-mono">
+                                    <span>20% ({isUa ? 'м\'яка' : 'soft'})</span>
+                                    <span>100% ({isUa ? 'чітка' : 'solid'})</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* TAB 3: СІРА ЗОНА (СПІРНІ ДІЛЯНКИ) */}
+                        {deepStateSubTab === 'gray' && (
+                          <div className="space-y-3 animate-in fade-in duration-150">
+                            {/* Toggle Gray Zone */}
+                            <div className="flex items-center justify-between bg-slate-100/80 dark:bg-slate-900/40 p-2 rounded-lg border border-slate-200/70 dark:border-slate-700/50">
+                              <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-slate-400 inline-block"></span>
+                                  {isUa ? 'Сіра зона (статус невідомий)' : 'Gray Zone (Contested)'}
+                                </span>
+                                <span className="text-[9px] text-slate-400">
+                                  {isUa ? 'Спірні та непідтверджені ділянки фронту' : 'Contested or unverified front line areas'}
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(deepStateOccupiedConfig.includeGrayZone)}
+                                  onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ includeGrayZone: e.target.checked })}
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-slate-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-slate-500"></div>
+                              </label>
+                            </div>
+
+                            {deepStateOccupiedConfig.includeGrayZone && (
+                              <div className="space-y-3 pt-1">
+                                {/* Gray Zone Pattern Type */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Візерунок сірої зони' : 'Gray Zone Pattern'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {[
+                                      { id: 'diagonal-right', label: isUa ? 'Штрих ///' : 'Hatch ///' },
+                                      { id: 'cross-hatch', label: isUa ? 'Сітка #' : 'Grid #' },
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid' },
+                                    ].map((pat) => {
+                                      const isSelected = (deepStateOccupiedConfig.grayZonePattern || 'diagonal-right') === pat.id;
+                                      return (
+                                        <button
+                                          key={pat.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ grayZonePattern: pat.id as DeepStatePatternType })}
+                                          className={`py-1.5 px-2 rounded-lg border text-center text-[10px] font-medium transition-all cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-xs'
+                                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {pat.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Gray Zone Stroke Style */}
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                      {isUa ? 'Контур сірої зони' : 'Gray Zone Stroke'}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-1.5">
+                                    {[
+                                      { id: 'dashed', label: isUa ? 'Пунктир' : 'Dashed' },
+                                      { id: 'dotted', label: isUa ? 'Крапкова' : 'Dotted' },
+                                      { id: 'solid', label: isUa ? 'Суцільна' : 'Solid' },
+                                    ].map((st) => {
+                                      const isSelected = (deepStateOccupiedConfig.grayZoneStrokeStyle || 'dashed') === st.id;
+                                      return (
+                                        <button
+                                          key={st.id}
+                                          type="button"
+                                          onClick={() => onUpdateDeepStateOccupiedConfig?.({ grayZoneStrokeStyle: st.id as DeepStateStrokeStyle })}
+                                          className={`py-1 px-2 rounded-lg border text-center text-[10px] font-medium transition-all cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-slate-700 text-white border-slate-700 font-bold shadow-xs'
+                                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                                          }`}
+                                        >
+                                          {st.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Gray Zone Opacity */}
+                                <div className="space-y-1">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-slate-600 dark:text-slate-400">
+                                      {isUa ? 'Прозорість сірої зони' : 'Gray Zone Opacity'}
+                                    </span>
+                                    <span className="font-bold text-slate-500">
+                                      {Math.round((deepStateOccupiedConfig.grayZoneOpacity ?? 0.25) * 100)}%
+                                    </span>
+                                  </div>
+                                  <input
+                                    type="range"
+                                    min="0.1"
+                                    max="0.7"
+                                    step="0.05"
+                                    value={deepStateOccupiedConfig.grayZoneOpacity ?? 0.25}
+                                    onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ grayZoneOpacity: parseFloat(e.target.value) })}
+                                    className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-slate-500"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Live Sync Status & Refresh Button */}
+                        <div className="pt-2 border-t border-slate-200/50 dark:border-slate-700/40 flex items-center justify-between">
+                          <div className="text-[9px] text-slate-400 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <span>{deepStateLastSync ? (isUa ? `Оновлено: ${deepStateLastSync}` : `Synced: ${deepStateLastSync}`) : 'DeepState Live'}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => onRefreshDeepState?.()}
+                            disabled={isLoadingDeepState}
+                            className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingDeepState ? 'animate-spin' : ''}`} />
+                            <span>{isLoadingDeepState ? (isUa ? 'Оновлення...' : 'Syncing...') : (isUa ? 'Оновити' : 'Refresh')}</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Map Font Selection & Sharpness Control */}
+              <div className="pt-2.5 border-t border-slate-100 dark:border-white/5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Type className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{isUa ? 'Шрифт карти та міток' : 'Map & Label Font'}</span>
+                  </label>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    {isUa ? 'Чіткість при масштабуванні' : 'Anti-Blur Active'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {MAP_FONT_CONFIGS.map((f) => {
+                    const isSelected = mapFont === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => onUpdateMapFont(f.id)}
+                        className={`p-2 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between min-h-[58px] ${
+                          isSelected
+                            ? 'bg-blue-500/10 border-blue-500 text-blue-600 dark:text-blue-400 shadow-sm ring-1 ring-blue-500/30'
+                            : 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-white/20'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full">
+                          <span className="text-xs font-bold truncate">{f.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
+                        </div>
+                        <div
+                          className="text-[10.5px] font-bold truncate text-slate-800 dark:text-slate-100 tracking-wide mt-1"
+                          style={{ fontFamily: f.fontFamily }}
+                        >
+                          {f.previewText}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-[9px] text-slate-400 leading-normal">
+                  {isUa
+                    ? 'Шрифти відрендерені з апаратним згладжуванням (GPU subpixel hinting) для усунення будь-якого розмиття при зміні масштабу.'
+                    : 'Fonts are rendered with hardware-accelerated anti-aliasing and subpixel hinting to eliminate blur across zoom levels.'}
+                </p>
+              </div>
+
+              {/* Show Settlement & District Labels Toggle */}
+              <div className="flex items-center justify-between py-1 border-t border-slate-100 dark:border-white/5 pt-2.5">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Назви районів та міст' : 'District & Settlement Labels'}
+                  </span>
+                  <span className="text-[9px] text-slate-400 leading-normal">
+                    {isUa ? 'Плашки з назвами пунктів та районів' : 'Show label badges on map'}
+                  </span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={showSettlementLabels} 
+                    onChange={(e) => onUpdateShowSettlementLabels(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              {/* Settlement Label Density / Category Filter */}
+              {showSettlementLabels && (
+                <div className="space-y-2.5 pt-1 border-t border-slate-100 dark:border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      {isUa ? 'Фільтр відображення назв' : 'Label Category Filter'}
+                    </label>
+                    {disabledSettlementCategories.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => onUpdateSettlementLabelMode('all')}
+                        className="text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors cursor-pointer"
+                      >
+                        {isUa ? 'Увімкнути всі' : 'Enable all'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Quick Preset Modes */}
+                  <div className="grid grid-cols-3 gap-1 p-0.5 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('all')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'all' && disabledSettlementCategories.length === 0
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Всі' : 'All'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('districts_cities')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'districts_cities'
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Міста+Райони' : 'Cities+Districts'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onUpdateSettlementLabelMode('districts_only')}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
+                        settlementLabelMode === 'districts_only'
+                          ? 'bg-blue-500 text-white shadow'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                      }`}
+                    >
+                      {isUa ? 'Райони' : 'Districts'}
+                    </button>
+                  </div>
+
+                  {/* Individual Category Toggles */}
+                  <div className="space-y-1 pt-1">
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                      {isUa ? 'Категорії населених пунктів:' : 'Settlement categories:'}
+                    </div>
+                    {SETTLEMENT_CATEGORY_CONFIG.map((cat) => {
+                      const isEnabled = !disabledSettlementCategories.includes(cat.id);
+                      return (
+                        <label
+                          key={cat.id}
+                          className={`flex items-center justify-between p-1.5 px-2.5 rounded-xl border transition-all cursor-pointer select-none ${
+                            isEnabled
+                              ? 'bg-slate-100 dark:bg-white/5 border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-200'
+                              : 'bg-slate-200/40 dark:bg-white/[0.02] border-transparent text-slate-400 dark:text-slate-500 opacity-50 line-through'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${cat.dotClass}`} />
+                            <span className="text-[11px] font-bold truncate">
+                              {isUa ? cat.nameUa : cat.nameEn}
+                            </span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={isEnabled}
+                            onChange={() => onToggleSettlementCategory(cat.id)}
+                            className="w-4 h-4 rounded border-slate-400 text-blue-500 focus:ring-blue-500/20 cursor-pointer accent-blue-500 shrink-0"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Custom Settlement Dots Control */}
+              <div className="pt-2 border-t border-slate-100 dark:border-white/5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Власні точки НП' : 'Custom Settlement Dots'} ({userCustomSettlements.length})
+                  </label>
+                  {userCustomSettlements.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onClearAllCustomSettlements}
+                      className="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                    >
+                      {isUa ? 'Видалити всі' : 'Clear all'}
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onEnableSettlementMode}
+                  className="w-full py-2 px-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                >
+                  <MapPin className="w-4 h-4" />
+                  <span>{isUa ? '＋ Встановити точку на карті' : '＋ Place Dot on Map'}</span>
+                </button>
+
+                {/* Export / Import Custom Settlement Points */}
+                <div className="grid grid-cols-2 gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={onExportCustomSettlements}
+                    disabled={userCustomSettlements.length === 0}
+                    className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-[11px] text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Експортувати власні точки у файл JSON' : 'Export custom points to JSON file'}
+                  >
+                    <Download className="w-3.5 h-3.5 text-blue-400" />
+                    <span>{isUa ? 'Експорт' : 'Export'}</span>
+                  </button>
+
+                  <label
+                    className="py-1.5 px-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-200 dark:hover:bg-white/10 font-bold text-[11px] text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title={isUa ? 'Імпортувати власні точки з файлу JSON' : 'Import custom points from JSON file'}
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{isUa ? 'Імпорт' : 'Import'}</span>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={handleFileImportSettlements}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+
+                {userCustomSettlements.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                    {userCustomSettlements.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between p-2 rounded-xl bg-slate-100 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span
+                            className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                              s.type === 'district'
+                                ? 'bg-amber-400 ring-1 ring-amber-500'
+                                : s.priority === 1
+                                ? 'bg-cyan-400'
+                                : s.priority === 2
+                                ? 'bg-emerald-400'
+                                : 'bg-sky-300'
+                            }`}
+                          />
+                          <span className="font-bold truncate text-slate-800 dark:text-slate-100">{s.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => onEditSettlement(s)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-all cursor-pointer shrink-0"
+                            title={isUa ? 'Редагувати точку' : 'Edit point'}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDeleteCustomSettlement(s.id)}
+                            className="p-1 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all cursor-pointer shrink-0"
+                            title={isUa ? 'Видалити точку' : 'Delete point'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Legend Warning Textarea (only if legend enabled) */}
+              {showLegendOverlay && (
+                <div className="space-y-1.5 pt-1.5">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {isUa ? 'Текст роз\'яснення легенди' : 'Legend Warning Text'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={legendOverlayText}
+                    onChange={(e) => onUpdateLegendOverlayText(e.target.value)}
+                    placeholder={isUa ? 'Напишіть кастомне попередження...' : 'Write custom warning...'}
+                    className={`w-full border px-3 py-1.5 rounded-xl text-xs focus:outline-none focus:border-blue-500 resize-none leading-relaxed ${
+                      theme === 'light' 
+                        ? 'bg-white border-slate-200 text-slate-800 placeholder-slate-400' 
+                        : 'bg-[#181d28] border-white/5 text-slate-200 placeholder-slate-600'
+                    }`}
+                  />
+                  <button
+                    onClick={() => onUpdateLegendOverlayText('')}
+                    className="text-[9px] font-bold text-blue-500 hover:text-blue-400 transition-colors uppercase tracking-wider block"
+                  >
+                    {isUa ? 'Скинути до стандартного' : 'Reset to default'}
+                  </button>
+                </div>
+              )}
+
+              {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
+              <div className="pt-3 border-t border-slate-200 dark:border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sliders className="w-3.5 h-3.5 text-blue-500" />
+                    <span>{isUa ? 'Умовні позначення (Легенда)' : 'Signs Legend'}</span>
+                  </span>
+                  <label className="relative inline-flex items-center cursor-pointer select-none">
+                    <input 
+                      type="checkbox" 
+                      checked={mapLegendConfig?.enabled || false} 
+                      onChange={(e) => {
+                        if (!onUpdateMapLegendConfig) return;
+                        const isEn = e.target.checked;
+                        const cur = mapLegendConfig || {
+                          enabled: false,
+                          title: 'УМОВНІ ПОЗНАЧЕННЯ:',
+                          position: 'bottom-left',
+                          items: []
+                        };
+                        let items = cur.items;
+                        if (isEn && (!items || items.length === 0)) {
+                          items = generateLegendItemsFromMap();
+                        }
+                        onUpdateMapLegendConfig({
+                          ...cur,
+                          enabled: isEn,
+                          items
+                        });
+                      }}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-slate-300 dark:bg-slate-700 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-500/20 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-500"></div>
+                  </label>
+                </div>
+
+                {mapLegendConfig?.enabled && (
+                  <div className="space-y-2.5 pt-1">
+                    {/* Title & Position */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Заголовок' : 'Title'}
+                        </label>
+                        <input
+                          type="text"
+                          value={mapLegendConfig.title || 'УМОВНІ ПОЗНАЧЕННЯ:'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, title: e.target.value })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                          {isUa ? 'Позиція' : 'Position'}
+                        </label>
+                        <select
+                          value={mapLegendConfig.position || 'bottom-left'}
+                          onChange={(e) => onUpdateMapLegendConfig?.({ ...mapLegendConfig, position: e.target.value as any })}
+                          className={`w-full border px-2 py-1 rounded-lg text-xs font-bold ${
+                            theme === 'light' ? 'bg-white border-slate-200 text-slate-800' : 'bg-black/30 border-white/10 text-white'
+                          }`}
+                        >
+                          <option value="bottom-left">{isUa ? 'Знизу ліворуч' : 'Bottom-Left'}</option>
+                          <option value="bottom-right">{isUa ? 'Знизу праворуч' : 'Bottom-Right'}</option>
+                          <option value="top-left">{isUa ? 'Зверху ліворуч' : 'Top-Left'}</option>
+                          <option value="top-right">{isUa ? 'Зверху праворуч' : 'Top-Right'}</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Sync button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newItems = generateLegendItemsFromMap();
+                        onUpdateMapLegendConfig?.({
+                          ...mapLegendConfig,
+                          items: newItems
+                        });
+                      }}
+                      className="w-full py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Оновити з карти (автозбір іконок)' : 'Sync from map elements'}</span>
+                    </button>
+
+                    {/* Items List */}
+                    <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
+                      {mapLegendConfig.items.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          className={`p-2 rounded-xl border flex flex-col gap-1.5 ${
+                            theme === 'light' ? 'bg-white border-slate-200' : 'bg-black/20 border-white/10'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {/* Icon preview */}
+                            <div
+                              className="w-7 h-7 rounded-lg border flex items-center justify-center flex-shrink-0"
+                              style={{ backgroundColor: `${item.color}22`, borderColor: item.color }}
+                            >
+                              {item.customIconUrl ? (
+                                <img src={item.customIconUrl} className="w-5 h-5 object-contain" alt={item.title} />
+                              ) : (
+                                <div
+                                  className="w-4 h-4"
+                                  dangerouslySetInnerHTML={{ __html: getIconSvgContent(item.iconType, item.color) }}
+                                />
+                              )}
+                            </div>
+
+                            {/* Title input */}
+                            <input
+                              type="text"
+                              value={item.name || item.title || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], name: e.target.value, title: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className={`flex-1 border px-2 py-1 rounded-lg text-xs font-semibold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-slate-800' : 'bg-[#181d28] border-white/5 text-slate-200'
+                              }`}
+                              placeholder={isUa ? 'Назва іконки' : 'Icon title'}
+                            />
+
+                            {/* Delete item */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = mapLegendConfig.items.filter((_, i) => i !== idx);
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              className="text-slate-400 hover:text-red-400 p-1"
+                              title={isUa ? 'Видалити' : 'Delete'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          {/* Count input: User writes whatever count they want */}
+                          <div className="flex items-center gap-2 pl-9">
+                            <span className="text-[10px] text-slate-400 font-bold uppercase whitespace-nowrap">
+                              {isUa ? 'Кількість:' : 'Count:'}
+                            </span>
+                            <input
+                              type="text"
+                              value={item.countText || item.count || ''}
+                              onChange={(e) => {
+                                const next = [...mapLegendConfig.items];
+                                next[idx] = { ...next[idx], countText: e.target.value, count: e.target.value };
+                                onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
+                              }}
+                              placeholder={isUa ? 'напр. 2 шт або 1 од' : 'e.g. 2 pcs or 1 unit'}
+                              className={`flex-1 border px-2 py-0.5 rounded-lg text-xs font-mono font-bold ${
+                                theme === 'light' ? 'bg-slate-50 border-slate-200 text-blue-600' : 'bg-[#181d28] border-white/5 text-blue-400'
+                              }`}
+                            />
+                          </div>
+                        </div>
+                      ))}
+
+                      {mapLegendConfig.items.length === 0 && (
+                        <p className="text-[10px] text-slate-400 italic text-center py-2">
+                          {isUa ? 'Немає елементів у легенді. Натисніть "Оновити з карти" вище.' : 'No legend items. Click "Sync from map elements" above.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+
+
+      </div>
+
+      {/* Action panel at the bottom (Icon-only compact bar: Export PNG, Telegram, Clipboard, Undo, Clear) */}
+      <div className={`p-2.5 px-3 border-t shrink-0 ${
+        theme === 'light' ? 'bg-white/95 border-slate-200 shadow-lg' : 'bg-[#0e1117]/95 border-[#262c38] backdrop-blur-md shadow-2xl'
+      }`}>
+        <div className="grid grid-cols-5 gap-1.5 w-full">
+          {/* 1. Save as PNG */}
+          <button
+            type="button"
+            onClick={onExportPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-blue-500/30 bg-[#0057B7] hover:bg-[#004494] text-white shadow-sm shadow-[#0057B7]/25 active:scale-95"
+            title={isUa ? 'Завантажити карту як PNG' : 'Download HD PNG'}
+            aria-label={t.btnSavePng}
+          >
+            <Download className="w-5 h-5 text-white" />
+          </button>
+
+          {/* 2. Export to Telegram */}
+          <button
+            type="button"
+            onClick={onExportTelegram}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#24A1DE]/40 bg-[#24A1DE] hover:bg-[#208fca] text-white shadow-sm shadow-[#24A1DE]/25 active:scale-95"
+            title={isUa ? 'Опублікувати ботом у Telegram' : 'Publish with Bot to Telegram'}
+            aria-label={t.btnExportTelegram}
+          >
+            <Send className="w-5 h-5 text-white fill-current" />
+          </button>
+
+          {/* 3. Copy to Clipboard */}
+          <button
+            type="button"
+            onClick={onCopyPNG}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-[#FFD700]/40 bg-[#FFD700] hover:bg-[#E6C200] text-slate-950 shadow-sm shadow-[#FFD700]/20 active:scale-95"
+            title={isUa ? 'Скопіювати в буфер обміну' : 'Copy to clipboard'}
+            aria-label={t.btnShare}
+          >
+            <Copy className="w-5 h-5 text-slate-950" />
+          </button>
+
+          {/* 4. Undo */}
+          <button
+            type="button"
+            onClick={onUndo}
+            className={`h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border shadow-sm active:scale-95 ${
+              theme === 'light'
+                ? 'bg-slate-100 hover:bg-slate-200 border-slate-300 text-slate-700'
+                : 'bg-white/10 hover:bg-white/15 border-white/10 text-slate-200 hover:text-white'
+            }`}
+            title={isUa ? 'Скасувати останню дію (Undo)' : 'Undo last action'}
+            aria-label={t.btnUndo}
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+
+          {/* 5. Clear All */}
+          <button
+            type="button"
+            onClick={onClearMarkers}
+            className="h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer border border-red-500/40 bg-red-600 hover:bg-red-500 text-white shadow-sm shadow-red-600/25 active:scale-95"
+            title={isUa ? 'Очистити всі нанесені об\'єкти' : 'Clear all markers & objects'}
+            aria-label={t.btnClearAll}
+          >
+            <Trash2 className="w-5 h-5 text-white" />
+          </button>
+        </div>
+
+        {/* Minimal Footer */}
+        <div className="flex items-center justify-end pt-1 px-1 text-[10px] text-slate-400 dark:text-slate-500 font-mono">
+          <span>v3.0</span>
+        </div>
+      </div>
+
+    </div>
+  );
+};
