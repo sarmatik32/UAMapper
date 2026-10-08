@@ -1,4 +1,4 @@
-UA Mapper Full
+UA Mapper Full!
 
 1. Отримайте ключ MapTiler.1
 2. Замініть PUT_YOUR_KEY_HERE.
