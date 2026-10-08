@@ -1647,7 +1647,12 @@ export default function App() {
 
     const newId = 'marker_' + Date.now();
     const initialRotation = Number.isFinite(Number(baseStyle.rotation)) ? Number(baseStyle.rotation) : 0;
-    const [initialEndLat, initialEndLng] = getInitialMarkerEndpoint(finalLat, finalLng, initialRotation, 5);
+    const movementActive =
+      baseStyle.movementEnabled === true ||
+      (baseStyle.endPointStyle !== undefined && baseStyle.endPointStyle !== 'none');
+    const [initialEndLat, initialEndLng] = movementActive
+      ? getInitialMarkerEndpoint(finalLat, finalLng, initialRotation, 5)
+      : [undefined, undefined] as const;
     const newMarker: CustomMarker = {
       id: newId,
       lat: finalLat,

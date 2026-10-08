@@ -3313,7 +3313,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const hasEndPoint = Boolean(endPointStyle && endPointStyle !== 'none');
       // A moving or selected marker always gets a separate, editable destination handle in front of it.
       // This keeps the route target visible in front of the icon instead of hiding it under the icon.
-      const hasEndHandle = isSelected || markerData.movementEnabled === true || endPointStyle === 'explosion' || endPointStyle === 'line' || !!markerData.hasZone;
+      const hasEndHandle =
+        markerData.movementEnabled === true ||
+        endPointStyle === 'explosion' ||
+        endPointStyle === 'line' ||
+        !!markerData.hasZone;
 
       // Ensure the route point is never sitting right on top of the icon when placed or enabled
       if (hasEndHandle || hasEndPoint) {
@@ -3360,7 +3364,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let etaMarker = endEtaMarkersRef.current[id];
         if (!etaMarker) {
           const etaIcon = L.divIcon({
-            className: 'movement-eta-label',
+            className: 'movement-eta-label screenshot-exclude',
             html: `<div style="
               transform: translate(-50%, -32px);
               white-space: nowrap;
@@ -3471,32 +3475,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             onUpdateMarkerPosition(id, position.lat, position.lng);
           }
         } else {
-          // Even if the endpoint line is currently disabled ('none'), keep endLat and endLng updated
-          // so that if the user toggles the line back on, it points correctly relative to the new position!
+          // Movement is inactive and there is no endpoint style: move only the icon.
+          // Do not create or mutate a hidden destination point in this mode.
           if (onUpdateMarker) {
-            updatedEndLat = originalEndLat;
-            updatedEndLng = originalEndLng;
-            if (updatedEndLat !== undefined && updatedEndLng !== undefined && !isNaN(updatedEndLat) && !isNaN(updatedEndLng) && dragStartLatLng && !isNaN(dragStartLatLng.lat) && !isNaN(dragStartLatLng.lng)) {
-              const dLat = position.lat - dragStartLatLng.lat;
-              const dLng = position.lng - dragStartLatLng.lng;
-              updatedEndLat = updatedEndLat + dLat;
-              updatedEndLng = updatedEndLng + dLng;
-            } else {
-              // Calculate default offset end position if none exists
-              [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
-            }
-            completedMovementTargetsRef.current.delete(id);
-            movementLiveStateRef.current[id] = {
-              lat: position.lat,
-              lng: position.lng,
-              trail: movementLiveStateRef.current[id]?.trail || markerData.movementTrail || [],
-            };
             onUpdateMarker({
               ...markerData,
               lat: position.lat,
               lng: position.lng,
-              endLat: updatedEndLat,
-              endLng: updatedEndLng,
             });
           } else {
             onUpdateMarkerPosition(id, position.lat, position.lng);
@@ -3727,10 +3712,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const marker = markers.find((m) => m.id === id);
       const isSelected = id === selectedMarkerId;
       const shouldShowEta = marker && (
-        isSelected ||
         marker.movementEnabled === true ||
-        (marker.endPointStyle && marker.endPointStyle !== 'none') ||
-        !!marker.hasZone
+        (marker.endPointStyle && marker.endPointStyle !== 'none')
       );
       if (!shouldShowEta) {
         endEtaMarkersRef.current[id]?.remove();
@@ -3748,9 +3731,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     Object.keys(endMarkersRef.current).forEach((id) => {
       const marker = markers.find((m) => m.id === id);
-      const isSelected = id === selectedMarkerId;
       const hasEndHandle = marker && (
-        isSelected ||
         marker.movementEnabled === true ||
         (marker.endPointStyle && marker.endPointStyle !== 'none') ||
         !!marker.hasZone
@@ -3884,7 +3865,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const markerInstance = markersRef.current[marker.id];
         if (!markerInstance) return;
 
-        const trailEnabled = marker.movementTrailEnabled === true;
+        const trailEnabled = marker.movementEnabled === true && marker.movementTrailEnabled === true;
 
         if (trailEnabled) {
           const stored = Array.isArray(marker.movementTrail)
@@ -3901,23 +3882,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
         if (marker.movementEnabled !== true || Number(marker.movementSpeedKmh ?? 0) <= 0) {
           movingMarkerIdsRef.current.delete(marker.id);
-          if (trailEnabled) {
-            const trail = trailByMarker.get(marker.id) || [[marker.lat, marker.lng]];
-            let layer = movementTrailLayersRef.current[marker.id];
-            if (!layer) {
-              layer = L.polyline(trail, {
-                color: marker.movementTrailColor || marker.color || '#ef4444',
-                weight: Math.max(1, Number(marker.movementTrailWidth ?? 3)),
-                opacity: 0.9,
-                lineCap: 'round',
-                lineJoin: 'round',
-                pane: 'drawnLinesPane',
-              }).addTo(map);
-              movementTrailLayersRef.current[marker.id] = layer;
-            }
-            updateTrailStyle(layer, marker);
-            layer.setLatLngs(trail);
-          }
+          // Never leave a movement trail visible when movement itself is disabled.
+          removeTrail(marker.id);
           return;
         }
 
@@ -3997,7 +3963,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           let etaMarker = endEtaMarkersRef.current[marker.id];
           if (!etaMarker) {
             const etaIcon = L.divIcon({
-              className: 'movement-eta-label',
+              className: 'movement-eta-label screenshot-exclude',
               html: `<div style="
                 transform: translate(-50%, -32px);
                 white-space: nowrap;
@@ -5128,7 +5094,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     const hiddenElements = Array.from(
       mapElement.querySelectorAll(
-        '.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon'
+        '.leaflet-control-container, .screenshot-exclude, .custom-end-handle, .movement-eta-label, .draft-line-node, .line-vertex-edit-handle, .measure-node-icon'
       )
     ) as HTMLElement[];
 
@@ -5208,6 +5174,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           node.classList.contains('draft-line-node') ||
           node.classList.contains('line-vertex-edit-handle') ||
           node.classList.contains('custom-end-handle') ||
+          node.classList.contains('movement-eta-label') ||
           node.classList.contains('measure-node-icon')
         );
       };
@@ -6470,6 +6437,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           .exporting-map .line-vertex-edit-handle,
           .exporting-map .screenshot-exclude,
           .exporting-map .custom-end-handle,
+          .exporting-map .movement-eta-label,
+          .exporting-map .movement-eta-label *,
           .exporting-map .measure-node-icon {
             display: none !important;
             opacity: 0 !important;
