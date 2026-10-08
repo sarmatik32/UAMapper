@@ -390,18 +390,31 @@ export function smoothFreehandStrokeOnMap(
 export interface FadingSegment {
   points: [number, number][];
   opacity: number;
+  weightFactor?: number;
+}
+
+/**
+ * Smooth S-curve (quintic smootherstep + gentle power) easing function.
+ * Starts at 0.0 with zero slope (no abrupt cutoff at the beginning of a route)
+ * and smoothly accelerates to 1.0 with zero slope at the transition to the solid line.
+ */
+export function smoothRouteEase(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  // Quintic smootherstep: 6x^5 - 15x^4 + 10x^3, shaped slightly with x^1.15 for an ultra-soft tail
+  const smoother = x * x * x * (x * (x * 6 - 15) + 10);
+  return Math.pow(smoother, 1.15);
 }
 
 /**
  * Calculates fading polyline segments for line rendering.
- * Solid middle section + progressive sub-segments with fading opacities towards start/end.
+ * Solid middle section + progressive sub-segments with smooth easing opacities towards start/end.
  */
 export function generateFadingPolylineSegments(
   points: [number, number][],
   fadeStart: boolean,
   fadeEnd: boolean,
   baseOpacity = 0.9,
-  steps = 30
+  steps = 48
 ): FadingSegment[] {
   if (!points || points.length < 2) return [];
 
@@ -416,11 +429,11 @@ export function generateFadingPolylineSegments(
 
   const totalDist = cumDists[cumDists.length - 1];
   if (totalDist === 0) {
-    return [{ points, opacity: baseOpacity }];
+    return [{ points, opacity: baseOpacity, weightFactor: 1 }];
   }
 
-  let startFadeDist = fadeStart ? totalDist * 0.35 : 0;
-  let endFadeDist = fadeEnd ? totalDist * 0.35 : 0;
+  let startFadeDist = fadeStart ? totalDist * 0.42 : 0;
+  let endFadeDist = fadeEnd ? totalDist * 0.42 : 0;
 
   if (startFadeDist + endFadeDist > totalDist) {
     const ratio = totalDist / (startFadeDist + endFadeDist);
@@ -474,7 +487,7 @@ export function generateFadingPolylineSegments(
   const solidStart = startFadeDist;
   const solidEnd = totalDist - endFadeDist;
 
-  // 1. Fade Start
+  // 1. Fade Start (with smooth S-curve easing from near-zero opacity)
   if (fadeStart && startFadeDist > 0) {
     const stepLen = startFadeDist / steps;
     for (let i = 0; i < steps; i++) {
@@ -483,8 +496,14 @@ export function generateFadingPolylineSegments(
       const pts = slicePath(d1, d2);
       if (pts.length >= 2) {
         const progress = (i + 0.5) / steps;
-        const opacity = baseOpacity * Math.pow(progress, 1.3);
-        resultSegments.push({ points: pts, opacity: Math.max(0.02, opacity) });
+        const eased = smoothRouteEase(progress);
+        const opacity = baseOpacity * eased;
+        const weightFactor = 0.55 + 0.45 * Math.sqrt(progress);
+        resultSegments.push({
+          points: pts,
+          opacity: Math.max(0.004, opacity),
+          weightFactor,
+        });
       }
     }
   }
@@ -493,11 +512,11 @@ export function generateFadingPolylineSegments(
   if (solidEnd > solidStart) {
     const pts = slicePath(solidStart, solidEnd);
     if (pts.length >= 2) {
-      resultSegments.push({ points: pts, opacity: baseOpacity });
+      resultSegments.push({ points: pts, opacity: baseOpacity, weightFactor: 1 });
     }
   }
 
-  // 3. Fade End
+  // 3. Fade End (with smooth S-curve easing down to near-zero opacity)
   if (fadeEnd && endFadeDist > 0) {
     const stepLen = endFadeDist / steps;
     for (let i = 0; i < steps; i++) {
@@ -506,11 +525,17 @@ export function generateFadingPolylineSegments(
       const pts = slicePath(d1, d2);
       if (pts.length >= 2) {
         const progress = 1 - (i + 0.5) / steps;
-        const opacity = baseOpacity * Math.pow(progress, 1.3);
-        resultSegments.push({ points: pts, opacity: Math.max(0.02, opacity) });
+        const eased = smoothRouteEase(progress);
+        const opacity = baseOpacity * eased;
+        const weightFactor = 0.55 + 0.45 * Math.sqrt(progress);
+        resultSegments.push({
+          points: pts,
+          opacity: Math.max(0.004, opacity),
+          weightFactor,
+        });
       }
     }
   }
 
-  return resultSegments.length > 0 ? resultSegments : [{ points, opacity: baseOpacity }];
+  return resultSegments.length > 0 ? resultSegments : [{ points, opacity: baseOpacity, weightFactor: 1 }];
 }

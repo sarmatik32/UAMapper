@@ -1255,10 +1255,10 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         iconImg = await loadBitmapImage(m.customIconUrl);
         isCustomBitmap = true;
       } else if (m.iconType === 'standard-aircraft') {
-        iconImg = await loadBitmapImage('/img/icon_aircraft_custom.png');
+        iconImg = await loadBitmapImage('/img/aircraft.png');
         isCustomBitmap = true;
       } else if (m.iconType === 'standard-symbol-2') {
-        iconImg = await loadBitmapImage('/img/icon_custom_2.png');
+        iconImg = await loadBitmapImage('/img/icon2.png');
         isCustomBitmap = true;
       }
 

@@ -46,13 +46,13 @@ function buildIconSvgContent(type: string, fill: string, stroke: string, strokeW
     case 'standard-aircraft':
       return `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" class="w-full h-full">
-          <image href="/img/icon_aircraft_custom.png" x="0" y="0" width="128" height="128" preserveAspectRatio="xMidYMid meet" />
+          <image href="/img/aircraft.png" x="0" y="0" width="128" height="128" preserveAspectRatio="xMidYMid meet" />
         </svg>
       `;
     case 'standard-symbol-2':
       return `
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-full h-full">
-          <image href="/img/icon_custom_2.png" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet" />
+          <image href="/img/icon2.png" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet" />
         </svg>
       `;
     case 'uav-recon':
@@ -255,9 +255,9 @@ export function createMarkerHtml(
 ): string {
   let innerContent = '';
   const standardAssetUrl = iconType === 'standard-aircraft'
-    ? '/img/icon_aircraft_custom.png'
+    ? '/img/aircraft.png'
     : iconType === 'standard-symbol-2'
-      ? '/img/icon_custom_2.png'
+      ? '/img/icon2.png'
       : '';
 
   if (standardAssetUrl) {

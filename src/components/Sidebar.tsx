@@ -991,10 +991,77 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Handle manual edits of properties (applies to selected marker or template activeStyle and saves per-icon preset!)
   const handlePropChange = (key: keyof CustomMarker, value: any) => {
     if (selectedMarker) {
-      onUpdateMarker({
+      const updatedMarker: CustomMarker = {
         ...selectedMarker,
         [key]: value,
-      });
+      };
+      if (key === 'movementEnabled' && value === true) {
+        const currentLat = Number(selectedMarker.lat);
+        const currentLng = Number(selectedMarker.lng);
+        const rotDeg = Number(selectedMarker.rotation ?? 0) || 0;
+        const earthRadiusKm = 6371.0088;
+        const distanceKm = 5;
+        const angularDistance = distanceKm / earthRadiusKm;
+        const bearing = (rotDeg * Math.PI) / 180;
+        const lat1 = (currentLat * Math.PI) / 180;
+        const lng1 = (currentLng * Math.PI) / 180;
+        const sinLat1 = Math.sin(lat1);
+        const cosLat1 = Math.cos(lat1);
+        const sinAngular = Math.sin(angularDistance);
+        const cosAngular = Math.cos(angularDistance);
+        const lat2 = Math.asin(Math.min(1, Math.max(-1,
+          sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)
+        )));
+        const lng2 = lng1 + Math.atan2(
+          Math.sin(bearing) * sinAngular * cosLat1,
+          cosAngular - sinLat1 * Math.sin(lat2)
+        );
+        updatedMarker.endLat = (lat2 * 180) / Math.PI;
+        updatedMarker.endLng = (((lng2 * 180) / Math.PI + 540) % 360) - 180;
+        updatedMarker.movementTrail = Array.isArray(updatedMarker.movementTrail)
+          ? updatedMarker.movementTrail
+          : [];
+      }
+
+      if (key === 'rotation') {
+        const rotDeg = Number(value) || 0;
+        const earthRadiusKm = 6371.0088;
+        let distKm = 5;
+        if (
+          selectedMarker.endLat !== undefined &&
+          selectedMarker.endLng !== undefined &&
+          !isNaN(Number(selectedMarker.endLat)) &&
+          !isNaN(Number(selectedMarker.endLng))
+        ) {
+          const dLat = ((Number(selectedMarker.endLat) - selectedMarker.lat) * Math.PI) / 180;
+          const dLng = ((Number(selectedMarker.endLng) - selectedMarker.lng) * Math.PI) / 180;
+          const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((selectedMarker.lat * Math.PI) / 180) *
+              Math.cos((Number(selectedMarker.endLat) * Math.PI) / 180) *
+              Math.sin(dLng / 2) *
+              Math.sin(dLng / 2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+          distKm = Math.max(0.05, earthRadiusKm * c);
+        }
+        const angularDistance = distKm / earthRadiusKm;
+        const bearing = (rotDeg * Math.PI) / 180;
+        const lat1 = (selectedMarker.lat * Math.PI) / 180;
+        const lng1 = (selectedMarker.lng * Math.PI) / 180;
+        const sinLat1 = Math.sin(lat1);
+        const cosLat1 = Math.cos(lat1);
+        const sinAngular = Math.sin(angularDistance);
+        const cosAngular = Math.cos(angularDistance);
+        const lat2 = Math.asin(
+          Math.min(1, Math.max(-1, sinLat1 * cosAngular + cosLat1 * sinAngular * Math.cos(bearing)))
+        );
+        const lng2 =
+          lng1 +
+          Math.atan2(Math.sin(bearing) * sinAngular * cosLat1, cosAngular - sinLat1 * Math.sin(lat2));
+        updatedMarker.endLat = (lat2 * 180) / Math.PI;
+        updatedMarker.endLng = (((lng2 * 180) / Math.PI + 540) % 360) - 180;
+      }
+      onUpdateMarker(updatedMarker);
     } else {
       onUpdateActiveStyle((prev) => ({
         ...prev,
