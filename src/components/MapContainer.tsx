@@ -3310,18 +3310,101 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // Re-bind drag events dynamically to capture correct markerData variables
       markerInstance.off('dragstart drag dragend');
 
-      const hasEndPoint = endPointStyle && endPointStyle !== 'none';
-      // A moving marker always gets a separate, editable destination handle in front of it.
-      // This keeps the route target visible instead of hiding it under the icon.
-      const hasEndHandle = isSelected || markerData.movementEnabled === true || endPointStyle === 'explosion' || !!markerData.hasZone;
+      const hasEndPoint = Boolean(endPointStyle && endPointStyle !== 'none');
+      // A moving or selected marker always gets a separate, editable destination handle in front of it.
+      // This keeps the route target visible in front of the icon instead of hiding it under the icon.
+      const hasEndHandle = isSelected || markerData.movementEnabled === true || endPointStyle === 'explosion' || endPointStyle === 'line' || !!markerData.hasZone;
+
+      // Ensure the route point is never sitting right on top of the icon when placed or enabled
+      if (hasEndHandle || hasEndPoint) {
+        if (
+          endLat === undefined ||
+          endLng === undefined ||
+          isNaN(endLat) ||
+          isNaN(endLng) ||
+          (map.distance(L.latLng(lat, lng), L.latLng(endLat, endLng)) < 150 && !completedMovementTargetsRef.current.has(id))
+        ) {
+          [endLat, endLng] = getMovementEndpoint(lat, lng, rotation);
+        }
+      }
+
+      const formatEtaLabel = (fromLat: number, fromLng: number, toLat: number, toLng: number, speedKmhVal: number): string => {
+        const distMeters = map.distance(L.latLng(fromLat, fromLng), L.latLng(toLat, toLng));
+        const distKm = distMeters / 1000;
+        const speed = Math.max(1, Number(speedKmhVal || 100));
+        if (distMeters < 25) {
+          return language === 'uk' ? 'На місці (0 с)' : 'Arrived (0 s)';
+        }
+        const totalSeconds = Math.max(1, Math.round((distKm / speed) * 3600));
+        const distText = distKm >= 1 ? `${distKm.toFixed(1)} км` : `${Math.round(distMeters)} м`;
+        if (totalSeconds >= 3600) {
+          const hours = Math.floor(totalSeconds / 3600);
+          const mins = Math.round((totalSeconds % 3600) / 60);
+          return mins > 0
+            ? `⏱ ≈ ${hours} год ${mins} хв (${distText})`
+            : `⏱ ≈ ${hours} год (${distText})`;
+        }
+        if (totalSeconds >= 60) {
+          const mins = Math.floor(totalSeconds / 60);
+          const secs = totalSeconds % 60;
+          return secs > 0 && mins < 10
+            ? `⏱ ≈ ${mins} хв ${secs} с (${distText})`
+            : `⏱ ≈ ${mins} хв (${distText})`;
+        }
+        return `⏱ ≈ ${totalSeconds} с (${distText})`;
+      };
+
+      const upsertEtaMarker = (fromLat: number, fromLng: number, toLat: number, toLng: number) => {
+        const speedVal = Number(markerData.movementSpeedKmh ?? 100) > 0 ? Number(markerData.movementSpeedKmh) : 100;
+        const etaText = formatEtaLabel(fromLat, fromLng, toLat, toLng, speedVal);
+        let etaMarker = endEtaMarkersRef.current[id];
+        if (!etaMarker) {
+          const etaIcon = L.divIcon({
+            className: 'movement-eta-label',
+            html: `<div style="
+              transform: translate(-50%, -32px);
+              white-space: nowrap;
+              background: rgba(15,23,42,0.92);
+              color: #f8fafc;
+              border: 1px solid rgba(56,189,248,0.55);
+              border-radius: 999px;
+              padding: 3px 8px;
+              font: 700 11px/1.15 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.45);
+              pointer-events: none;
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+            " data-eta="${etaText}">${etaText}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 0],
+          });
+          etaMarker = L.marker([toLat, toLng], {
+            icon: etaIcon,
+            interactive: false,
+            pane: 'userMarkersPane',
+            zIndexOffset: 1250,
+          }).addTo(map);
+          endEtaMarkersRef.current[id] = etaMarker;
+        } else {
+          etaMarker.setLatLng([toLat, toLng]);
+          const etaElement = etaMarker.getElement()?.querySelector('[data-eta]') as HTMLElement | null;
+          if (etaElement && etaElement.dataset.eta !== etaText) {
+            etaElement.dataset.eta = etaText;
+            etaElement.textContent = etaText;
+          }
+          if (!map.hasLayer(etaMarker)) etaMarker.addTo(map);
+        }
+      };
+
       let dragStartLatLng: L.LatLng | null = null;
       let originalEndLat = endLat;
       let originalEndLng = endLng;
 
       markerInstance.on('dragstart', (e) => {
         dragStartLatLng = e.target.getLatLng();
-        originalEndLat = markerData.endLat !== undefined && !isNaN(Number(markerData.endLat)) ? Number(markerData.endLat) : undefined;
-        originalEndLng = markerData.endLng !== undefined && !isNaN(Number(markerData.endLng)) ? Number(markerData.endLng) : undefined;
+        originalEndLat = endLat;
+        originalEndLng = endLng;
       });
 
       markerInstance.on('drag', (e) => {
@@ -3339,12 +3422,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             const tempEndLat = curEndLat + dLat;
             const tempEndLng = curEndLng + dLng;
             if (!isNaN(tempEndLat) && !isNaN(tempEndLng)) {
-              if (hasEndPoint && linesRef.current[id]) {
-                linesRef.current[id].setLatLngs([[currentLatLng.lat, currentLatLng.lng], [tempEndLat, tempEndLng]]);
-              }
               if (endMarkersRef.current[id]) {
                 endMarkersRef.current[id].setLatLng([tempEndLat, tempEndLng]);
               }
+              upsertEtaMarker(currentLatLng.lat, currentLatLng.lng, tempEndLat, tempEndLng);
             }
           }
         }
@@ -3370,6 +3451,13 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (isNaN(updatedEndLat) || isNaN(updatedEndLng)) {
             [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
           }
+
+          completedMovementTargetsRef.current.delete(id);
+          movementLiveStateRef.current[id] = {
+            lat: position.lat,
+            lng: position.lng,
+            trail: movementLiveStateRef.current[id]?.trail || markerData.movementTrail || [],
+          };
 
           if (onUpdateMarker) {
             onUpdateMarker({
@@ -3397,6 +3485,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               // Calculate default offset end position if none exists
               [updatedEndLat, updatedEndLng] = getMovementEndpoint(position.lat, position.lng, rotation);
             }
+            completedMovementTargetsRef.current.delete(id);
+            movementLiveStateRef.current[id] = {
+              lat: position.lat,
+              lng: position.lng,
+              trail: movementLiveStateRef.current[id]?.trail || markerData.movementTrail || [],
+            };
             onUpdateMarker({
               ...markerData,
               lat: position.lat,
@@ -3432,45 +3526,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       });
 
-      // Render line if should draw line
-      if (hasEndPoint) {
-        let finalEndLat = endLat;
-        let finalEndLng = endLng;
+      const currentLivePos = markerInstance.getLatLng() || L.latLng(lat, lng);
 
-        if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
-          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
-        }
-
-        const lineCoords: [number, number][] = [[lat, lng], [finalEndLat, finalEndLng]];
-        const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
-        const lineStyle = {
-          color: polylineColor,
-          weight: markerData.lineWidth !== undefined ? markerData.lineWidth : 3,
-          dashArray: '10, 5, 2, 5', // Dash-dotted style ("штрих пунктир")
-          opacity: isSelected ? 0.95 : 0.6,
-          pane: 'drawnLinesPane',
-        };
-
-        if (linesRef.current[id]) {
-          linesRef.current[id].setLatLngs(lineCoords);
-          linesRef.current[id].setStyle(lineStyle);
-        } else {
-          linesRef.current[id] = L.polyline(lineCoords, lineStyle).addTo(map);
-        }
-
-        linesRef.current[id].off('click');
-        linesRef.current[id].on('click', (e) => {
-          if (e.originalEvent) {
-            L.DomEvent.stopPropagation(e.originalEvent);
-          }
-          L.DomEvent.stopPropagation(e);
-          onSelectMarker(id);
-        });
-      } else {
-        if (linesRef.current[id]) {
-          linesRef.current[id].remove();
-          delete linesRef.current[id];
-        }
+      // No connector line is rendered between a marker and its movement handle.
+      if (linesRef.current[id]) {
+        linesRef.current[id].remove();
+        delete linesRef.current[id];
       }
 
       // Render direction control point / handle if hasEndHandle is true
@@ -3479,7 +3540,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let finalEndLng = endLng;
 
         if (finalEndLat === undefined || finalEndLng === undefined || isNaN(finalEndLat) || isNaN(finalEndLng)) {
-          [finalEndLat, finalEndLng] = getMovementEndpoint(lat, lng, rotation);
+          [finalEndLat, finalEndLng] = getMovementEndpoint(currentLivePos.lat, currentLivePos.lng, rotation);
         }
 
         const polylineColor = color === 'transparent' || color === 'none' ? '#ef4444' : color;
@@ -3493,7 +3554,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               font-size: ${size * 0.95}px;
               line-height: 1;
               filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-              cursor: ${isSelected ? 'move' : 'default'};
+              cursor: move;
             ">
               💥
             </div>
@@ -3505,22 +3566,30 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             iconAnchor: [size / 2, size / 2],
           });
         } else {
-          // 'line', 'none', or active zone handle - show clean control dot when selected/active for adjusting direction & zones (excluded from export/screenshots)
+          // Prominent, easy-to-grab route target point in front of the icon
           endMarkerIcon = L.divIcon({
             className: 'custom-end-handle screenshot-exclude',
             html: `
               <div class="flex items-center justify-center" style="
-                width: 14px;
-                height: 14px;
-                background: #ffffff;
-                border: 3px solid ${polylineColor};
+                width: 22px;
+                height: 22px;
                 border-radius: 50%;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.5);
-                cursor: move;
-              "></div>
+                background: rgba(255,255,255,0.22);
+                border: 1.5px dashed ${polylineColor};
+                cursor: grab;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.45);
+              " title="Точка маршруту (потягніть для зміни напрямку та дальності)">
+                <div style="
+                  width: 11px;
+                  height: 11px;
+                  background: #ffffff;
+                  border: 3px solid ${polylineColor};
+                  border-radius: 50%;
+                "></div>
+              </div>
             `,
-            iconSize: [14, 14],
-            iconAnchor: [7, 7],
+            iconSize: [22, 22],
+            iconAnchor: [11, 11],
           });
         }
 
@@ -3532,26 +3601,25 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             endMarkerInstance.setLatLng([finalEndLat, finalEndLng]);
             endMarkerInstance.setIcon(endMarkerIcon);
           }
-          if (isSelected || markerData.movementEnabled === true) {
-            endMarkerInstance.dragging?.enable();
-          } else {
-            endMarkerInstance.dragging?.disable();
-          }
+          endMarkerInstance.dragging?.enable();
           if (!map.hasLayer(endMarkerInstance)) {
             endMarkerInstance.addTo(map);
           }
         } else {
           endMarkerInstance = L.marker([finalEndLat, finalEndLng], {
             icon: endMarkerIcon,
-            draggable: isSelected || markerData.movementEnabled === true,
+            draggable: true,
             pane: 'userMarkersPane',
-            zIndexOffset: 1100,
+            zIndexOffset: 1300,
           }).addTo(map);
           endMarkersRef.current[id] = endMarkerInstance;
         }
 
+        // Always render or update the approximate flight time (ETA) next to the route point
+        upsertEtaMarker(currentLivePos.lat, currentLivePos.lng, finalEndLat, finalEndLng);
+
         // Re-bind end marker drag events dynamically on every render
-        endMarkerInstance.off('drag dragend click');
+        endMarkerInstance.off('dragstart drag dragend click');
 
         endMarkerInstance.on('click', (e) => {
           if (e.originalEvent) {
@@ -3559,6 +3627,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
           L.DomEvent.stopPropagation(e);
           onSelectMarker(id);
+        });
+
+        endMarkerInstance.on('dragstart', () => {
+          completedMovementTargetsRef.current.delete(id);
         });
 
         endMarkerInstance.on('drag', (e) => {
@@ -3571,9 +3643,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (isNaN(angleDeg)) angleDeg = 0;
           if (angleDeg < 0) angleDeg += 360;
 
-          if (linesRef.current[id]) {
-            linesRef.current[id].setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
+          // Update live target so moving marker immediately steers toward the dragged point
+          const mIdx = movementMarkersRef.current.findIndex((m) => m.id === id);
+          if (mIdx >= 0) {
+            movementMarkersRef.current[mIdx] = {
+              ...movementMarkersRef.current[mIdx],
+              endLat: endPosition.lat,
+              endLng: endPosition.lng,
+              rotation: Math.round(angleDeg % 360),
+            };
           }
+          completedMovementTargetsRef.current.delete(id);
+
+          // Update ETA badge in real-time while dragging the route point
+          upsertEtaMarker(liveAnchor.lat, liveAnchor.lng, endPosition.lat, endPosition.lng);
 
           // Update rotation real-time inside DOM
           const mainMarkerEl = markersRef.current[id]?.getElement();
@@ -3596,9 +3679,14 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (angleDeg < 0) angleDeg += 360;
           angleDeg = Math.round(angleDeg);
 
+          completedMovementTargetsRef.current.delete(id);
+          upsertEtaMarker(liveAnchor.lat, liveAnchor.lng, endPosition.lat, endPosition.lng);
+
           if (onUpdateMarker) {
             onUpdateMarker({
               ...markerData,
+              lat: liveAnchor.lat,
+              lng: liveAnchor.lng,
               endLat: endPosition.lat,
               endLng: endPosition.lng,
               rotation: Math.round(angleDeg % 360),
@@ -3615,29 +3703,35 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           }
         });
       } else {
-        // Remove the end marker from map if it shouldn't be shown
+        // Remove the end marker and ETA badge from map if it shouldn't be shown
         if (endMarkersRef.current[id]) {
           endMarkersRef.current[id].remove();
           delete endMarkersRef.current[id];
+        }
+        if (endEtaMarkersRef.current[id]) {
+          endEtaMarkersRef.current[id].remove();
+          delete endEtaMarkersRef.current[id];
         }
       }
     });
 
     // Clean up unused lines and end markers
     Object.keys(linesRef.current).forEach((id) => {
-      const marker = markers.find((m) => m.id === id);
-      const hasEndPoint = marker && marker.endPointStyle && marker.endPointStyle !== 'none';
-      if (!hasEndPoint) {
-        if (linesRef.current[id]) {
-          linesRef.current[id].remove();
-          delete linesRef.current[id];
-        }
+      if (linesRef.current[id]) {
+        linesRef.current[id].remove();
+        delete linesRef.current[id];
       }
     });
 
     Object.keys(endEtaMarkersRef.current).forEach((id) => {
       const marker = markers.find((m) => m.id === id);
-      const shouldShowEta = marker && marker.movementEnabled === true && Number(marker.movementSpeedKmh ?? 0) > 0 && marker.endLat !== undefined && marker.endLng !== undefined;
+      const isSelected = id === selectedMarkerId;
+      const shouldShowEta = marker && (
+        isSelected ||
+        marker.movementEnabled === true ||
+        (marker.endPointStyle && marker.endPointStyle !== 'none') ||
+        !!marker.hasZone
+      );
       if (!shouldShowEta) {
         endEtaMarkersRef.current[id]?.remove();
         delete endEtaMarkersRef.current[id];
@@ -3668,11 +3762,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
       }
     });
-  }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady]);
+  }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady, language]);
 
   const getMovementEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
     const earthRadiusKm = 6371.0088;
-    const distanceKm = 1;
+    const distanceKm = 5;
     const angularDistance = distanceKm / earthRadiusKm;
     const bearing = (Number(rotation || 0) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
@@ -3695,18 +3789,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   };
 
   const movementConfigKey = markers
-    .map((m) => [
-      m.id,
-      m.movementEnabled === true ? '1' : '0',
-      Number(m.movementSpeedKmh ?? 0),
-      Number(m.rotation ?? 0),
-      Number.isFinite(Number(m.endLat)) ? Number(m.endLat).toFixed(7) : '',
-      Number.isFinite(Number(m.endLng)) ? Number(m.endLng).toFixed(7) : '',
-      m.movementTrailEnabled === true ? '1' : '0',
-      m.movementTrailColor || '',
-      Number(m.movementTrailWidth ?? 3),
-      m.movementTrailDashStyle || 'solid',
-    ].join(':'))
+    .map((m) => `${m.id}:${m.movementEnabled === true && Number(m.movementSpeedKmh ?? 0) > 0 ? 'moving' : 'stopped'}`)
     .join('|');
 
   // Animate moving markers in real geographic distance (km/h), independent of
@@ -3864,7 +3947,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         let nextLng = current.lng;
         let movementBearing = Number(marker.rotation || 0);
 
-        if (distanceToTargetKm > 0.001 && stepKm > 0) {
+        if (distanceToTargetKm > Math.max(0.001, stepKm) && stepKm > 0) {
           const target = L.latLng(targetLat, targetLng);
           const dy = target.lat - current.lat;
           const dx = target.lng - current.lng;
@@ -3886,24 +3969,29 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (rotatingDiv) rotatingDiv.style.transform = `rotate(${Math.round(movementBearing % 360)}deg)`;
         }
 
-        // Update the route line continuously while the icon is moving.
-        if (hasDestination && linesRef.current[marker.id]) {
-          linesRef.current[marker.id].setLatLngs([[nextLat, nextLng], [targetLat, targetLng]]);
-        }
-
         // Live ETA label at the destination point.
         if (hasDestination) {
-          const remainingKm = map.distance(L.latLng(nextLat, nextLng), L.latLng(targetLat, targetLng)) / 1000;
-          const totalMinutes = remainingKm > 0 && speedKmh > 0 ? (remainingKm / speedKmh) * 60 : 0;
-          let etaText = '≈ 0 с';
-          if (totalMinutes >= 60) {
-            const hours = Math.floor(totalMinutes / 60);
-            const minutes = Math.round(totalMinutes - hours * 60);
-            etaText = minutes > 0 ? `≈ ${hours} год ${minutes} хв` : `≈ ${hours} год`;
-          } else if (totalMinutes >= 1) {
-            etaText = `≈ ${Math.max(1, Math.round(totalMinutes))} хв`;
-          } else {
-            etaText = `≈ ${Math.max(1, Math.round(totalMinutes * 60))} с`;
+          const remainingMeters = map.distance(L.latLng(nextLat, nextLng), L.latLng(targetLat, targetLng));
+          const remainingKm = remainingMeters / 1000;
+          let etaText = language === 'uk' ? 'На місці (0 с)' : 'Arrived (0 s)';
+          if (remainingMeters >= 25 && speedKmh > 0) {
+            const totalSeconds = Math.max(1, Math.round((remainingKm / speedKmh) * 3600));
+            const distText = remainingKm >= 1 ? `${remainingKm.toFixed(1)} км` : `${Math.round(remainingMeters)} м`;
+            if (totalSeconds >= 3600) {
+              const hours = Math.floor(totalSeconds / 3600);
+              const mins = Math.round((totalSeconds % 3600) / 60);
+              etaText = mins > 0
+                ? `⏱ ≈ ${hours} год ${mins} хв (${distText})`
+                : `⏱ ≈ ${hours} год (${distText})`;
+            } else if (totalSeconds >= 60) {
+              const mins = Math.floor(totalSeconds / 60);
+              const secs = totalSeconds % 60;
+              etaText = secs > 0 && mins < 10
+                ? `⏱ ≈ ${mins} хв ${secs} с (${distText})`
+                : `⏱ ≈ ${mins} хв (${distText})`;
+            } else {
+              etaText = `⏱ ≈ ${totalSeconds} с (${distText})`;
+            }
           }
 
           let etaMarker = endEtaMarkersRef.current[marker.id];
@@ -3911,18 +3999,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             const etaIcon = L.divIcon({
               className: 'movement-eta-label',
               html: `<div style="
-                transform: translate(0, -24px);
+                transform: translate(-50%, -32px);
                 white-space: nowrap;
-                background: rgba(15,23,42,.92);
-                color: #fff;
-                border: 1px solid rgba(255,255,255,.35);
+                background: rgba(15,23,42,0.92);
+                color: #f8fafc;
+                border: 1px solid rgba(56,189,248,0.55);
                 border-radius: 999px;
-                padding: 3px 7px;
-                font: 700 11px/1.1 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                box-shadow: 0 2px 7px rgba(0,0,0,.35);
+                padding: 3px 8px;
+                font: 700 11px/1.15 system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.45);
                 pointer-events: none;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
               " data-eta="${etaText}">${etaText}</div>`,
-              iconSize: [1, 1],
+              iconSize: [0, 0],
               iconAnchor: [0, 0],
             });
             etaMarker = L.marker([targetLat, targetLng], {

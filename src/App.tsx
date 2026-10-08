@@ -1611,9 +1611,8 @@ export default function App() {
     }
   };
 
-  const getInitialMarkerEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+  const getInitialMarkerEndpoint = (lat: number, lng: number, rotation: number, distanceKm = 5): [number, number] => {
     const earthRadiusKm = 6371.0088;
-    const distanceKm = 1;
     const angularDistance = distanceKm / earthRadiusKm;
     const bearing = (Number(rotation || 0) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
@@ -1648,7 +1647,7 @@ export default function App() {
 
     const newId = 'marker_' + Date.now();
     const initialRotation = Number.isFinite(Number(baseStyle.rotation)) ? Number(baseStyle.rotation) : 0;
-    const [initialEndLat, initialEndLng] = getInitialMarkerEndpoint(finalLat, finalLng, initialRotation);
+    const [initialEndLat, initialEndLng] = getInitialMarkerEndpoint(finalLat, finalLng, initialRotation, 5);
     const newMarker: CustomMarker = {
       id: newId,
       lat: finalLat,

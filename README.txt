@@ -1,6 +1,6 @@
-UA Mapper Full!
+UA Mapper Full
 
-1. Отримайте ключ MapTiler.1
+1. Отримайте ключ MapTiler.
 2. Замініть PUT_YOUR_KEY_HERE.
 3. Покладіть свою PNG іконку як drone.png.
 4. Запустіть:
