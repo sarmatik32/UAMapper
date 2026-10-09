@@ -3723,7 +3723,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     Object.keys(movementTrailLayersRef.current).forEach((id) => {
       const marker = markers.find((m) => m.id === id);
-      if (!marker || marker.movementTrailEnabled !== true) {
+      // A movement trail is a movement-only visual. If movement is disabled,
+      // hide the old trail immediately even if its trail setting remains on.
+      if (!marker || marker.movementEnabled !== true || marker.movementTrailEnabled !== true) {
         movementTrailLayersRef.current[id]?.remove();
         delete movementTrailLayersRef.current[id];
       }
