@@ -5280,76 +5280,37 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const handleCopyPNG = async (): Promise<boolean> => {
     const mapElement = prepareExportState();
     if (!mapElement) return false;
+
     setIsCopying(true);
     setScreenshotStatus(language === 'uk' ? 'Створення знімка...' : 'Capturing map...');
-    let blob: Blob | null = null;
-    try {
-      blob = await captureMapBlob('clipboard');
-    } catch (captureErr) {
-      console.warn('Clipboard mode capture failed, falling back to standard capture:', captureErr);
-      try {
-        blob = await captureMapBlob('export');
-      } catch (retryErr) {
-        console.error('All capture attempts failed:', retryErr);
-      }
-    }
-
-    if (!blob) {
-      cleanupExportState(mapElement);
-      setIsCopying(false);
-      setScreenshotStatus(language === 'uk' ? 'Помилка знімка карти' : 'Map capture failed');
-      setTimeout(() => setScreenshotStatus(null), 2500);
-      return false;
-    }
+    const filename = `tactical_map_${Date.now()}.png`;
 
     try {
-      const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || window.innerWidth < 768;
-      const filename = `tactical_map_${Date.now()}.png`;
-      const file = new File([blob], filename, { type: 'image/png' });
+      // Start capture and hand its Promise to ClipboardItem immediately. This keeps
+      // the clipboard write tied to the user's click on mobile Chrome, where awaiting
+      // a slow map render first can lose transient user activation.
+      const capturePromise = captureMapBlob('clipboard');
+      const canWriteImageClipboard =
+        !!navigator.clipboard &&
+        typeof navigator.clipboard.write === 'function' &&
+        typeof window.ClipboardItem !== 'undefined';
 
-      // 1. On desktop devices, try standard clipboard API first
-      if (!isMobile && navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
+      if (canWriteImageClipboard) {
         try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          await navigator.clipboard.write([
+            new ClipboardItem({ 'image/png': capturePromise }),
+          ]);
           setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
           setTimeout(() => setScreenshotStatus(null), 2500);
           return true;
-        } catch (clipErr) {
-          console.warn('Desktop clipboard write failed:', clipErr);
+        } catch (clipboardErr) {
+          console.warn('Image clipboard write failed; falling back to download:', clipboardErr);
         }
       }
 
-      // 2. On mobile devices, attempt Web Share API if supported
-      if (isMobile && typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: language === 'uk' ? 'Тактична карта (UA Mapper)' : 'Tactical Map (UA Mapper)',
-          });
-          setScreenshotStatus(language === 'uk' ? 'Зображення збережено / поширено!' : 'Map saved / shared!');
-          setTimeout(() => setScreenshotStatus(null), 2500);
-          return true;
-        } catch (shareErr: any) {
-          if (shareErr?.name === 'AbortError') {
-            // User voluntarily dismissed the share dialog
-            setScreenshotStatus(null);
-            return true;
-          }
-          console.warn('Web Share failed (transient activation or permission), falling back to download:', shareErr);
-        }
-      }
-
-      // 3. Try mobile clipboard if browser supports it
-      if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
-        try {
-          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-          setScreenshotStatus(language === 'uk' ? 'Зображення скопійовано в буфер!' : 'Map copied to clipboard!');
-          setTimeout(() => setScreenshotStatus(null), 2500);
-          return true;
-        } catch (_) {}
-      }
-
-      // 4. Universal 100% reliable fallback for all devices: direct file download
+      // Do not call navigator.share() here: it opens Android's share sheet instead
+      // of copying to the clipboard. If image clipboard is unsupported, download PNG.
+      const blob = await capturePromise;
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.download = filename;
@@ -5360,15 +5321,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       setTimeout(() => URL.revokeObjectURL(url), 10000);
       setScreenshotStatus(
         language === 'uk'
-          ? (isMobile ? 'Карту завантажено на телефон!' : 'Карту завантажено як файл!')
-          : 'Map downloaded!'
+          ? 'Буфер недоступний у цьому браузері — карту завантажено.'
+          : 'Clipboard is unavailable in this browser — map downloaded.'
       );
+      setTimeout(() => setScreenshotStatus(null), 3500);
+      return false;
+    } catch (error) {
+      console.error('Clipboard / map capture failed:', error);
+      setScreenshotStatus(language === 'uk' ? 'Помилка створення знімка' : 'Map capture failed');
       setTimeout(() => setScreenshotStatus(null), 3000);
-      return true;
-    } catch (fallbackErr) {
-      console.error('Clipboard / download fallback failed:', fallbackErr);
-      setScreenshotStatus(language === 'uk' ? 'Помилка копіювання' : 'Copy failed');
-      setTimeout(() => setScreenshotStatus(null), 2500);
       return false;
     } finally {
       cleanupExportState(mapElement);
