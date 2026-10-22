@@ -3864,9 +3864,11 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     ];
   };
 
-  const movementConfigKey = markers
-    .map((m) => `${m.id}:${m.movementEnabled === true && Number(m.movementSpeedKmh ?? 0) > 0 ? 'moving' : 'stopped'}`)
-    .join('|');
+  // Keep the animation loop alive when adding/removing a marker while another
+  // marker is already moving. The loop reads current marker data through refs.
+  const movementConfigKey = markers.some(
+    (m) => m.movementEnabled === true && Number(m.movementSpeedKmh ?? 0) > 0
+  ) ? 'moving' : 'stopped';
 
   // Animate moving markers in real geographic distance (km/h), independent of
   // the current map zoom. Rotation uses the existing marker heading:
@@ -3875,7 +3877,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map || !isMapReady) return;
 
-    completedMovementTargetsRef.current.clear();
+    // Preserve per-marker arrival state across animation restarts. Each target is
+    // reactivated only by explicit marker/endpoint dragging or target changes.
     let frameId = 0;
     let lastFrame = performance.now();
     let lastPersistAt = lastFrame;
@@ -3983,8 +3986,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }
 
         if (completedMovementTargetsRef.current.has(marker.id) && Number.isFinite(Number(marker.endLat)) && Number.isFinite(Number(marker.endLng))) {
-          movingMarkerIdsRef.current.delete(marker.id);
-          return;
+          const completedAt = movementLiveStateRef.current[marker.id];
+          const targetStillReached = completedAt &&
+            map.distance([completedAt.lat, completedAt.lng], [Number(marker.endLat), Number(marker.endLng)]) < 25;
+          if (targetStillReached) {
+            movingMarkerIdsRef.current.delete(marker.id);
+            return;
+          }
+          // A destination changed since arrival: resume movement to the new point.
+          completedMovementTargetsRef.current.delete(marker.id);
         }
 
         hasMovingMarkers = true;
