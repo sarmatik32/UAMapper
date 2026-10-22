@@ -459,10 +459,7 @@ export function createMarkerHtml(
   if (monitorwarAssetUrl) {
     const safeUrl = monitorwarAssetUrl.replace(/'/g, '%27');
     const iconColor = color && color !== 'transparent' && color !== 'none' ? color : '#ffffff';
-    const outline = borderColor && borderColor !== 'transparent' && borderColor !== 'none'
-      ? `drop-shadow(-1px 0 0 ${borderColor}) drop-shadow(1px 0 0 ${borderColor}) drop-shadow(0 -1px 0 ${borderColor}) drop-shadow(0 1px 0 ${borderColor})`
-      : '';
-    innerContent = `<div style="width:100%;height:100%;background-color:${iconColor};-webkit-mask-image:url('${safeUrl}');mask-image:url('${safeUrl}');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;filter:${outline};"></div>`;
+    innerContent = `<div style="width:100%;height:100%;background-color:${iconColor};-webkit-mask-image:url('${safeUrl}');mask-image:url('${safeUrl}');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;"></div>`;
   } else if (standardAssetUrl) {
     // Treat the supplied raster silhouettes as built-in symbols, not uploaded
     // user icons, so their color/size/rotation settings behave like every
@@ -559,7 +556,7 @@ export function createMarkerHtml(
       ${zoneHtml}
 
       <!-- Main rotating icon container (rotates ONLY the icon visual) -->
-      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); transition: transform 0.1s ease; z-index: 2; position: relative;">
+      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: ${borderColor && borderColor !== 'transparent' && borderColor !== 'none' ? `drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 2px 4px rgba(0,0,0,0.3))` : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'}; transition: transform 0.1s ease; z-index: 2; position: relative;">
         ${innerContent}
       </div>
 
