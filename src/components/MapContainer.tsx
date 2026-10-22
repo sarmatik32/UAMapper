@@ -3229,20 +3229,23 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         group.clearLayers();
         if (!map.hasLayer(group)) group.addTo(map);
       }
-      const segments = 24;
+      const segments = 36;
       for (let i = 0; i < segments; i++) {
         const t0 = i / segments;
         const t1 = (i + 1) / segments;
         const opacityAt = (t: number) => t <= fadeStart / 100
           ? maxOpacity
           : maxOpacity * Math.max(0, 1 - (t - fadeStart / 100) / Math.max(0.001, 1 - fadeStart / 100));
+        // Leave small gaps between segments to preserve the existing dashed-line look.
+        const dashStart = t0 + (t1 - t0) * 0.08;
+        const dashEnd = t0 + (t1 - t0) * 0.78;
         const p0: [number, number] = [
-          startPoint.lat + (endPoint.lat - startPoint.lat) * t0,
-          startPoint.lng + (endPoint.lng - startPoint.lng) * t0,
+          startPoint.lat + (endPoint.lat - startPoint.lat) * dashStart,
+          startPoint.lng + (endPoint.lng - startPoint.lng) * dashStart,
         ];
         const p1: [number, number] = [
-          startPoint.lat + (endPoint.lat - startPoint.lat) * t1,
-          startPoint.lng + (endPoint.lng - startPoint.lng) * t1,
+          startPoint.lat + (endPoint.lat - startPoint.lat) * dashEnd,
+          startPoint.lng + (endPoint.lng - startPoint.lng) * dashEnd,
         ];
         L.polyline([p0, p1], {
           color,
@@ -3367,6 +3370,27 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endPointStyle === 'explosion' ||
         endPointStyle === 'line' ||
         !!markerData.hasZone;
+
+      // Migrate saved destination points created by the old 45° offset so the line
+      // matches the icon's actual rotation while preserving the current distance.
+      if (
+        hasEndHandle &&
+        endLat !== undefined && endLng !== undefined &&
+        Number.isFinite(endLat) && Number.isFinite(endLng) &&
+        !completedMovementTargetsRef.current.has(id)
+      ) {
+        const lat1 = lat * Math.PI / 180;
+        const lat2 = endLat * Math.PI / 180;
+        const dLng = (endLng - lng) * Math.PI / 180;
+        const y = Math.sin(dLng) * Math.cos(lat2);
+        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+        const existingBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        const bearingDifference = Math.abs(((existingBearing - rotation + 540) % 360) - 180);
+        if (bearingDifference > 12) {
+          const distanceKm = Math.max(0.05, map.distance([lat, lng], [endLat, endLng]) / 1000);
+          [endLat, endLng] = getMovementEndpoint(lat, lng, rotation, distanceKm);
+        }
+      }
 
       // Ensure the route point is never sitting right on top of the icon when placed or enabled
       if (hasEndHandle || hasEndPoint) {
@@ -3824,9 +3848,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
   }, [markers, selectedMarkerId, onSelectMarker, onUpdateMarkerPosition, onUpdateMarker, isMapReady, language]);
 
-  const getMovementEndpoint = (lat: number, lng: number, rotation: number): [number, number] => {
+  const getMovementEndpoint = (lat: number, lng: number, rotation: number, distanceKm: number = 5): [number, number] => {
     const earthRadiusKm = 6371.0088;
-    const distanceKm = 5;
     const angularDistance = distanceKm / earthRadiusKm;
     const bearing = (Number(rotation || 0) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
