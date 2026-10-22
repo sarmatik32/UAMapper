@@ -11,6 +11,7 @@ export interface IconPreset {
   endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
   lineWidth?: number;
   directionLineOpacity?: number;
+  directionLineFadeStartPercent?: number;
   hasZone?: boolean;
   zoneColor?: string;
   zoneRadiusKm?: number;

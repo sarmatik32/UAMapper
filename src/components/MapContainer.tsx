@@ -3654,7 +3654,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
           if (isNaN(angleDeg)) angleDeg = 0;
           angleDeg = ((angleDeg % 360) + 360) % 360;
 
@@ -3690,7 +3690,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
           if (isNaN(angleDeg)) angleDeg = 0;
           angleDeg = ((angleDeg % 360) + 360) % 360;
           angleDeg = Math.round(angleDeg);
@@ -3769,6 +3769,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     Object.keys(endMarkersRef.current).forEach((id) => {
       const marker = markers.find((m) => m.id === id);
       const hasEndHandle = marker && (
+        id === selectedMarkerId ||
         marker.movementEnabled === true ||
         (marker.endPointStyle && marker.endPointStyle !== 'none') ||
         !!marker.hasZone
@@ -3790,7 +3791,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const earthRadiusKm = 6371.0088;
     const distanceKm = 5;
     const angularDistance = distanceKm / earthRadiusKm;
-    const bearing = ((Number(rotation || 0) + 45) * Math.PI) / 180;
+    const bearing = (Number(rotation || 0) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
     const lng1 = (lng * Math.PI) / 180;
     const sinLat1 = Math.sin(lat1);

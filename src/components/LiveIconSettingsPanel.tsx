@@ -119,6 +119,9 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
   const currentDirectionLineOpacity = Number.isFinite(Number(preset.directionLineOpacity))
     ? Math.max(0, Math.min(1, Number(preset.directionLineOpacity)))
     : 0.8;
+  const currentDirectionLineFadeStartPercent = Number.isFinite(Number(preset.directionLineFadeStartPercent))
+    ? Math.max(0, Math.min(95, Number(preset.directionLineFadeStartPercent)))
+    : 65;
 
   // Combine user custom uploads with public/img pre-loaded images
   const allCustomIcons = [
@@ -193,7 +196,8 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
     currentColor,
     Math.min(32, currentSize),
     currentDirectionLineOffset,
-    currentDirectionLineOpacity
+    currentDirectionLineOpacity,
+    currentDirectionLineFadeStartPercent
   );
 
   const previewZoneHtml = renderLiveZoneHtml(
@@ -606,6 +610,28 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
                       className="w-full h-1.5 rounded-lg appearance-none bg-slate-700 accent-red-500 cursor-pointer"
                     />
                   </div>
+
+                  {/* Gradient fade start position */}
+                  {currentLineType === 'gradient' && (
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-semibold opacity-70 mb-0.5">
+                        <span>{isUa ? 'Початок прозорості лінії:' : 'Transparency starts at:'}</span>
+                        <span className="font-mono text-slate-200">{currentDirectionLineFadeStartPercent}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="95"
+                        step="5"
+                        value={currentDirectionLineFadeStartPercent}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          handleUpdateCurrentPreset({ directionLineFadeStartPercent: Number.isFinite(val) ? val : 65 });
+                        }}
+                        className="w-full h-1.5 rounded-lg appearance-none bg-slate-700 accent-red-500 cursor-pointer"
+                      />
+                    </div>
+                  )}
 
                   {/* Gradient line transparency */}
                   {currentLineType === 'gradient' && (
