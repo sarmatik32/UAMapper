@@ -1,6 +1,193 @@
 import React from 'react';
 
 // Definitions of beautiful vector icons
+// Local, numbered PNG silhouettes supplied in the MonitorWar archive.
+export const MONITORWAR_ICON_ASSETS: Record<string, string> = {
+  'monitorwar-target': '/img/monitorwar-icons/001.png',
+  'monitorwar-aircraft-1': '/img/monitorwar-icons/002.png',
+  'monitorwar-aircraft-2': '/img/monitorwar-icons/003.png',
+  'monitorwar-aircraft-3': '/img/monitorwar-icons/004.png',
+  'monitorwar-aircraft-4': '/img/monitorwar-icons/005.png',
+  'monitorwar-aircraft-5': '/img/monitorwar-icons/006.png',
+  'monitorwar-aircraft-6': '/img/monitorwar-icons/007.png',
+  'monitorwar-aircraft-7': '/img/monitorwar-icons/008.png',
+  'monitorwar-aircraft-8': '/img/monitorwar-icons/009.png',
+  'monitorwar-aircraft-9': '/img/monitorwar-icons/010.png',
+  'monitorwar-aircraft-10': '/img/monitorwar-icons/011.png',
+  'monitorwar-aircraft-11': '/img/monitorwar-icons/012.png',
+  'monitorwar-aircraft-12': '/img/monitorwar-icons/013.png',
+  'monitorwar-drone-1': '/img/monitorwar-icons/014.png',
+  'monitorwar-drone-2': '/img/monitorwar-icons/015.png',
+  'monitorwar-drone-3': '/img/monitorwar-icons/016.png',
+  'monitorwar-drone-4': '/img/monitorwar-icons/017.png',
+  'monitorwar-drone-5': '/img/monitorwar-icons/018.png',
+  'monitorwar-drone-6': '/img/monitorwar-icons/019.png',
+  'monitorwar-drone-7': '/img/monitorwar-icons/020.png',
+  'monitorwar-drone-8': '/img/monitorwar-icons/021.png',
+  'monitorwar-drone-9': '/img/monitorwar-icons/022.png',
+  'monitorwar-drone-10': '/img/monitorwar-icons/023.png',
+  'monitorwar-drone-11': '/img/monitorwar-icons/024.png',
+  'monitorwar-drone-12': '/img/monitorwar-icons/025.png',
+  'monitorwar-drone-13': '/img/monitorwar-icons/026.png',
+  'monitorwar-aircraft-13': '/img/monitorwar-icons/027.png',
+  'monitorwar-aircraft-14': '/img/monitorwar-icons/028.png',
+  'monitorwar-aircraft-15': '/img/monitorwar-icons/029.png',
+  'monitorwar-aircraft-16': '/img/monitorwar-icons/030.png',
+  'monitorwar-aircraft-17': '/img/monitorwar-icons/031.png',
+  'monitorwar-aircraft-18': '/img/monitorwar-icons/032.png',
+  'monitorwar-aircraft-19': '/img/monitorwar-icons/033.png',
+  'monitorwar-missile-1': '/img/monitorwar-icons/034.png',
+  'monitorwar-aircraft-20': '/img/monitorwar-icons/035.png',
+  'monitorwar-missile-2': '/img/monitorwar-icons/036.png',
+  'monitorwar-missile-3': '/img/monitorwar-icons/037.png',
+  'monitorwar-missile-4': '/img/monitorwar-icons/038.png',
+  'monitorwar-missile-5': '/img/monitorwar-icons/039.png',
+  'monitorwar-missile-6': '/img/monitorwar-icons/040.png',
+  'monitorwar-missile-7': '/img/monitorwar-icons/041.png',
+  'monitorwar-missile-8': '/img/monitorwar-icons/042.png',
+  'monitorwar-missile-9': '/img/monitorwar-icons/043.png',
+  'monitorwar-missile-10': '/img/monitorwar-icons/044.png',
+  'monitorwar-aircraft-21': '/img/monitorwar-icons/045.png',
+  'monitorwar-aircraft-22': '/img/monitorwar-icons/046.png',
+  'monitorwar-ship-1': '/img/monitorwar-icons/047.png',
+  'monitorwar-ship-2': '/img/monitorwar-icons/048.png',
+  'monitorwar-ground-1': '/img/monitorwar-icons/049.png',
+  'monitorwar-ground-2': '/img/monitorwar-icons/050.png',
+  'monitorwar-ground-3': '/img/monitorwar-icons/051.png',
+  'monitorwar-ground-4': '/img/monitorwar-icons/052.png',
+  'monitorwar-ground-5': '/img/monitorwar-icons/053.png',
+  'monitorwar-ground-6': '/img/monitorwar-icons/054.png',
+  'monitorwar-ground-7': '/img/monitorwar-icons/055.png',
+  'monitorwar-ground-8': '/img/monitorwar-icons/056.png',
+  'monitorwar-ground-9': '/img/monitorwar-icons/057.png',
+  'monitorwar-ground-10': '/img/monitorwar-icons/058.png',
+  'monitorwar-ground-11': '/img/monitorwar-icons/059.png',
+  'monitorwar-ground-12': '/img/monitorwar-icons/060.png',
+  'monitorwar-ground-13': '/img/monitorwar-icons/061.png',
+  'monitorwar-ground-14': '/img/monitorwar-icons/062.png',
+  'monitorwar-aircraft-23': '/img/monitorwar-icons/063.png',
+  'monitorwar-aircraft-24': '/img/monitorwar-icons/064.png',
+  'monitorwar-aircraft-25': '/img/monitorwar-icons/065.png',
+  'monitorwar-aircraft-26': '/img/monitorwar-icons/066.png',
+  'monitorwar-aircraft-27': '/img/monitorwar-icons/067.png',
+  'monitorwar-aircraft-28': '/img/monitorwar-icons/068.png',
+  'monitorwar-missile-11': '/img/monitorwar-icons/069.png',
+  'monitorwar-missile-12': '/img/monitorwar-icons/070.png',
+  'monitorwar-drone-14': '/img/monitorwar-icons/071.png',
+  'monitorwar-drone-15': '/img/monitorwar-icons/072.png',
+  'monitorwar-drone-16': '/img/monitorwar-icons/073.png',
+  'monitorwar-drone-17': '/img/monitorwar-icons/074.png',
+  'monitorwar-drone-18': '/img/monitorwar-icons/075.png',
+  'monitorwar-drone-19': '/img/monitorwar-icons/076.png',
+  'monitorwar-drone-20': '/img/monitorwar-icons/077.png',
+  'monitorwar-ua-symbol-1': '/img/monitorwar-icons/078.png',
+  'monitorwar-ua-symbol-2': '/img/monitorwar-icons/079.png',
+  'monitorwar-naval-symbol': '/img/monitorwar-icons/080.png',
+  'monitorwar-warning': '/img/monitorwar-icons/081.png',
+  'monitorwar-location': '/img/monitorwar-icons/082.png',
+  'monitorwar-time': '/img/monitorwar-icons/083.png',
+  'monitorwar-explosion': '/img/monitorwar-icons/084.png',
+  'monitorwar-lightning': '/img/monitorwar-icons/085.png',
+  'monitorwar-arrow-right': '/img/monitorwar-icons/086.png',
+  'monitorwar-turn-back': '/img/monitorwar-icons/087.png',
+  'monitorwar-rotate': '/img/monitorwar-icons/088.png',
+  'monitorwar-close': '/img/monitorwar-icons/089.png',
+  'monitorwar-add': '/img/monitorwar-icons/090.png',
+};
+
+export const MONITORWAR_ICON_TYPES = [
+  { id: 'monitorwar-target', nameUa: 'Радар / приціл', nameEn: 'Radar / target' },
+  { id: 'monitorwar-aircraft-1', nameUa: 'Літак 1', nameEn: 'Aircraft 1' },
+  { id: 'monitorwar-aircraft-2', nameUa: 'Літак 2', nameEn: 'Aircraft 2' },
+  { id: 'monitorwar-aircraft-3', nameUa: 'Літак 3', nameEn: 'Aircraft 3' },
+  { id: 'monitorwar-aircraft-4', nameUa: 'Літак 4', nameEn: 'Aircraft 4' },
+  { id: 'monitorwar-aircraft-5', nameUa: 'Літак 5', nameEn: 'Aircraft 5' },
+  { id: 'monitorwar-aircraft-6', nameUa: 'Літак 6', nameEn: 'Aircraft 6' },
+  { id: 'monitorwar-aircraft-7', nameUa: 'Літак 7', nameEn: 'Aircraft 7' },
+  { id: 'monitorwar-aircraft-8', nameUa: 'Літак 8', nameEn: 'Aircraft 8' },
+  { id: 'monitorwar-aircraft-9', nameUa: 'Літак 9', nameEn: 'Aircraft 9' },
+  { id: 'monitorwar-aircraft-10', nameUa: 'Літак 10', nameEn: 'Aircraft 10' },
+  { id: 'monitorwar-aircraft-11', nameUa: 'Літак 11', nameEn: 'Aircraft 11' },
+  { id: 'monitorwar-aircraft-12', nameUa: 'Літак 12', nameEn: 'Aircraft 12' },
+  { id: 'monitorwar-drone-1', nameUa: 'Дрон 1', nameEn: 'Drone 1' },
+  { id: 'monitorwar-drone-2', nameUa: 'Дрон 2', nameEn: 'Drone 2' },
+  { id: 'monitorwar-drone-3', nameUa: 'Дрон 3', nameEn: 'Drone 3' },
+  { id: 'monitorwar-drone-4', nameUa: 'Дрон 4', nameEn: 'Drone 4' },
+  { id: 'monitorwar-drone-5', nameUa: 'Дрон 5', nameEn: 'Drone 5' },
+  { id: 'monitorwar-drone-6', nameUa: 'Дрон 6', nameEn: 'Drone 6' },
+  { id: 'monitorwar-drone-7', nameUa: 'Дрон 7', nameEn: 'Drone 7' },
+  { id: 'monitorwar-drone-8', nameUa: 'Дрон 8', nameEn: 'Drone 8' },
+  { id: 'monitorwar-drone-9', nameUa: 'Дрон 9', nameEn: 'Drone 9' },
+  { id: 'monitorwar-drone-10', nameUa: 'Дрон 10', nameEn: 'Drone 10' },
+  { id: 'monitorwar-drone-11', nameUa: 'Дрон 11', nameEn: 'Drone 11' },
+  { id: 'monitorwar-drone-12', nameUa: 'Дрон 12', nameEn: 'Drone 12' },
+  { id: 'monitorwar-drone-13', nameUa: 'Дрон 13', nameEn: 'Drone 13' },
+  { id: 'monitorwar-aircraft-13', nameUa: 'Літак 13', nameEn: 'Aircraft 13' },
+  { id: 'monitorwar-aircraft-14', nameUa: 'Літак 14', nameEn: 'Aircraft 14' },
+  { id: 'monitorwar-aircraft-15', nameUa: 'Літак 15', nameEn: 'Aircraft 15' },
+  { id: 'monitorwar-aircraft-16', nameUa: 'Літак 16', nameEn: 'Aircraft 16' },
+  { id: 'monitorwar-aircraft-17', nameUa: 'Літак 17', nameEn: 'Aircraft 17' },
+  { id: 'monitorwar-aircraft-18', nameUa: 'Літак 18', nameEn: 'Aircraft 18' },
+  { id: 'monitorwar-aircraft-19', nameUa: 'Літак 19', nameEn: 'Aircraft 19' },
+  { id: 'monitorwar-missile-1', nameUa: 'Ракета 1', nameEn: 'Missile 1' },
+  { id: 'monitorwar-aircraft-20', nameUa: 'Літак 20', nameEn: 'Aircraft 20' },
+  { id: 'monitorwar-missile-2', nameUa: 'Ракета 2', nameEn: 'Missile 2' },
+  { id: 'monitorwar-missile-3', nameUa: 'Ракета 3', nameEn: 'Missile 3' },
+  { id: 'monitorwar-missile-4', nameUa: 'Ракета 4', nameEn: 'Missile 4' },
+  { id: 'monitorwar-missile-5', nameUa: 'Ракета 5', nameEn: 'Missile 5' },
+  { id: 'monitorwar-missile-6', nameUa: 'Ракета 6', nameEn: 'Missile 6' },
+  { id: 'monitorwar-missile-7', nameUa: 'Ракета 7', nameEn: 'Missile 7' },
+  { id: 'monitorwar-missile-8', nameUa: 'Ракета 8', nameEn: 'Missile 8' },
+  { id: 'monitorwar-missile-9', nameUa: 'Ракета 9', nameEn: 'Missile 9' },
+  { id: 'monitorwar-missile-10', nameUa: 'Ракета 10', nameEn: 'Missile 10' },
+  { id: 'monitorwar-aircraft-21', nameUa: 'Літак 21', nameEn: 'Aircraft 21' },
+  { id: 'monitorwar-aircraft-22', nameUa: 'Літак 22', nameEn: 'Aircraft 22' },
+  { id: 'monitorwar-ship-1', nameUa: 'Корабель 1', nameEn: 'Ship 1' },
+  { id: 'monitorwar-ship-2', nameUa: 'Корабель 2', nameEn: 'Ship 2' },
+  { id: 'monitorwar-ground-1', nameUa: 'Наземна техніка 1', nameEn: 'Ground vehicle 1' },
+  { id: 'monitorwar-ground-2', nameUa: 'Наземна техніка 2', nameEn: 'Ground vehicle 2' },
+  { id: 'monitorwar-ground-3', nameUa: 'Наземна техніка 3', nameEn: 'Ground vehicle 3' },
+  { id: 'monitorwar-ground-4', nameUa: 'Наземна техніка 4', nameEn: 'Ground vehicle 4' },
+  { id: 'monitorwar-ground-5', nameUa: 'Наземна техніка 5', nameEn: 'Ground vehicle 5' },
+  { id: 'monitorwar-ground-6', nameUa: 'Наземна техніка 6', nameEn: 'Ground vehicle 6' },
+  { id: 'monitorwar-ground-7', nameUa: 'Наземна техніка 7', nameEn: 'Ground vehicle 7' },
+  { id: 'monitorwar-ground-8', nameUa: 'Наземна техніка 8', nameEn: 'Ground vehicle 8' },
+  { id: 'monitorwar-ground-9', nameUa: 'Наземна техніка 9', nameEn: 'Ground vehicle 9' },
+  { id: 'monitorwar-ground-10', nameUa: 'Наземна техніка 10', nameEn: 'Ground vehicle 10' },
+  { id: 'monitorwar-ground-11', nameUa: 'Наземна техніка 11', nameEn: 'Ground vehicle 11' },
+  { id: 'monitorwar-ground-12', nameUa: 'Наземна техніка 12', nameEn: 'Ground vehicle 12' },
+  { id: 'monitorwar-ground-13', nameUa: 'Наземна техніка 13', nameEn: 'Ground vehicle 13' },
+  { id: 'monitorwar-ground-14', nameUa: 'Наземна техніка 14', nameEn: 'Ground vehicle 14' },
+  { id: 'monitorwar-aircraft-23', nameUa: 'Літак 23', nameEn: 'Aircraft 23' },
+  { id: 'monitorwar-aircraft-24', nameUa: 'Літак 24', nameEn: 'Aircraft 24' },
+  { id: 'monitorwar-aircraft-25', nameUa: 'Літак 25', nameEn: 'Aircraft 25' },
+  { id: 'monitorwar-aircraft-26', nameUa: 'Літак 26', nameEn: 'Aircraft 26' },
+  { id: 'monitorwar-aircraft-27', nameUa: 'Літак 27', nameEn: 'Aircraft 27' },
+  { id: 'monitorwar-aircraft-28', nameUa: 'Літак 28', nameEn: 'Aircraft 28' },
+  { id: 'monitorwar-missile-11', nameUa: 'Ракета 11', nameEn: 'Missile 11' },
+  { id: 'monitorwar-missile-12', nameUa: 'Ракета 12', nameEn: 'Missile 12' },
+  { id: 'monitorwar-drone-14', nameUa: 'Дрон 14', nameEn: 'Drone 14' },
+  { id: 'monitorwar-drone-15', nameUa: 'Дрон 15', nameEn: 'Drone 15' },
+  { id: 'monitorwar-drone-16', nameUa: 'Дрон 16', nameEn: 'Drone 16' },
+  { id: 'monitorwar-drone-17', nameUa: 'Дрон 17', nameEn: 'Drone 17' },
+  { id: 'monitorwar-drone-18', nameUa: 'Дрон 18', nameEn: 'Drone 18' },
+  { id: 'monitorwar-drone-19', nameUa: 'Дрон 19', nameEn: 'Drone 19' },
+  { id: 'monitorwar-drone-20', nameUa: 'Дрон 20', nameEn: 'Drone 20' },
+  { id: 'monitorwar-ua-symbol-1', nameUa: 'Тризуб 1', nameEn: 'Trident 1' },
+  { id: 'monitorwar-ua-symbol-2', nameUa: 'Тризуб 2', nameEn: 'Trident 2' },
+  { id: 'monitorwar-naval-symbol', nameUa: 'Військово-морський символ', nameEn: 'Naval insignia' },
+  { id: 'monitorwar-warning', nameUa: 'Увага', nameEn: 'Warning' },
+  { id: 'monitorwar-location', nameUa: 'Місце', nameEn: 'Location' },
+  { id: 'monitorwar-time', nameUa: 'Час', nameEn: 'Time' },
+  { id: 'monitorwar-explosion', nameUa: 'Вибух', nameEn: 'Explosion' },
+  { id: 'monitorwar-lightning', nameUa: 'Блискавка', nameEn: 'Lightning' },
+  { id: 'monitorwar-arrow-right', nameUa: 'Стрілка праворуч', nameEn: 'Arrow right' },
+  { id: 'monitorwar-turn-back', nameUa: 'Повернення', nameEn: 'Turn back' },
+  { id: 'monitorwar-rotate', nameUa: 'Обертання', nameEn: 'Rotate' },
+  { id: 'monitorwar-close', nameUa: 'Закрити', nameEn: 'Close' },
+  { id: 'monitorwar-add', nameUa: 'Додати', nameEn: 'Add' },
+];
+
 export const ICON_TYPES = [
   { id: 'uav-recon', nameUa: 'БПЛА Розвідник 🛩️', nameEn: 'Recon UAV 🛩️' },
   { id: 'standard-aircraft', nameUa: 'Літак — стандарт', nameEn: 'Aircraft — standard' },
@@ -42,6 +229,14 @@ export const PRESET_COLORS = [
 const svgCache = new Map<string, string>();
 
 function buildIconSvgContent(type: string, fill: string, stroke: string, strokeWidth: string): string {
+  const archiveAsset = MONITORWAR_ICON_ASSETS[type];
+  if (archiveAsset) {
+    return `
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-full h-full" aria-hidden="true">
+        <image href="${archiveAsset}" x="0" y="0" width="100" height="100" preserveAspectRatio="xMidYMid meet" />
+      </svg>
+    `;
+  }
   switch (type) {
     case 'standard-aircraft':
       return `
@@ -254,13 +449,21 @@ export function createMarkerHtml(
   labelOrientation: 'horizontal' | 'rotate' = 'horizontal'
 ): string {
   let innerContent = '';
+  const monitorwarAssetUrl = MONITORWAR_ICON_ASSETS[iconType] || '';
   const standardAssetUrl = iconType === 'standard-aircraft'
     ? '/img/aircraft.png'
     : iconType === 'standard-symbol-2'
       ? '/img/icon2.png'
       : '';
 
-  if (standardAssetUrl) {
+  if (monitorwarAssetUrl) {
+    const safeUrl = monitorwarAssetUrl.replace(/'/g, '%27');
+    const iconColor = color && color !== 'transparent' && color !== 'none' ? color : '#ffffff';
+    const outline = borderColor && borderColor !== 'transparent' && borderColor !== 'none'
+      ? `drop-shadow(-1px 0 0 ${borderColor}) drop-shadow(1px 0 0 ${borderColor}) drop-shadow(0 -1px 0 ${borderColor}) drop-shadow(0 1px 0 ${borderColor})`
+      : '';
+    innerContent = `<div style="width:100%;height:100%;background-color:${iconColor};-webkit-mask-image:url('${safeUrl}');mask-image:url('${safeUrl}');-webkit-mask-size:contain;mask-size:contain;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;-webkit-mask-position:center;mask-position:center;filter:${outline};"></div>`;
+  } else if (standardAssetUrl) {
     // Treat the supplied raster silhouettes as built-in symbols, not uploaded
     // user icons, so their color/size/rotation settings behave like every
     // other standard icon.

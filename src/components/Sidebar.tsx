@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
-import { ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { simplifyLatLngPath } from '../utils/smoothing';
@@ -2170,7 +2170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   {t.lblPointIcon}
                 </label>
                 <div className="grid grid-cols-5 gap-1.5 max-h-48 overflow-y-auto p-0.5 border border-slate-200 dark:border-white/5 rounded-2xl bg-slate-500/5 mb-2.5">
-                  {ICON_TYPES.map((type) => {
+                  {[...MONITORWAR_ICON_TYPES, ...ICON_TYPES].map((type) => {
                     const isActive = activeIconType === type.id && !activeCustomIconUrl;
                     const hasCustomPreset = !!iconPresets[type.id];
                     return (

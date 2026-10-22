@@ -13,7 +13,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { IconPreset, Language } from '../types';
-import { ICON_TYPES } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_TYPES } from './IconLibrary';
 import {
   LIVE_THREAT_CATEGORIES,
   DEFAULT_LIVE_ICON_MAPPING,
@@ -385,7 +385,7 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
                   )}
 
                   <optgroup label={isUa ? '─── СТАНДАРТНІ ІКОНКИ ───' : '─── STANDARD ICONS ───'}>
-                    {ICON_TYPES.map((icon) => (
+                    {[...MONITORWAR_ICON_TYPES, ...ICON_TYPES].map((icon) => (
                       <option key={icon.id} value={icon.id}>
                         {isUa ? icon.nameUa : icon.nameEn}
                       </option>
