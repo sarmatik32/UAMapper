@@ -303,6 +303,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
   const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
+  // Avoid resetting the moving marker's DOM/icon on every persisted position update.
+  const markerIconSignaturesRef = useRef<Record<string, string>>({});
   const linesRef = useRef<{ [id: string]: L.Polyline }>({});
   const movementTrailLayersRef = useRef<{ [id: string]: L.Polyline }>({});
   const movingMarkerIdsRef = useRef<Set<string>>(new Set());
@@ -3305,6 +3307,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         iconAnchor: [size / 2, size / 2], // center of the icon
       });
 
+      const iconSignature = `${size}|${htmlContent}`;
       const existingMarker = markersRef.current[id];
       let markerInstance: L.Marker;
 
@@ -3314,7 +3317,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (!movingMarkerIdsRef.current.has(id)) {
             existingMarker.setLatLng([lat, lng]);
           }
-          existingMarker.setIcon(customIcon);
+          // setIcon() replaces the marker DOM and resets its animated heading.
+          // Only replace it when its actual appearance changed, not when coordinates persist.
+          if (markerIconSignaturesRef.current[id] !== iconSignature) {
+            existingMarker.setIcon(customIcon);
+            markerIconSignaturesRef.current[id] = iconSignature;
+          }
         }
         if (draggable) {
           existingMarker.dragging?.enable();
@@ -3336,6 +3344,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         }).addTo(map);
 
         markersRef.current[id] = newMarker;
+        markerIconSignaturesRef.current[id] = iconSignature;
         markerInstance = newMarker;
 
         if (autoHighlightZoneRef.current) {
@@ -3373,39 +3382,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endPointStyle === 'line' ||
         !!markerData.hasZone;
 
-      // Keep the editable endpoint exactly on the icon's visual heading.
-      // Recompute from the current rotation every render, retaining the saved distance.
-      if (
-        hasEndHandle &&
-        endPointStyle === 'line' &&
-        endLat !== undefined && endLng !== undefined &&
-        Number.isFinite(endLat) && Number.isFinite(endLng) &&
-        !completedMovementTargetsRef.current.has(id)
-      ) {
-        const distanceKm = Math.max(0.05, map.distance([lat, lng], [endLat, endLng]) / 1000);
-        [endLat, endLng] = getMovementEndpoint(lat, lng, rotation, distanceKm);
-      }
-
-      // Migrate older saved destination points that were created with a fixed 45° offset.
-      if (
-        hasEndHandle &&
-        endLat !== undefined && endLng !== undefined &&
-        Number.isFinite(endLat) && Number.isFinite(endLng) &&
-        !completedMovementTargetsRef.current.has(id)
-      ) {
-        const lat1 = lat * Math.PI / 180;
-        const lat2 = endLat * Math.PI / 180;
-        const dLng = (endLng - lng) * Math.PI / 180;
-        const y = Math.sin(dLng) * Math.cos(lat2);
-        const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
-        const existingBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-        const iconHeading = ((Number(rotation || 0) + 45) % 360 + 360) % 360;
-        const bearingDifference = Math.abs(((existingBearing - iconHeading + 540) % 360) - 180);
-        if (bearingDifference > 12) {
-          const distanceKm = Math.max(0.05, map.distance([lat, lng], [endLat, endLng]) / 1000);
-          [endLat, endLng] = getMovementEndpoint(lat, lng, rotation, distanceKm);
-        }
-      }
+      // Preserve the saved destination independently of the icon type/rotation.
+      // Changing the displayed icon must not move the target or reset its ETA.
 
       // Ensure the route point is never sitting right on top of the icon when placed or enabled
       if (hasEndHandle || hasEndPoint) {
