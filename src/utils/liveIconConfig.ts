@@ -11,27 +11,27 @@ export interface LiveThreatCategory {
 }
 
 export const LIVE_THREAT_CATEGORIES: LiveThreatCategory[] = [
-  { id: 'uav', labelUa: 'БпЛА (Шахед / Герань)', labelEn: 'UAV (Shahed / Geran)', fallbackIcon: 'uav-kamikaze', defaultColor: '#ef4444', defaultBorderColor: '#ffffff' },
-  { id: 'fpv', labelUa: 'FPV-дрон', labelEn: 'FPV Drone', fallbackIcon: 'drone', defaultColor: '#f59e0b', defaultBorderColor: '#ffffff' },
-  { id: 'mig31k', labelUa: 'МіГ-31К (Кинджал)', labelEn: 'MiG-31K (Kinzhal)', fallbackIcon: 'plane', defaultColor: '#dc2626', defaultBorderColor: '#ffffff' },
-  { id: 'missile', labelUa: 'Ракета (Загальна)', labelEn: 'Missile (General)', fallbackIcon: 'missile-cruise', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
+  { id: 'uav', labelUa: 'БпЛА (Шахед / Герань)', labelEn: 'UAV (Shahed / Geran)', fallbackIcon: 'monitorwar-drone-1', defaultColor: '#ef4444', defaultBorderColor: '#ffffff' },
+  { id: 'fpv', labelUa: 'FPV-дрон', labelEn: 'FPV Drone', fallbackIcon: 'monitorwar-drone-2', defaultColor: '#f59e0b', defaultBorderColor: '#ffffff' },
+  { id: 'mig31k', labelUa: 'МіГ-31К (Кинджал)', labelEn: 'MiG-31K (Kinzhal)', fallbackIcon: 'monitorwar-aircraft-1', defaultColor: '#dc2626', defaultBorderColor: '#ffffff' },
+  { id: 'missile', labelUa: 'Ракета (Загальна)', labelEn: 'Missile (General)', fallbackIcon: 'monitorwar-missile-1', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
   { id: 'cruise_missile', labelUa: 'Крилата ракета (Х-101 / Калібр)', labelEn: 'Cruise Missile', fallbackIcon: 'missile-cruise', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
-  { id: 'ballistic', labelUa: 'Балістика (Іскандер-М / KN-23)', labelEn: 'Ballistic Missile', fallbackIcon: 'missile-ballistic', defaultColor: '#b91c1c', defaultBorderColor: '#ffffff' },
-  { id: 'recon', labelUa: 'Розвідник (Орлан / ZALA / Supercam)', labelEn: 'Recon UAV (Orlan/ZALA)', fallbackIcon: 'uav-recon', defaultColor: '#06b6d4', defaultBorderColor: '#ffffff' },
+  { id: 'ballistic', labelUa: 'Балістика (Іскандер-М / KN-23)', labelEn: 'Ballistic Missile', fallbackIcon: 'monitorwar-missile-2', defaultColor: '#b91c1c', defaultBorderColor: '#ffffff' },
+  { id: 'recon', labelUa: 'Розвідник (Орлан / ZALA / Supercam)', labelEn: 'Recon UAV (Orlan/ZALA)', fallbackIcon: 'monitorwar-aircraft-2', defaultColor: '#06b6d4', defaultBorderColor: '#ffffff' },
   { id: 'aviation', labelUa: 'Тактична авіація (Су-34 / Су-35)', labelEn: 'Tactical Aviation', fallbackIcon: 'plane', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
-  { id: 'other', labelUa: 'Невідома ціль / інше', labelEn: 'Unknown Target / Other', fallbackIcon: 'target', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
+  { id: 'other', labelUa: 'Невідома ціль / інше', labelEn: 'Unknown Target / Other', fallbackIcon: 'monitorwar-target', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
 ];
 
 export const DEFAULT_LIVE_ICON_MAPPING: Record<string, string> = {
-  uav: 'uav-kamikaze',
-  fpv: 'drone',
-  mig31k: 'plane',
-  missile: 'missile-cruise',
-  cruise_missile: 'missile-cruise',
-  ballistic: 'missile-ballistic',
-  recon: 'uav-recon',
-  aviation: 'plane',
-  other: 'target',
+  uav: 'monitorwar-drone-1',
+  fpv: 'monitorwar-drone-2',
+  mig31k: 'monitorwar-aircraft-1',
+  missile: 'monitorwar-missile-1',
+  cruise_missile: 'monitorwar-missile-1',
+  ballistic: 'monitorwar-missile-2',
+  recon: 'monitorwar-aircraft-2',
+  aviation: 'monitorwar-aircraft-1',
+  other: 'monitorwar-target',
 };
 
 export const LEGACY_ICON_URL_MAP: Record<string, string> = {

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
+import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -120,52 +121,19 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
         }
       }
 
-      // 2. Build tactical SVG icon depending on threat type and heading
-      let iconSvg = '';
-      if (threat.type === 'uav') {
-        // Shahed delta-wing strike drone silhouette
-        iconSvg = `
-          <svg viewBox="0 0 24 24" class="w-5 h-5 drop-shadow-[0_0_8px_${visuals.color}]" fill="currentColor">
-            <path d="M12 2L4 18l4-2 4 4 4-4 4 2L12 2z"/>
-          </svg>
-        `;
-      } else if (threat.type === 'mig31k') {
-        // Supersonic jet silhouette
-        iconSvg = `
-          <svg viewBox="0 0 24 24" class="w-6 h-6 drop-shadow-[0_0_10px_${visuals.color}]" fill="currentColor">
-            <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
-          </svg>
-        `;
-      } else if (threat.type === 'fpv') {
-        // FPV quadcopter
-        iconSvg = `
-          <svg viewBox="0 0 24 24" class="w-5 h-5 drop-shadow-[0_0_8px_${visuals.color}]" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-            <circle cx="12" cy="12" r="3" fill="currentColor" />
-            <path d="M5 5l4 4M19 5l-4 4M5 19l4-4M19 19l-4-4" />
-            <circle cx="5" cy="5" r="2" />
-            <circle cx="19" cy="5" r="2" />
-            <circle cx="5" cy="19" r="2" />
-            <circle cx="19" cy="19" r="2" />
-          </svg>
-        `;
-      } else if (threat.type === 'missile' || threat.type === 'cruise_missile' || threat.type === 'ballistic') {
-        // Missile rocket
-        iconSvg = `
-          <svg viewBox="0 0 24 24" class="w-5 h-5 drop-shadow-[0_0_8px_${visuals.color}]" fill="currentColor">
-            <path d="M12 2.5s-4 5-4 10.5c0 2 .5 3.5 1 4.5l-2 2.5h10l-2-2.5c.5-1 1-2.5 1-4.5 0-5.5-4-10.5-4-10.5z" />
-          </svg>
-        `;
-      } else {
-        // Radar / generic threat target
-        iconSvg = `
-          <svg viewBox="0 0 24 24" class="w-5 h-5 drop-shadow-[0_0_8px_${visuals.color}]" fill="none" stroke="currentColor" stroke-width="2.5">
-            <circle cx="12" cy="12" r="9" />
-            <line x1="12" y1="3" x2="12" y2="21" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <circle cx="12" cy="12" r="3" fill="currentColor" />
-          </svg>
-        `;
-      }
+      // Render LIVE objects with local silhouettes from the supplied icon archive.
+      const liveIconId = threat.type === 'uav' ? 'monitorwar-drone-1'
+        : threat.type === 'fpv' ? 'monitorwar-drone-2'
+        : threat.type === 'mig31k' ? 'monitorwar-aircraft-1'
+        : threat.type === 'recon' ? 'monitorwar-aircraft-2'
+        : threat.type === 'missile' ? 'monitorwar-missile-1'
+        : threat.type === 'cruise_missile' ? 'monitorwar-missile-1'
+        : threat.type === 'ballistic' ? 'monitorwar-missile-2'
+        : 'monitorwar-target';
+      const iconAsset = MONITORWAR_ICON_ASSETS[liveIconId];
+      const iconSvg = iconAsset
+        ? `<img src="${iconAsset}" alt="" draggable="false" style="width:24px;height:24px;object-fit:contain;filter:brightness(0) invert(1);display:block;" />`
+        : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
 
       // 3. Rotation style if heading is provided
       const rotationTransform = heading !== null ? `transform: rotate(${heading}deg);` : '';
