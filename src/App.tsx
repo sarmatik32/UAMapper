@@ -1880,9 +1880,21 @@ export default function App() {
 
       // 1. Gather all configuration and active states
       const exportData = {
-        version: 2,
+        version: 3,
         type: 'uamapper_full_backup',
         exportedAt: new Date().toISOString(),
+        // Full snapshot of app-owned settings, including keys added by newer features.
+        localStorageSettings: (() => {
+          const snapshot: Record<string, string> = {};
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && /^(uamapper_|visicom_|tactical_)/.test(key)) {
+              const value = localStorage.getItem(key);
+              if (value !== null) snapshot[key] = value;
+            }
+          }
+          return snapshot;
+        })(),
         settings: {
           theme,
           language,
@@ -2125,6 +2137,16 @@ export default function App() {
       }
 
       const { settings, data } = parsed;
+
+      // Restore the complete app-owned settings snapshot before applying known
+      // React state setters below, so all current controls update immediately.
+      if (parsed.localStorageSettings && typeof parsed.localStorageSettings === 'object') {
+        Object.entries(parsed.localStorageSettings as Record<string, unknown>).forEach(([key, value]) => {
+          if (/^(uamapper_|visicom_|tactical_)/.test(key) && typeof value === 'string') {
+            localStorage.setItem(key, value);
+          }
+        });
+      }
 
       // Update custom library first
       const jsonCustomIcons = settings?.customLibrary || data?.customLibrary || [];

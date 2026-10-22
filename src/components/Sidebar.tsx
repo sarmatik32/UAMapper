@@ -1275,7 +1275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       >
 
         {/* ШВИДКОДОСТУПНІ ІНСТРУМЕНТИ (QUICK ACCESS ROUND BUTTONS PANEL) */}
-        <div className={`p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl grid grid-cols-6 gap-1.5 items-center flex-shrink-0 transition-all ${
+        <div className={`sticky top-0 z-50 p-2 rounded-2xl border shadow-[0_4px_20px_rgba(0,0,0,0.06)] backdrop-blur-xl grid grid-cols-6 gap-1.5 items-center flex-shrink-0 transition-all ${
           theme === 'light' 
             ? 'border-slate-200/80 bg-white/60' 
             : 'border-white/10 bg-white/[0.04]'
