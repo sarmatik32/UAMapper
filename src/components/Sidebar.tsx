@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
-import { ICON_TYPES, MONITORWAR_ICON_TYPES, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { simplifyLatLngPath } from '../utils/smoothing';
@@ -2190,6 +2190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       >
                         <div 
                           className="w-5 h-5 flex items-center justify-center"
+                          style={{ filter: theme === 'light' && MONITORWAR_ICON_ASSETS[type.id] ? 'brightness(0) saturate(100%)' : undefined }}
                           dangerouslySetInnerHTML={{ __html: getIconSvgContent(type.id, 'currentColor', theme === 'light' ? '#0f172a' : '#ffffff') }}
                         />
                         {hasCustomPreset && (
@@ -2219,6 +2220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         ) : (
                           <div 
                             className="w-full h-full flex items-center justify-center"
+                            style={{ filter: theme === 'light' && MONITORWAR_ICON_ASSETS[activeIconType] ? 'brightness(0) saturate(100%)' : undefined }}
                             dangerouslySetInnerHTML={{ __html: getIconSvgContent(activeIconType, activeColor, activeBorderColor) }}
                           />
                         )}
