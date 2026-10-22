@@ -312,6 +312,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useEffect(() => { movementMarkersRef.current = markers; }, [markers]);
   useEffect(() => { onUpdateMarkerMovementRef.current = onUpdateMarker; }, [onUpdateMarker]);
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
+  const movementDirectionLinesRef = useRef<{ [id: string]: L.Polyline }>({});
   const endEtaMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const completedMovementTargetsRef = useRef<Set<string>>(new Set());
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
@@ -3600,6 +3601,34 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           endMarkersRef.current[id] = endMarkerInstance;
         }
 
+        // Draw the configured direction/course line from the icon to its destination handle.
+        // It follows the marker and respects the user's line-width setting.
+        if (endPointStyle === 'line') {
+          const directionLineOptions: L.PolylineOptions = {
+            color: polylineColor,
+            weight: Math.max(1, Math.min(15, Number(markerData.lineWidth) || 3)),
+            opacity: 0.88,
+            dashArray: '6, 5',
+            lineCap: 'round',
+            interactive: false,
+            pane: 'overlayPane',
+          };
+          const directionLine = movementDirectionLinesRef.current[id];
+          if (directionLine) {
+            directionLine.setLatLngs([[currentLivePos.lat, currentLivePos.lng], [finalEndLat, finalEndLng]]);
+            directionLine.setStyle(directionLineOptions);
+            if (!map.hasLayer(directionLine)) directionLine.addTo(map);
+          } else {
+            movementDirectionLinesRef.current[id] = L.polyline(
+              [[currentLivePos.lat, currentLivePos.lng], [finalEndLat, finalEndLng]],
+              directionLineOptions
+            ).addTo(map);
+          }
+        } else if (movementDirectionLinesRef.current[id]) {
+          movementDirectionLinesRef.current[id].remove();
+          delete movementDirectionLinesRef.current[id];
+        }
+
         // Always render or update the approximate flight time (ETA) next to the route point
         upsertEtaMarker(currentLivePos.lat, currentLivePos.lng, finalEndLat, finalEndLng);
 
@@ -3622,6 +3651,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
@@ -3657,6 +3687,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
+          movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
@@ -3692,6 +3723,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         if (endMarkersRef.current[id]) {
           endMarkersRef.current[id].remove();
           delete endMarkersRef.current[id];
+        }
+        if (movementDirectionLinesRef.current[id]) {
+          movementDirectionLinesRef.current[id].remove();
+          delete movementDirectionLinesRef.current[id];
         }
         if (endEtaMarkersRef.current[id]) {
           endEtaMarkersRef.current[id].remove();
@@ -3739,6 +3774,10 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         !!marker.hasZone
       );
       if (!hasEndHandle) {
+        if (movementDirectionLinesRef.current[id]) {
+          movementDirectionLinesRef.current[id].remove();
+          delete movementDirectionLinesRef.current[id];
+        }
         if (endMarkersRef.current[id]) {
           endMarkersRef.current[id].remove();
           delete endMarkersRef.current[id];
