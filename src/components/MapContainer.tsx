@@ -3397,7 +3397,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const y = Math.sin(dLng) * Math.cos(lat2);
         const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
         const existingBearing = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-        const bearingDifference = Math.abs(((existingBearing - rotation + 540) % 360) - 180);
+        const iconHeading = ((Number(rotation || 0) + 45) % 360 + 360) % 360;
+        const bearingDifference = Math.abs(((existingBearing - iconHeading + 540) % 360) - 180);
         if (bearingDifference > 12) {
           const distanceKm = Math.max(0.05, map.distance([lat, lng], [endLat, endLng]) / 1000);
           [endLat, endLng] = getMovementEndpoint(lat, lng, rotation, distanceKm);
@@ -3727,7 +3728,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (endPointStyle === 'line') updateMovementDirectionLine(id, [liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng], polylineColor, Number(markerData.lineWidth) || 3, Number(markerData.directionLineOpacity ?? 0.85), Number(markerData.directionLineFadeStartPercent ?? 60));
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
           if (isNaN(angleDeg)) angleDeg = 0;
           angleDeg = ((angleDeg % 360) + 360) % 360;
 
@@ -3763,7 +3764,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (endPointStyle === 'line') updateMovementDirectionLine(id, [liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng], polylineColor, Number(markerData.lineWidth) || 3, Number(markerData.directionLineOpacity ?? 0.85), Number(markerData.directionLineFadeStartPercent ?? 60));
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
           if (isNaN(angleDeg)) angleDeg = 0;
           angleDeg = ((angleDeg % 360) + 360) % 360;
           angleDeg = Math.round(angleDeg);
@@ -3863,7 +3864,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const getMovementEndpoint = (lat: number, lng: number, rotation: number, distanceKm: number = 5): [number, number] => {
     const earthRadiusKm = 6371.0088;
     const angularDistance = distanceKm / earthRadiusKm;
-    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const bearing = ((Number(rotation || 0) + 45) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
     const lng1 = (lng * Math.PI) / 180;
     const sinLat1 = Math.sin(lat1);
