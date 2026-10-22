@@ -2142,8 +2142,13 @@ export default function App() {
       // React state setters below, so all current controls update immediately.
       if (parsed.localStorageSettings && typeof parsed.localStorageSettings === 'object') {
         Object.entries(parsed.localStorageSettings as Record<string, unknown>).forEach(([key, value]) => {
-          if (/^(uamapper_|visicom_|tactical_)/.test(key) && typeof value === 'string') {
+          if (!/^(uamapper_|visicom_|tactical_)/.test(key) || typeof value !== 'string') return;
+          // Large caches/custom image payloads may exceed mobile Safari's storage
+          // quota. Do not abort the entire import because one cache key cannot fit.
+          try {
             localStorage.setItem(key, value);
+          } catch (storageError) {
+            console.warn('Skipped localStorage backup key (storage quota or policy):', key, storageError);
           }
         });
       }
