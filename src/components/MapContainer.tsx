@@ -3371,8 +3371,20 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         endPointStyle === 'line' ||
         !!markerData.hasZone;
 
-      // Migrate saved destination points created by the old 45° offset so the line
-      // matches the icon's actual rotation while preserving the current distance.
+      // Keep the editable endpoint exactly on the icon's visual heading.
+      // Recompute from the current rotation every render, retaining the saved distance.
+      if (
+        hasEndHandle &&
+        endPointStyle === 'line' &&
+        endLat !== undefined && endLng !== undefined &&
+        Number.isFinite(endLat) && Number.isFinite(endLng) &&
+        !completedMovementTargetsRef.current.has(id)
+      ) {
+        const distanceKm = Math.max(0.05, map.distance([lat, lng], [endLat, endLng]) / 1000);
+        [endLat, endLng] = getMovementEndpoint(lat, lng, rotation, distanceKm);
+      }
+
+      // Migrate older saved destination points that were created with a fixed 45° offset.
       if (
         hasEndHandle &&
         endLat !== undefined && endLng !== undefined &&
