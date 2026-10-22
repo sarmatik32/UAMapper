@@ -116,6 +116,9 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
   const currentDirectionLineOffset = Number.isFinite(Number(preset.directionLineOffset))
     ? Number(preset.directionLineOffset)
     : 0;
+  const currentDirectionLineOpacity = Number.isFinite(Number(preset.directionLineOpacity))
+    ? Math.max(0, Math.min(1, Number(preset.directionLineOpacity)))
+    : 0.8;
 
   // Combine user custom uploads with public/img pre-loaded images
   const allCustomIcons = [
@@ -189,7 +192,8 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
     currentDirectionLineWidth,
     currentColor,
     Math.min(32, currentSize),
-    currentDirectionLineOffset
+    currentDirectionLineOffset,
+    currentDirectionLineOpacity
   );
 
   const previewZoneHtml = renderLiveZoneHtml(
@@ -602,6 +606,28 @@ export const LiveIconSettingsPanel: React.FC<LiveIconSettingsPanelProps> = ({
                       className="w-full h-1.5 rounded-lg appearance-none bg-slate-700 accent-red-500 cursor-pointer"
                     />
                   </div>
+
+                  {/* Gradient line transparency */}
+                  {currentLineType === 'gradient' && (
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] font-semibold opacity-70 mb-0.5">
+                        <span>{isUa ? 'Прозорість градієнта:' : 'Gradient opacity:'}</span>
+                        <span className="font-mono text-slate-200">{Math.round(currentDirectionLineOpacity * 100)}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={Math.round(currentDirectionLineOpacity * 100)}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) / 100;
+                          handleUpdateCurrentPreset({ directionLineOpacity: Number.isFinite(val) ? val : 0.8 });
+                        }}
+                        className="w-full h-1.5 rounded-lg appearance-none bg-slate-700 accent-red-500 cursor-pointer"
+                      />
+                    </div>
+                  )}
 
                   {/* Line Offset from icon */}
                   <div>

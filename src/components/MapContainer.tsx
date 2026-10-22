@@ -3624,9 +3624,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
           if (isNaN(angleDeg)) angleDeg = 0;
-          if (angleDeg < 0) angleDeg += 360;
+          angleDeg = ((angleDeg % 360) + 360) % 360;
 
           // Update live target so moving marker immediately steers toward the dragged point
           const mIdx = movementMarkersRef.current.findIndex((m) => m.id === id);
@@ -3659,9 +3659,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
-          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
+          let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI) - 45;
           if (isNaN(angleDeg)) angleDeg = 0;
-          if (angleDeg < 0) angleDeg += 360;
+          angleDeg = ((angleDeg % 360) + 360) % 360;
           angleDeg = Math.round(angleDeg);
 
           completedMovementTargetsRef.current.delete(id);
@@ -3751,7 +3751,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const earthRadiusKm = 6371.0088;
     const distanceKm = 5;
     const angularDistance = distanceKm / earthRadiusKm;
-    const bearing = (Number(rotation || 0) * Math.PI) / 180;
+    const bearing = ((Number(rotation || 0) + 45) * Math.PI) / 180;
     const lat1 = (lat * Math.PI) / 180;
     const lng1 = (lng * Math.PI) / 180;
     const sinLat1 = Math.sin(lat1);

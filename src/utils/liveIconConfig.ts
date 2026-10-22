@@ -203,13 +203,15 @@ export function renderDirectionLineHtml(
   width: number,
   color: string,
   iconSize: number,
-  offset: number = 0
+  offset: number = 0,
+  opacity: number = 0.8
 ): string {
   if (heading === null || lineType === 'none' || length <= 0) return '';
 
   const safeColor = color || '#ef4444';
   const safeLength = Math.max(6, Math.min(120, length));
   const safeWidth = Math.max(1.5, Math.min(8, width));
+  const safeOpacity = Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : 0.8));
   // Seamless start directly at the edge of the icon body (never floating next to it / "не поряд")
   const startDistance = Math.max(1, Math.round(iconSize * 0.28) + (offset || 0));
   const yStart = -startDistance;
@@ -239,12 +241,12 @@ export function renderDirectionLineHtml(
     innerElements = `
       <defs>
         <linearGradient id="${gradId}" x1="0" y1="${yStart}" x2="0" y2="${yEnd}" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stop-color="${safeColor}" stop-opacity="1" />
-          <stop offset="70%" stop-color="${safeColor}" stop-opacity="0.8" />
-          <stop offset="100%" stop-color="#ffffff" stop-opacity="0.95" />
+          <stop offset="0%" stop-color="${safeColor}" stop-opacity="${safeOpacity}" />
+          <stop offset="70%" stop-color="${safeColor}" stop-opacity="${safeOpacity * 0.7}" />
+          <stop offset="100%" stop-color="#ffffff" stop-opacity="${safeOpacity * 0.45}" />
         </linearGradient>
       </defs>
-      <line x1="0" y1="${yStart}" x2="0" y2="${yEnd}" stroke="url(#${gradId})" stroke-width="${safeWidth}" stroke-linecap="round" />
+      <line x1="0" y1="${yStart}" x2="0" y2="${yEnd}" stroke="url(#${gradId})" stroke-width="${safeWidth}" stroke-linecap="round" opacity="${safeOpacity}" />
     `;
   } else {
     // Solid line

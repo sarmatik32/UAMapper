@@ -10,6 +10,7 @@ export interface IconPreset {
   labelOrientation?: 'horizontal' | 'rotate';
   endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
   lineWidth?: number;
+  directionLineOpacity?: number;
   hasZone?: boolean;
   zoneColor?: string;
   zoneRadiusKm?: number;
