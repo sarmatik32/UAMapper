@@ -529,7 +529,7 @@ export function createMarkerHtml(
   // The icon artwork has a 45° clockwise base heading, so offset the trail by 45° too.
   // Fade the trail's far end smoothly into transparency.
   const trailGap = Math.max(5, size * 0.18);
-  const iconTrailHtml = showIconTrail ? `<div aria-hidden="true" style="position:absolute;left:calc(50% - ${trailGap}px - ${trailHeight}%);top:50%;transform:translateY(-50%) rotate(135deg);transform-origin:center right;width:${trailHeight}%;height:2.2px;background:linear-gradient(to right,transparent 0%,${trailColor} 42%,${trailColor} 100%);filter:${trailOutline || 'none'};border-radius:2px;z-index:0;pointer-events:none;"></div>` : '';
+  const iconTrailHtml = showIconTrail ? `<div aria-hidden="true" style="position:absolute;left:calc(50% - ${trailGap}px - ${trailHeight}%);top:50%;transform:translateY(calc(-50% + 2px)) rotate(135deg);transform-origin:center right;width:${trailHeight}%;height:2.2px;background:linear-gradient(to right,transparent 0%,${trailColor} 42%,${trailColor} 100%);filter:${trailOutline || 'none'};border-radius:2px;z-index:0;pointer-events:none;"></div>` : '';
 
   // Label styling: ensure text is always readable (never inverted / upside-down)
   let labelHtml = '';
