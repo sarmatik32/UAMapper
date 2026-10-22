@@ -766,6 +766,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       movementTrailColor: preset.movementTrailColor || activeStyle.movementTrailColor || preset.color || activeStyle.color || '#ef4444',
       movementTrailWidth: preset.movementTrailWidth !== undefined ? preset.movementTrailWidth : (activeStyle.movementTrailWidth ?? 3),
       movementTrailDashStyle: preset.movementTrailDashStyle || activeStyle.movementTrailDashStyle || 'solid',
+      showIconTrail: preset.showIconTrail !== undefined ? preset.showIconTrail : (activeStyle.showIconTrail ?? false),
+      iconTrailLength: preset.iconTrailLength !== undefined ? preset.iconTrailLength : (activeStyle.iconTrailLength ?? 85),
     };
 
     if (selectedMarker) {
