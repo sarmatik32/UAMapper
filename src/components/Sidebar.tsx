@@ -1142,6 +1142,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeBorderColor = selectedMarker ? selectedMarker.borderColor || '#ffffff' : (activeStyle.borderColor || '#ffffff');
   const activeEndPointStyle = selectedMarker ? selectedMarker.endPointStyle || 'none' : (activeStyle.endPointStyle || 'none');
   const activeLineWidth = selectedMarker ? (selectedMarker.lineWidth !== undefined ? selectedMarker.lineWidth : 3) : (activeStyle.lineWidth !== undefined ? activeStyle.lineWidth : 3);
+  const activeDirectionLineOpacity = selectedMarker ? Math.round(Math.max(0, Math.min(1, selectedMarker.directionLineOpacity ?? 0.85)) * 100) : Math.round(Math.max(0, Math.min(1, (activeStyle as any).directionLineOpacity ?? 0.85)) * 100);
+  const activeDirectionLineFadeStart = selectedMarker ? Math.max(0, Math.min(95, selectedMarker.directionLineFadeStartPercent ?? 60)) : Math.max(0, Math.min(95, (activeStyle as any).directionLineFadeStartPercent ?? 60));
   const activeTitle = selectedMarker ? selectedMarker.title : '';
   const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
@@ -2457,6 +2459,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       max="15"
                       value={activeLineWidth}
                       onChange={(e) => handlePropChange('lineWidth', Number(e.target.value))}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-[#181d28] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mt-2">
+                      <span>{isUa ? 'Непрозорість лінії' : 'Line opacity'}</span>
+                      <span className="font-mono text-blue-500">{activeDirectionLineOpacity}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={activeDirectionLineOpacity}
+                      onChange={(e) => handlePropChange('directionLineOpacity', Number(e.target.value) / 100)}
+                      className="w-full h-1.5 bg-slate-200 dark:bg-[#181d28] rounded-lg appearance-none cursor-pointer accent-blue-500"
+                    />
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mt-2">
+                      <span>{isUa ? 'Початок згасання' : 'Fade starts at'}</span>
+                      <span className="font-mono text-blue-500">{activeDirectionLineFadeStart}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="95"
+                      step="5"
+                      value={activeDirectionLineFadeStart}
+                      onChange={(e) => handlePropChange('directionLineFadeStartPercent', Number(e.target.value))}
                       className="w-full h-1.5 bg-slate-200 dark:bg-[#181d28] rounded-lg appearance-none cursor-pointer accent-blue-500"
                     />
                   </div>

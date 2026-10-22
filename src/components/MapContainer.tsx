@@ -312,7 +312,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   useEffect(() => { movementMarkersRef.current = markers; }, [markers]);
   useEffect(() => { onUpdateMarkerMovementRef.current = onUpdateMarker; }, [onUpdateMarker]);
   const endMarkersRef = useRef<{ [id: string]: L.Marker }>({});
-  const movementDirectionLinesRef = useRef<{ [id: string]: L.Polyline }>({});
+  const movementDirectionLinesRef = useRef<{ [id: string]: L.LayerGroup }>({});
   const endEtaMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const completedMovementTargetsRef = useRef<Set<string>>(new Set());
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
@@ -3208,6 +3208,53 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     });
 
 
+    const updateMovementDirectionLine = (
+      id: string,
+      start: L.LatLngExpression,
+      end: L.LatLngExpression,
+      color: string,
+      width: number,
+      opacity: number,
+      fadeStartPercent: number
+    ) => {
+      const startPoint = L.latLng(start as L.LatLngExpression);
+      const endPoint = L.latLng(end as L.LatLngExpression);
+      const maxOpacity = Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : 0.85));
+      const fadeStart = Math.max(0, Math.min(95, Number.isFinite(fadeStartPercent) ? fadeStartPercent : 60));
+      let group = movementDirectionLinesRef.current[id];
+      if (!group) {
+        group = L.layerGroup().addTo(map);
+        movementDirectionLinesRef.current[id] = group;
+      } else {
+        group.clearLayers();
+        if (!map.hasLayer(group)) group.addTo(map);
+      }
+      const segments = 24;
+      for (let i = 0; i < segments; i++) {
+        const t0 = i / segments;
+        const t1 = (i + 1) / segments;
+        const opacityAt = (t: number) => t <= fadeStart / 100
+          ? maxOpacity
+          : maxOpacity * Math.max(0, 1 - (t - fadeStart / 100) / Math.max(0.001, 1 - fadeStart / 100));
+        const p0: [number, number] = [
+          startPoint.lat + (endPoint.lat - startPoint.lat) * t0,
+          startPoint.lng + (endPoint.lng - startPoint.lng) * t0,
+        ];
+        const p1: [number, number] = [
+          startPoint.lat + (endPoint.lat - startPoint.lat) * t1,
+          startPoint.lng + (endPoint.lng - startPoint.lng) * t1,
+        ];
+        L.polyline([p0, p1], {
+          color,
+          weight: Math.max(1, Math.min(15, width || 3)),
+          opacity: (opacityAt(t0) + opacityAt(t1)) / 2,
+          lineCap: 'round',
+          interactive: false,
+          pane: 'overlayPane',
+        }).addTo(group);
+      }
+    };
+
     // 2. Add or update current markers
     markers.forEach((markerData) => {
       if (!markerData || isNaN(Number(markerData.lat)) || isNaN(Number(markerData.lng))) {
@@ -3315,6 +3362,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       // A moving or selected marker always gets a separate, editable destination handle in front of it.
       // This keeps the route target visible in front of the icon instead of hiding it under the icon.
       const hasEndHandle =
+        id === selectedMarkerId ||
         markerData.movementEnabled === true ||
         endPointStyle === 'explosion' ||
         endPointStyle === 'line' ||
@@ -3604,26 +3652,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         // Draw the configured direction/course line from the icon to its destination handle.
         // It follows the marker and respects the user's line-width setting.
         if (endPointStyle === 'line') {
-          const directionLineOptions: L.PolylineOptions = {
-            color: polylineColor,
-            weight: Math.max(1, Math.min(15, Number(markerData.lineWidth) || 3)),
-            opacity: 0.88,
-            dashArray: '6, 5',
-            lineCap: 'round',
-            interactive: false,
-            pane: 'overlayPane',
-          };
-          const directionLine = movementDirectionLinesRef.current[id];
-          if (directionLine) {
-            directionLine.setLatLngs([[currentLivePos.lat, currentLivePos.lng], [finalEndLat, finalEndLng]]);
-            directionLine.setStyle(directionLineOptions);
-            if (!map.hasLayer(directionLine)) directionLine.addTo(map);
-          } else {
-            movementDirectionLinesRef.current[id] = L.polyline(
-              [[currentLivePos.lat, currentLivePos.lng], [finalEndLat, finalEndLng]],
-              directionLineOptions
-            ).addTo(map);
-          }
+          updateMovementDirectionLine(
+            id,
+            [currentLivePos.lat, currentLivePos.lng],
+            [finalEndLat, finalEndLng],
+            polylineColor,
+            Number(markerData.lineWidth) || 3,
+            Number(markerData.directionLineOpacity ?? 0.85),
+            Number(markerData.directionLineFadeStartPercent ?? 60)
+          );
         } else if (movementDirectionLinesRef.current[id]) {
           movementDirectionLinesRef.current[id].remove();
           delete movementDirectionLinesRef.current[id];
@@ -3651,7 +3688,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
-          movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
+          if (endPointStyle === 'line') updateMovementDirectionLine(id, [liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng], polylineColor, Number(markerData.lineWidth) || 3, Number(markerData.directionLineOpacity ?? 0.85), Number(markerData.directionLineFadeStartPercent ?? 60));
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);
@@ -3687,7 +3724,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const endPosition = e.target.getLatLng();
           if (!endPosition || isNaN(endPosition.lat) || isNaN(endPosition.lng)) return;
           const liveAnchor = markersRef.current[id]?.getLatLng() || L.latLng(lat, lng);
-          movementDirectionLinesRef.current[id]?.setLatLngs([[liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng]]);
+          if (endPointStyle === 'line') updateMovementDirectionLine(id, [liveAnchor.lat, liveAnchor.lng], [endPosition.lat, endPosition.lng], polylineColor, Number(markerData.lineWidth) || 3, Number(markerData.directionLineOpacity ?? 0.85), Number(markerData.directionLineFadeStartPercent ?? 60));
           const dy = endPosition.lat - liveAnchor.lat;
           const dx = endPosition.lng - liveAnchor.lng;
           let angleDeg = Math.atan2(dx, dy) * (180 / Math.PI);

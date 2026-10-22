@@ -35,6 +35,8 @@ export interface CustomMarker {
   borderColor?: string;
   endPointStyle?: 'arrow' | 'dot' | 'line' | 'explosion' | 'none';
   lineWidth?: number; // thickness of the dividing/direction line in px (e.g. 1 - 15)
+  directionLineOpacity?: number; // maximum opacity for the direction line (0-1)
+  directionLineFadeStartPercent?: number; // point along the line where fading begins (0-95)
   size: number;
   rotation: number; // in degrees (0 - 359)
   iconType: string; // 'arrow' | 'car' | 'truck' | 'plane' | 'boat' | 'person' | 'pin' | 'circle' | 'star' | 'tank' | 'soldier' | 'drone' | 'explosion'
