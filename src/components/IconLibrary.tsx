@@ -446,7 +446,9 @@ export function createMarkerHtml(
   zoneColor?: string,
   zoneSize?: number,
   labelFontSize: number = 11,
-  labelOrientation: 'horizontal' | 'rotate' = 'horizontal'
+  labelOrientation: 'horizontal' | 'rotate' = 'horizontal',
+  showIconTrail: boolean = false,
+  iconTrailLength: number = 85
 ): string {
   let innerContent = '';
   const monitorwarAssetUrl = MONITORWAR_ICON_ASSETS[iconType] || '';
@@ -519,6 +521,13 @@ export function createMarkerHtml(
     `;
   }
 
+  const trailColor = color && color !== 'transparent' && color !== 'none' ? color : '#ffffff';
+  const trailOutline = borderColor && borderColor !== 'transparent' && borderColor !== 'none'
+    ? `drop-shadow(0 0 0.7px ${borderColor}) drop-shadow(0 0 0.7px ${borderColor})`
+    : '';
+  const trailHeight = Math.max(30, Math.min(160, Number(iconTrailLength) || 85));
+  const iconTrailHtml = showIconTrail ? `<div aria-hidden="true" style="position:absolute;left:50%;top:50%;transform:translateX(-50%);width:2.5px;height:${trailHeight}%;background:${trailColor};filter:${trailOutline || 'none'};border-radius:2px;z-index:0;pointer-events:none;"></div>` : '';
+
   // Label styling: ensure text is always readable (never inverted / upside-down)
   let labelHtml = '';
   if (labelVisible) {
@@ -556,8 +565,9 @@ export function createMarkerHtml(
       ${zoneHtml}
 
       <!-- Main rotating icon container (rotates ONLY the icon visual) -->
-      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; filter: ${borderColor && borderColor !== 'transparent' && borderColor !== 'none' ? `drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 2px 4px rgba(0,0,0,0.3))` : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'}; transition: transform 0.1s ease; z-index: 2; position: relative;">
-        ${innerContent}
+      <div style="transform: rotate(${rotation}deg); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: visible; filter: ${borderColor && borderColor !== 'transparent' && borderColor !== 'none' ? `drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 0 0.65px ${borderColor}) drop-shadow(0 2px 4px rgba(0,0,0,0.3))` : 'drop-shadow(0 2px 4px rgba(0,0,0,0.3))'}; transition: transform 0.1s ease; z-index: 2; position: relative;">
+        ${iconTrailHtml}
+        <div style="position:relative;width:100%;height:100%;z-index:2;display:flex;align-items:center;justify-content:center;">${innerContent}</div>
       </div>
 
       <!-- Label placed outside rotation container so letters are always upright, readable, and never upside down -->

@@ -4,6 +4,8 @@ export interface IconPreset {
   borderColor?: string;
   size?: number;
   rotation?: number;
+  showIconTrail?: boolean;
+  iconTrailLength?: number;
   draggable?: boolean;
   labelVisible?: boolean;
   labelFontSize?: number;

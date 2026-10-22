@@ -1147,6 +1147,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const activeTitle = selectedMarker ? selectedMarker.title : '';
   const activeSize = selectedMarker ? selectedMarker.size : (activeStyle.size || 32);
   const activeRotation = selectedMarker ? selectedMarker.rotation : (activeStyle.rotation || 0);
+  const activeShowIconTrail = selectedMarker ? !!selectedMarker.showIconTrail : !!activeStyle.showIconTrail;
+  const activeIconTrailLength = selectedMarker ? (selectedMarker.iconTrailLength ?? 85) : (activeStyle.iconTrailLength ?? 85);
   const activeMovementSpeed = selectedMarker
     ? (selectedMarker.movementSpeedKmh !== undefined ? selectedMarker.movementSpeedKmh : 100)
     : (activeStyle.movementSpeedKmh !== undefined ? activeStyle.movementSpeedKmh : 100);
@@ -2598,6 +2600,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onChange={(e) => handlePropChange('size', Number(e.target.value))}
                     className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500"
                   />
+                </div>
+
+                {/* Optional line extending behind the icon */}
+                <div className={`rounded-xl border p-2.5 space-y-2 ${theme === 'light' ? 'border-slate-200 bg-slate-50' : 'border-white/10 bg-white/[0.03]'}`}>
+                  <label className="flex items-center justify-between gap-2 cursor-pointer text-[10px] font-bold text-slate-500 uppercase">
+                    <span>{isUa ? 'Лінія за іконкою' : 'Line behind icon'}</span>
+                    <input type="checkbox" checked={activeShowIconTrail} onChange={(e) => handlePropChange('showIconTrail', e.target.checked)} className="w-3.5 h-3.5 rounded border-slate-300 dark:border-white/10 text-blue-500 focus:ring-blue-500" />
+                  </label>
+                  {activeShowIconTrail && (
+                    <div>
+                      <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 uppercase mb-1">
+                        <span>{isUa ? 'Довжина лінії' : 'Line length'}</span>
+                        <span className="font-mono text-blue-500">{activeIconTrailLength}%</span>
+                      </div>
+                      <input type="range" min="30" max="160" step="5" value={activeIconTrailLength} onChange={(e) => handlePropChange('iconTrailLength', Number(e.target.value))} className="w-full h-1 bg-slate-200 dark:bg-[#181d28] rounded appearance-none cursor-pointer accent-blue-500" />
+                      <p className="text-[9px] text-slate-400">{isUa ? 'Колір і обводка лінії відповідають іконці.' : 'The line inherits the icon fill and outline colors.'}</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Rotation slider */}

@@ -3266,7 +3266,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       const { 
         id, title, color, borderColor, endPointStyle, size, 
         iconType, draggable, labelVisible, customIconUrl, hasZone, zoneColor, zoneSize,
-        labelFontSize, labelOrientation
+        labelFontSize, labelOrientation, showIconTrail, iconTrailLength
       } = markerData;
       const lat = Number(markerData.lat);
       const lng = Number(markerData.lng);
@@ -3292,7 +3292,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         zoneColor,
         zoneSize,
         labelFontSize,
-        labelOrientation
+        labelOrientation,
+        showIconTrail,
+        iconTrailLength
       );
 
       // Create a Leaflet custom DivIcon
