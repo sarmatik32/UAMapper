@@ -3719,7 +3719,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
               ...movementMarkersRef.current[mIdx],
               endLat: endPosition.lat,
               endLng: endPosition.lng,
-              rotation: Math.round(angleDeg % 360),
+              rotation: ((Math.round(angleDeg - 45) % 360) + 360) % 360,
             };
           }
           completedMovementTargetsRef.current.delete(id);
@@ -3732,7 +3732,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           if (mainMarkerEl) {
             const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]');
             if (rotatingDiv) {
-              (rotatingDiv as HTMLElement).style.transform = `rotate(${Math.round(angleDeg % 360)}deg)`;
+              (rotatingDiv as HTMLElement).style.transform = `rotate(${((angleDeg - 45) % 360 + 360) % 360}deg)`;
             }
           }
         });
@@ -4027,7 +4027,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         const mainMarkerEl = markerInstance.getElement();
         if (mainMarkerEl) {
           const rotatingDiv = mainMarkerEl.querySelector('div[style*="transform: rotate"]') as HTMLElement | null;
-          if (rotatingDiv) rotatingDiv.style.transform = `rotate(${Math.round(movementBearing % 360)}deg)`;
+          if (rotatingDiv) rotatingDiv.style.transform = `rotate(${((movementBearing - 45) % 360 + 360) % 360}deg)`;
         }
 
         // Live ETA label at the destination point.
