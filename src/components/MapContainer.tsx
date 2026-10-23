@@ -303,7 +303,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   liveIconMapping = {},
   iconPresets = {},
   customLibrary = [],
-  iconMapping = {},
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
