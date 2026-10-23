@@ -3,6 +3,7 @@ import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
 import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
 import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
+import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -12,6 +13,9 @@ interface LiveThreatsLayerProps {
   showTrails?: boolean;
   language: Language;
   onSelectThreat?: (threat: NeptunThreat) => void;
+  iconMapping?: Record<string, string>;
+  iconPresets?: Record<string, import('../types').IconPreset>;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
   iconMapping?: Record<string, string>;
   iconPresets?: Record<string, import('../types').IconPreset>;
   customLibrary?: { id: string; name: string; dataUrl: string }[];
@@ -121,15 +125,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
               fillOpacity: 1,
               weight: 1.5,
               interactive: false,
-              pane: 'liveThreatsTrailsPane',
-            });
-            layerGroupRef.current?.addLayer(dot);
-          });
-        }
-      }
-
-      // Render LIVE objects with local silhouettes from the supplied icon archive.
-      const normalizedType = normalizeThreatType(threat.type);
+              pane: 'liveThreat      const normalizedType = normalizeThreatType(threat.type);
       const liveIconId = iconMapping[normalizedType] || iconMapping[threat.type] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || (
         threat.type === 'uav' ? 'monitorwar-drone-1'
         : threat.type === 'fpv' ? 'monitorwar-drone-2'
@@ -146,6 +142,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const iconAsset = customIcon?.dataUrl || MONITORWAR_ICON_ASSETS[liveIconId];
       const iconSvg = iconAsset
         ? `<img src="${iconAsset}" alt="" draggable="false" style="width:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
+        : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;idth:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
         : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
 
       // 3. Rotation style if heading is provided
@@ -178,8 +175,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
           ${courseIndicatorHtml}
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
-          <div class="relative w-8 h-8 rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" 
-               style="background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);">
+          <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" style="width:${Math.min(44, Math.max(28, iconSize))}px;height:${Math.min(44, Math.max(28, iconSize))}px;background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);" 
+               >
             <div style="${rotationTransform} transition: transform 0.3s ease;">
               ${iconSvg}
             </div>
@@ -197,8 +194,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const divIcon = L.divIcon({
         html,
         className: 'neptun-live-threat-marker',
-        iconSize: [36, 48],
-        iconAnchor: [18, 20],
+        iconSize: [Math.max(36, Math.min(52, iconSize + 8)), 48],
+        iconAnchor: [Math.max(18, Math.min(26, (iconSize + 8) / 2)), 20],
       });
 
       const marker = L.marker([threat.lat, threat.lon], {
@@ -238,8 +235,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
               <span class="neptun-live-target-card__value">${headingText}</span>
             </div>
             <div>
-              <span class="text-slate-500 block uppercase">${isUa ? 'Швидкість' : 'Speed'}</span>
-              <span class="text-slate-200 font-bold">${speedKmh ? `${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '—'}</span>
+              <span class="neptun-live-target-card__label">${isUa ? 'Швидкість' : 'Speed'}</span>
+              <span class="neptun-live-target-card__value">${speedKmh ? `${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '—'}</span>
             </div>
             ${threat.sourceCount ? `
               <div>
