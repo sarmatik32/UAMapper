@@ -6667,7 +6667,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         iconMapping={liveIconMapping}
         iconPresets={iconPresets}
         customLibrary={customLibrary}
-        iconMapping={iconMapping}
       />
 
       {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}
