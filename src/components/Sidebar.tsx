@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
-import { ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { simplifyLatLngPath } from '../utils/smoothing';

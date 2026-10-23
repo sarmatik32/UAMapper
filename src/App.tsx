@@ -10,6 +10,7 @@ import { LiveModeToggle } from './components/LiveModeToggle';
 import { LiveMessagesFeed } from './components/LiveMessagesFeed';
 import { fetchActiveAlerts } from './utils/alertsService';
 import { fetchNeptunThreats, fetchNeptunMessages } from './utils/neptunService';
+import { migrateLiveIconMapping } from './utils/liveIconConfig';
 import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements';
 import { safeSetItem } from './utils/storage';
 import { preloadFontEmbedCSS } from './utils/mapFonts';
