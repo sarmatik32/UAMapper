@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
-import { renderLiveIconInnerHtml } from '../utils/liveIconConfig';
-import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
+import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType, renderLiveIconInnerHtml } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -129,23 +128,18 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       }
 
       const normalizedType = normalizeThreatType(threat.type);
-      const liveIconId = iconMapping[normalizedType] || iconMapping[threat.type] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || (
-        threat.type === 'uav' ? 'monitorwar-drone-1'
-        : threat.type === 'fpv' ? 'monitorwar-drone-2'
-        : threat.type === 'mig31k' ? 'monitorwar-aircraft-1'
-        : threat.type === 'recon' ? 'monitorwar-aircraft-2'
-        : threat.type === 'missile' || threat.type === 'cruise_missile' ? 'monitorwar-missile-1'
-        : threat.type === 'ballistic' ? 'monitorwar-missile-2'
-        : 'monitorwar-target'
-      );
+      const liveIconId = iconMapping[normalizedType]
+        || iconMapping[String(threat.type || '').trim().toLowerCase()]
+        || DEFAULT_LIVE_ICON_MAPPING[normalizedType]
+        || 'target';
       const iconPreset = iconPresets[liveIconId] || iconPresets[normalizedType] || {};
       const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
       const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
       const iconSvg = renderLiveIconInnerHtml(
         liveIconId,
-        { ...iconPreset, size: iconSize, rotation: iconRotation },
+        { ...iconPreset, size: iconSize, rotation: iconRotation, color: iconPreset.color || '#ffffff', borderColor: '#050505', lineWidth: 1.5 },
         customLibrary,
-        visuals.color
+        '#ffffff'
       );
 
       // 3. Rotation style if heading is provided
@@ -178,9 +172,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
           ${courseIndicatorHtml}
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
-          <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" style="width:${Math.min(44, Math.max(28, iconSize))}px;height:${Math.min(44, Math.max(28, iconSize))}px;background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);" 
-               >
-            <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(64, iconSize)}px;height:${Math.min(64, iconSize)}px;">
+          <div data-live-icon-id="${liveIconId}" class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);overflow:hidden;">
+            <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(42, Math.max(24, iconSize))}px;height:${Math.min(42, Math.max(24, iconSize))}px;display:flex;align-items:center;justify-content:center;">
               ${iconSvg}
             </div>
             ${countBadgeHtml}
@@ -197,8 +190,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const divIcon = L.divIcon({
         html,
         className: 'neptun-live-threat-marker',
-        iconSize: [Math.max(36, Math.min(76, iconSize + 12)), 54],
-        iconAnchor: [Math.max(18, Math.min(38, (iconSize + 12) / 2)), 25],
+        iconSize: [Math.max(44, Math.min(84, iconSize + 20)), 60],
+        iconAnchor: [Math.max(22, Math.min(42, (iconSize + 20) / 2)), 28],
       });
 
       const marker = L.marker([threat.lat, threat.lon], {
