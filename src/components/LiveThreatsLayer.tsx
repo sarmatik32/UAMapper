@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
 import { DEFAULT_LIVE_ICON_MAPPING, LEGACY_LIVE_ICON_ID_MAP, normalizeThreatType, renderLiveIconInnerHtml } from '../utils/liveIconConfig';
-import { ICON_TYPES } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_TYPES } from './IconLibrary';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -78,7 +78,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const visuals = getThreatVisuals(threat.type);
       const heading = threat.heading ?? threat.velocity?.bearingDeg ?? null;
       const speedKmh = threat.velocity?.speedKmh ? Math.round(threat.velocity.speedKmh) : null;
-      const count = threat.count && threat.count > 1 ? threat.count : null;
+      const count = Number.isFinite(Number(threat.count)) && Number(threat.count) > 0 ? Math.round(Number(threat.count)) : 1;
       const compassDir = heading !== null ? getHeadingCompass(heading, language) : '';
 
       // 1. Draw flight trail if available (strictly on top of occupied territories & alerts)
@@ -133,7 +133,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const rawType = String(threat.type || '').trim().toLowerCase();
       const requestedIconId = iconMapping[normalizedType] || iconMapping[rawType] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
       const migratedIconId = LEGACY_LIVE_ICON_ID_MAP[requestedIconId] || requestedIconId;
-      const knownBuiltinIcon = ICON_TYPES.some((icon) => icon.id === migratedIconId);
+      const knownBuiltinIcon = ICON_TYPES.some((icon) => icon.id === migratedIconId) || MONITORWAR_ICON_TYPES.some((icon) => icon.id === migratedIconId);
       const knownCustomIcon = customLibrary.some((icon) => icon.id === migratedIconId);
       const liveIconId = knownBuiltinIcon || knownCustomIcon ? migratedIconId : DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
       const iconPreset = iconPresets[liveIconId] || iconPresets[requestedIconId] || {};
@@ -167,9 +167,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
         `
         : '';
 
-      const countBadgeHtml = count
-        ? `<div class="absolute -top-2 -right-2 bg-red-600 text-white font-mono font-black text-[9px] px-1.5 py-0.5 rounded-full border border-white shadow-lg leading-none z-10">${count}x</div>`
-        : '';
+      const countBadgeHtml = `<div class="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center bg-red-600 text-white font-mono font-black text-[10px] px-1 rounded-full border-2 border-white shadow-[0_2px_8px_rgba(0,0,0,.9)] leading-none z-50 pointer-events-none">${count}x</div>`;
 
       const localityLabel = threat.locality || threat.title || (isUa ? 'Ціль' : 'Target');
       const speedLabel = speedKmh ? ` • ${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '';
@@ -184,7 +182,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
           <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1"
-               style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);overflow:hidden;">
+               style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);overflow:visible;">
             <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(42, Math.max(24, iconSize))}px;height:${Math.min(42, Math.max(24, iconSize))}px;display:flex;align-items:center;justify-content:center;">
               ${iconSvg}
             </div>
