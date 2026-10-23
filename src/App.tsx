@@ -236,7 +236,9 @@ export default function App() {
   const [liveIconMapping, setLiveIconMapping] = useState<Record<string, string>>(() => {
     try {
       const saved = localStorage.getItem('uamapper_live_icon_mapping');
-      return saved ? JSON.parse(saved) : {};
+      const migrated = migrateLiveIconMapping(saved ? JSON.parse(saved) : {});
+      localStorage.setItem('uamapper_live_icon_mapping', JSON.stringify(migrated));
+      return migrated;
     } catch {
       return {};
     }

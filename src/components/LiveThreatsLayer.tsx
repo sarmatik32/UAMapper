@@ -1,7 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
-import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType, renderLiveIconInnerHtml } from '../utils/liveIconConfig';
+import { DEFAULT_LIVE_ICON_MAPPING, LEGACY_LIVE_ICON_ID_MAP, normalizeThreatType, renderLiveIconInnerHtml } from '../utils/liveIconConfig';
+import { ICON_TYPES } from './IconLibrary';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -130,11 +131,12 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       // Render LIVE objects with local silhouettes from the supplied icon archive.
       const normalizedType = normalizeThreatType(threat.type);
       const rawType = String(threat.type || '').trim().toLowerCase();
-      const liveIconId = iconMapping[normalizedType]
-        || iconMapping[rawType]
-        || DEFAULT_LIVE_ICON_MAPPING[normalizedType]
-        || DEFAULT_LIVE_ICON_MAPPING.other;
-      const iconPreset = iconPresets[liveIconId] || {};
+      const requestedIconId = iconMapping[normalizedType] || iconMapping[rawType] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
+      const migratedIconId = LEGACY_LIVE_ICON_ID_MAP[requestedIconId] || requestedIconId;
+      const knownBuiltinIcon = ICON_TYPES.some((icon) => icon.id === migratedIconId);
+      const knownCustomIcon = customLibrary.some((icon) => icon.id === migratedIconId);
+      const liveIconId = knownBuiltinIcon || knownCustomIcon ? migratedIconId : DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
+      const iconPreset = iconPresets[liveIconId] || iconPresets[requestedIconId] || {};
       const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
       const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
       const iconSvg = renderLiveIconInnerHtml(
@@ -182,8 +184,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
           <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1"
-               style="width:${Math.min(44, Math.max(28, iconSize))}px;height:${Math.min(44, Math.max(28, iconSize))}px;background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);">
-            <div style="${rotationTransform} transition: transform 0.3s ease;">
+               style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);overflow:hidden;">
+            <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(42, Math.max(24, iconSize))}px;height:${Math.min(42, Math.max(24, iconSize))}px;display:flex;align-items:center;justify-content:center;">
               ${iconSvg}
             </div>
             ${countBadgeHtml}

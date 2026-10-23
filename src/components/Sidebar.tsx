@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
-import { ICON_TYPES, MONITORWAR_ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+import { ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { simplifyLatLngPath } from '../utils/smoothing';
@@ -3358,8 +3358,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onChange={(event) => onUpdateLiveIconMapping?.(item.id, event.target.value)}
                             className="min-w-0 w-full bg-slate-900 text-slate-100 text-[10px] rounded-md border border-white/10 px-1.5 py-1">
                             <option value="">{isUa ? 'За замовчуванням' : 'Default'}</option>
-                            {[...MONITORWAR_ICON_TYPES, ...ICON_TYPES].map((icon) => (
+                            {ICON_TYPES.map((icon) => (
                               <option key={icon.id} value={icon.id}>{isUa ? icon.nameUa : icon.nameEn}</option>
+                            ))}
+                            {customLibrary.map((icon) => (
+                              <option key={"custom-" + icon.id} value={icon.id}>
+                                {isUa ? `${icon.name} (власна)` : `${icon.name} (custom)`}
+                              </option>
                             ))}
                           </select>
                         </label>

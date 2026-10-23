@@ -11,28 +11,46 @@ export interface LiveThreatCategory {
 }
 
 export const LIVE_THREAT_CATEGORIES: LiveThreatCategory[] = [
-  { id: 'uav', labelUa: 'БпЛА (Шахед / Герань)', labelEn: 'UAV (Shahed / Geran)', fallbackIcon: 'monitorwar-drone-1', defaultColor: '#ef4444', defaultBorderColor: '#ffffff' },
-  { id: 'fpv', labelUa: 'FPV-дрон', labelEn: 'FPV Drone', fallbackIcon: 'monitorwar-drone-2', defaultColor: '#f59e0b', defaultBorderColor: '#ffffff' },
-  { id: 'mig31k', labelUa: 'МіГ-31К (Кинджал)', labelEn: 'MiG-31K (Kinzhal)', fallbackIcon: 'monitorwar-aircraft-1', defaultColor: '#dc2626', defaultBorderColor: '#ffffff' },
-  { id: 'missile', labelUa: 'Ракета (Загальна)', labelEn: 'Missile (General)', fallbackIcon: 'monitorwar-missile-1', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
-  { id: 'cruise_missile', labelUa: 'Крилата ракета (Х-101 / Калібр)', labelEn: 'Cruise Missile', fallbackIcon: 'missile-cruise', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
-  { id: 'ballistic', labelUa: 'Балістика (Іскандер-М / KN-23)', labelEn: 'Ballistic Missile', fallbackIcon: 'monitorwar-missile-2', defaultColor: '#b91c1c', defaultBorderColor: '#ffffff' },
-  { id: 'recon', labelUa: 'Розвідник (Орлан / ZALA / Supercam)', labelEn: 'Recon UAV (Orlan/ZALA)', fallbackIcon: 'monitorwar-aircraft-2', defaultColor: '#06b6d4', defaultBorderColor: '#ffffff' },
-  { id: 'aviation', labelUa: 'Тактична авіація (Су-34 / Су-35)', labelEn: 'Tactical Aviation', fallbackIcon: 'plane', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
-  { id: 'other', labelUa: 'Невідома ціль / інше', labelEn: 'Unknown Target / Other', fallbackIcon: 'monitorwar-target', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
+  { id: 'uav', labelUa: 'БпЛА / Шахед', labelEn: 'UAV / Shahed', fallbackIcon: 'uav-kamikaze', defaultColor: '#ef4444', defaultBorderColor: '#ffffff' },
+  { id: 'fpv', labelUa: 'FPV-дрон', labelEn: 'FPV drone', fallbackIcon: 'drone', defaultColor: '#f59e0b', defaultBorderColor: '#ffffff' },
+  { id: 'mig31k', labelUa: 'МіГ-31К / Кинджал', labelEn: 'MiG-31K / Kinzhal', fallbackIcon: 'plane', defaultColor: '#dc2626', defaultBorderColor: '#ffffff' },
+  { id: 'missile', labelUa: 'Ракета (тип не визначено)', labelEn: 'Missile (unspecified)', fallbackIcon: 'missile-cruise', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
+  { id: 'cruise_missile', labelUa: 'Крилата ракета', labelEn: 'Cruise missile', fallbackIcon: 'missile-cruise', defaultColor: '#e11d48', defaultBorderColor: '#ffffff' },
+  { id: 'ballistic', labelUa: 'Балістична ракета', labelEn: 'Ballistic missile', fallbackIcon: 'missile-ballistic', defaultColor: '#b91c1c', defaultBorderColor: '#ffffff' },
+  { id: 'recon', labelUa: 'Розвідувальний БпЛА', labelEn: 'Reconnaissance UAV', fallbackIcon: 'uav-recon', defaultColor: '#06b6d4', defaultBorderColor: '#ffffff' },
+  { id: 'aviation', labelUa: 'Тактична авіація', labelEn: 'Tactical aircraft', fallbackIcon: 'standard-aircraft', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
+  { id: 'other', labelUa: 'Інша / невідома ціль', labelEn: 'Other / unknown target', fallbackIcon: 'target', defaultColor: '#f97316', defaultBorderColor: '#ffffff' },
 ];
-
 export const DEFAULT_LIVE_ICON_MAPPING: Record<string, string> = {
-  uav: 'monitorwar-drone-1',
-  fpv: 'monitorwar-drone-2',
-  mig31k: 'monitorwar-aircraft-1',
-  missile: 'monitorwar-missile-1',
-  cruise_missile: 'monitorwar-missile-1',
-  ballistic: 'monitorwar-missile-2',
-  recon: 'monitorwar-aircraft-2',
-  aviation: 'monitorwar-aircraft-1',
-  other: 'monitorwar-target',
+  uav: 'uav-kamikaze',
+  fpv: 'drone',
+  mig31k: 'plane',
+  missile: 'missile-cruise',
+  cruise_missile: 'missile-cruise',
+  ballistic: 'missile-ballistic',
+  recon: 'uav-recon',
+  aviation: 'standard-aircraft',
+  other: 'target',
 };
+export const LEGACY_LIVE_ICON_ID_MAP: Record<string, string> = {
+  'monitorwar-drone-1': 'uav-kamikaze',
+  'monitorwar-drone-2': 'drone',
+  'monitorwar-aircraft-1': 'plane',
+  'monitorwar-aircraft-2': 'uav-recon',
+  'monitorwar-missile-1': 'missile-cruise',
+  'monitorwar-missile-2': 'missile-ballistic',
+  'monitorwar-target': 'target',
+};
+
+export function migrateLiveIconMapping(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const migrated: Record<string, string> = {};
+  for (const [type, rawIconId] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof rawIconId !== 'string' || !rawIconId.trim()) continue;
+    migrated[type] = LEGACY_LIVE_ICON_ID_MAP[rawIconId] || rawIconId;
+  }
+  return migrated;
+}
 
 export const LEGACY_ICON_URL_MAP: Record<string, string> = {
   '/img/Шахед.png': '/img/shahed.png',
@@ -71,18 +89,16 @@ export const DEFAULT_UPLOADED_ICONS = [
 export function normalizeThreatType(rawType: string): string {
   const norm = String(rawType || '').trim().toLowerCase().replace(/[ё]/g, 'е');
   const compact = norm.replace(/[\s_-]+/g, '');
-  if (['cruisemissile', 'missilecruise', 'крилатаракета', 'х101', 'калибр'].includes(compact) || norm === 'cruise_missile' || norm === 'missile_cruise') return 'cruise_missile';
-  if (['ballistic', 'ballisticmissile', 'балістика', 'баллистика', 'іскандер', 'искандер'].includes(compact) || norm === 'ballistic_missile') return 'ballistic';
+  if (['cruisemissile', 'missilecruise', 'крилатаракета', 'х101', 'х555', 'калибр', 'калібр'].includes(compact) || norm === 'cruise_missile' || norm === 'missile_cruise') return 'cruise_missile';
+  if (['ballistic', 'ballisticmissile', 'балістика', 'баллистика', 'іскандер', 'искандер', 'kn23'].includes(compact) || norm === 'ballistic_missile') return 'ballistic';
   if (['uav', 'shahed', 'geran', 'бпла', 'дрон', 'шахед', 'герань', 'камікадзе', 'камикадзе'].includes(compact)) return 'uav';
   if (['fpv', 'fpvдрон', 'квадрокоптер'].includes(compact)) return 'fpv';
   if (['mig31k', 'кинжал', 'кинджал'].includes(compact) || norm === 'mig-31k' || norm === 'mig_31k') return 'mig31k';
-  if (['recon', 'розвідник', 'разведчик', 'розвідувальнийбпла'].includes(compact)) return 'recon';
+  if (['recon', 'розвідник', 'разведчик', 'розвідувальнийбпла', 'разведывательныйбпла'].includes(compact)) return 'recon';
   if (['aviation', 'plane', 'aircraft', 'літак', 'самолет', 'авіація', 'авиация'].includes(compact)) return 'aviation';
   if (['missile', 'ракета', 'ракетаобщая'].includes(compact)) return 'missile';
-  if (!norm) return 'other';
-  return norm;
+  return norm || 'other';
 }
-
 export function escapeAttr(value: string): string {
   return value
     .replace(/&/g, '&amp;')
