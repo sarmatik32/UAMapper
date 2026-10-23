@@ -238,18 +238,18 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
               <span class="neptun-live-target-card__value">${headingText}</span>
             </div>
             <div>
-              <span class="text-slate-500 block uppercase">${isUa ? 'Швидкість' : 'Speed'}</span>
-              <span class="text-slate-200 font-bold">${speedKmh ? `${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '—'}</span>
+              <span class="neptun-live-target-card__label">${isUa ? 'Швидкість' : 'Speed'}</span>
+              <span class="neptun-live-target-card__value">${speedKmh ? `${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '—'}</span>
             </div>
             ${threat.sourceCount ? `
               <div>
-                <span class="text-slate-500 block uppercase">${isUa ? 'Джерел' : 'Sources'}</span>
+                <span class="neptun-live-target-card__label">${isUa ? 'Джерел' : 'Sources'}</span>
                 <span class="neptun-live-target-card__value">${threat.sourceCount}</span>
               </div>
             ` : ''}
             ${timeStr ? `
               <div>
-                <span class="text-slate-500 block uppercase">${isUa ? 'Час' : 'Time'}</span>
+                <span class="neptun-live-target-card__label">${isUa ? 'Час' : 'Time'}</span>
                 <span class="neptun-live-target-card__value">${timeStr}</span>
               </div>
             ` : ''}
