@@ -78,7 +78,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const visuals = getThreatVisuals(threat.type);
       const heading = threat.heading ?? threat.velocity?.bearingDeg ?? null;
       const speedKmh = threat.velocity?.speedKmh ? Math.round(threat.velocity.speedKmh) : null;
-      const count = Number.isFinite(Number(threat.count)) && Number(threat.count) > 0 ? Math.round(Number(threat.count)) : 1;
+      const count = Number.isFinite(Number(threat.count)) && Number(threat.count) >= 2 ? Math.round(Number(threat.count)) : null;
       const compassDir = heading !== null ? getHeadingCompass(heading, language) : '';
 
       // 1. Draw flight trail if available (strictly on top of occupied territories & alerts)
@@ -168,7 +168,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
         `
         : '';
 
-      const countBadgeHtml = `<div class="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center bg-red-600 text-white font-mono font-black text-[10px] px-1 rounded-full border-2 border-white shadow-[0_2px_8px_rgba(0,0,0,.9)] leading-none z-50 pointer-events-none">${count}x</div>`;
+      const countBadgeHtml = count !== null ? `<div class="absolute -top-2 -right-2 min-w-[18px] h-[18px] flex items-center justify-center bg-red-600 text-white font-mono font-black text-[10px] px-1 rounded-full border-2 border-white shadow-[0_2px_8px_rgba(0,0,0,.9)] leading-none z-50 pointer-events-none">${count}x</div>` : "";
 
       const localityLabel = threat.locality || threat.title || (isUa ? 'Ціль' : 'Target');
       const speedLabel = speedKmh ? ` • ${speedKmh} ${isUa ? 'км/г' : 'km/h'}` : '';
