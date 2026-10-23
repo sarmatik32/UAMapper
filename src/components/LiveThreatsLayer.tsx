@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
 import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
+import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -11,6 +12,9 @@ interface LiveThreatsLayerProps {
   showTrails?: boolean;
   language: Language;
   onSelectThreat?: (threat: NeptunThreat) => void;
+  iconMapping?: Record<string, string>;
+  iconPresets?: Record<string, import('../types').IconPreset>;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
 }
 
 export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
@@ -20,6 +24,9 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
   showTrails = true,
   language,
   onSelectThreat,
+  iconMapping = {},
+  iconPresets = {},
+  customLibrary = [],
 }) => {
   const layerGroupRef = useRef<L.LayerGroup | null>(null);
 
@@ -122,21 +129,27 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       }
 
       // Render LIVE objects with local silhouettes from the supplied icon archive.
-      const liveIconId = threat.type === 'uav' ? 'monitorwar-drone-1'
+      const normalizedType = normalizeThreatType(threat.type);
+      const liveIconId = iconMapping[normalizedType] || iconMapping[threat.type] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || (
+        threat.type === 'uav' ? 'monitorwar-drone-1'
         : threat.type === 'fpv' ? 'monitorwar-drone-2'
         : threat.type === 'mig31k' ? 'monitorwar-aircraft-1'
         : threat.type === 'recon' ? 'monitorwar-aircraft-2'
-        : threat.type === 'missile' ? 'monitorwar-missile-1'
-        : threat.type === 'cruise_missile' ? 'monitorwar-missile-1'
+        : threat.type === 'missile' || threat.type === 'cruise_missile' ? 'monitorwar-missile-1'
         : threat.type === 'ballistic' ? 'monitorwar-missile-2'
-        : 'monitorwar-target';
-      const iconAsset = MONITORWAR_ICON_ASSETS[liveIconId];
+        : 'monitorwar-target'
+      );
+      const customIcon = customLibrary.find((item) => item.id === liveIconId);
+      const iconPreset = iconPresets[liveIconId] || iconPresets[normalizedType] || {};
+      const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
+      const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
+      const iconAsset = customIcon?.dataUrl || MONITORWAR_ICON_ASSETS[liveIconId];
       const iconSvg = iconAsset
-        ? `<img src="${iconAsset}" alt="" draggable="false" style="width:24px;height:24px;object-fit:contain;filter:brightness(0) invert(1);display:block;" />`
+        ? `<img src="${iconAsset}" alt="" draggable="false" style="width:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
         : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
 
       // 3. Rotation style if heading is provided
-      const rotationTransform = heading !== null ? `transform: rotate(${heading}deg);` : '';
+      const rotationTransform = `transform: rotate(${(heading ?? 0) + iconRotation}deg);`;
 
       // Directional arrow if heading is available (with black outline for sharp contrast against red zones)
       const courseIndicatorHtml = heading !== null
@@ -200,29 +213,29 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const localityFull = [threat.locality, threat.region].filter(Boolean).join(', ');
 
       const popupHtml = `
-        <div class="p-3 bg-slate-950 text-slate-100 rounded-xl border border-white/15 shadow-2xl min-w-[210px] max-w-[260px] font-sans text-xs">
-          <div class="flex items-center justify-between pb-2 border-b border-white/10 mb-2">
+        <div class="neptun-live-target-card">
+          <div class="neptun-live-target-card__header">
             <div class="flex items-center gap-1.5">
               <span class="w-2.5 h-2.5 rounded-full animate-pulse" style="background-color: ${visuals.color};"></span>
-              <strong class="font-extrabold text-sm text-white">${threat.title}</strong>
+              <strong class="neptun-live-target-card__title">${threat.title}</strong>
               ${count ? `<span class="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 font-mono text-[10px] font-bold">${count}x</span>` : ''}
             </div>
-            <span class="px-1.5 py-0.5 rounded text-[9px] font-mono uppercase font-bold text-slate-400 bg-white/5 border border-white/10">
+            <span class="neptun-live-target-card__badge">
               LIVE
             </span>
           </div>
 
           ${localityFull ? `
-            <div class="mb-1.5 text-slate-300 font-medium flex items-start gap-1">
+            <div class="neptun-live-target-card__location">
               <span>📍</span>
               <span>${localityFull}</span>
             </div>
           ` : ''}
 
-          <div class="grid grid-cols-2 gap-1.5 my-2 p-2 rounded-lg bg-white/5 border border-white/5 font-mono text-[10px]">
+          <div class="neptun-live-target-card__grid">
             <div>
-              <span class="text-slate-500 block uppercase">${isUa ? 'Курс' : 'Course'}</span>
-              <span class="text-slate-200 font-bold">${headingText}</span>
+              <span class="neptun-live-target-card__label">${isUa ? 'Курс' : 'Course'}</span>
+              <span class="neptun-live-target-card__value">${headingText}</span>
             </div>
             <div>
               <span class="text-slate-500 block uppercase">${isUa ? 'Швидкість' : 'Speed'}</span>
@@ -231,19 +244,19 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
             ${threat.sourceCount ? `
               <div>
                 <span class="text-slate-500 block uppercase">${isUa ? 'Джерел' : 'Sources'}</span>
-                <span class="text-emerald-400 font-bold">${threat.sourceCount}</span>
+                <span class="neptun-live-target-card__value">${threat.sourceCount}</span>
               </div>
             ` : ''}
             ${timeStr ? `
               <div>
                 <span class="text-slate-500 block uppercase">${isUa ? 'Час' : 'Time'}</span>
-                <span class="text-slate-200">${timeStr}</span>
+                <span class="neptun-live-target-card__value">${timeStr}</span>
               </div>
             ` : ''}
           </div>
 
           ${threat.explanationShort ? `
-            <p class="text-[11px] text-slate-400 leading-relaxed border-t border-white/5 pt-1.5 mt-1">
+            <p class="neptun-live-target-card__description">
               ${threat.explanationShort}
             </p>
           ` : ''}
@@ -264,7 +277,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
       layerGroupRef.current?.addLayer(marker);
     });
-  }, [map, isLiveMode, threats, showTrails, language, onSelectThreat]);
+  }, [map, isLiveMode, threats, showTrails, language, onSelectThreat, iconMapping, iconPresets, customLibrary]);
 
   return null;
 };
