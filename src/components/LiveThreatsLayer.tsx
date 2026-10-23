@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
-import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
+import { renderLiveIconInnerHtml } from '../utils/liveIconConfig';
 import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
@@ -138,14 +138,15 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
         : threat.type === 'ballistic' ? 'monitorwar-missile-2'
         : 'monitorwar-target'
       );
-      const customIcon = customLibrary.find((item) => item.id === liveIconId);
       const iconPreset = iconPresets[liveIconId] || iconPresets[normalizedType] || {};
       const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
       const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
-      const iconAsset = customIcon?.dataUrl || MONITORWAR_ICON_ASSETS[liveIconId];
-      const iconSvg = iconAsset
-        ? `<img src="${iconAsset}" alt="" draggable="false" style="width:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
-        : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
+      const iconSvg = renderLiveIconInnerHtml(
+        liveIconId,
+        { ...iconPreset, size: iconSize, rotation: iconRotation },
+        customLibrary,
+        visuals.color
+      );
 
       // 3. Rotation style if heading is provided
       const rotationTransform = `transform: rotate(${(heading ?? 0) + iconRotation}deg);`;
@@ -179,7 +180,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
           <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" style="width:${Math.min(44, Math.max(28, iconSize))}px;height:${Math.min(44, Math.max(28, iconSize))}px;background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);" 
                >
-            <div style="${rotationTransform} transition: transform 0.3s ease;">
+            <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(64, iconSize)}px;height:${Math.min(64, iconSize)}px;">
               ${iconSvg}
             </div>
             ${countBadgeHtml}
@@ -196,8 +197,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const divIcon = L.divIcon({
         html,
         className: 'neptun-live-threat-marker',
-        iconSize: [Math.max(36, Math.min(52, iconSize + 8)), 48],
-        iconAnchor: [Math.max(18, Math.min(26, (iconSize + 8) / 2)), 20],
+        iconSize: [Math.max(36, Math.min(76, iconSize + 12)), 54],
+        iconAnchor: [Math.max(18, Math.min(38, (iconSize + 12) / 2)), 25],
       });
 
       const marker = L.marker([threat.lat, threat.lon], {
