@@ -23,15 +23,15 @@ export const LIVE_THREAT_CATEGORIES: LiveThreatCategory[] = [
 ];
 
 export const DEFAULT_LIVE_ICON_MAPPING: Record<string, string> = {
-  uav: 'monitorwar-drone-1',
-  fpv: 'monitorwar-drone-2',
-  mig31k: 'monitorwar-aircraft-1',
-  missile: 'monitorwar-missile-1',
-  cruise_missile: 'monitorwar-missile-1',
-  ballistic: 'monitorwar-missile-2',
-  recon: 'monitorwar-aircraft-2',
-  aviation: 'monitorwar-aircraft-1',
-  other: 'monitorwar-target',
+  uav: 'uav-flyingwing',
+  fpv: 'drone',
+  mig31k: 'plane',
+  missile: 'missile-cruise',
+  cruise_missile: 'missile-cruise',
+  ballistic: 'missile-ballistic',
+  recon: 'uav-recon',
+  aviation: 'standard-aircraft',
+  other: 'target',
 };
 
 export const LEGACY_ICON_URL_MAP: Record<string, string> = {
