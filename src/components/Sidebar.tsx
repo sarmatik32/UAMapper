@@ -213,7 +213,9 @@ interface SidebarProps {
   showLiveMessagesFeed?: boolean;
   onToggleShowLiveMessagesFeed?: () => void;
   liveMessagesCount?: number;
-}
+  liveIconMapping?: Record<string, string>;
+  onUpdateLiveIconMapping?: (type: string, iconId: string) => void;
+
 
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -342,6 +344,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   showLiveMessagesFeed = true,
   onToggleShowLiveMessagesFeed,
   liveMessagesCount = 0,
+  liveIconMapping = {},
+  onUpdateLiveIconMapping,
   onSelectLine = (_id) => {},
   onUpdateLine = (_line) => {},
   onDeleteLine = (_id) => {},
@@ -3331,7 +3335,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </label>
                     </div>
 
-                    {/* Side Messages Feed Toggle */}
+                    {isLiveMode && (
+                  <div className="mt-2 rounded-xl border border-white/10 bg-slate-950/65 p-2.5 space-y-2">
+                    <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-wide text-slate-200">
+                      <Radio className="w-3.5 h-3.5 text-red-400" />
+                      {isUa ? 'Іконки цілей Live' : 'Live target icons'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: 'uav', label: isUa ? 'БпЛА' : 'UAV' },
+                        { id: 'fpv', label: 'FPV' },
+                        { id: 'mig31k', label: 'МіГ-31К' },
+                        { id: 'recon', label: isUa ? 'Розвідник' : 'Recon' },
+                        { id: 'missile', label: isUa ? 'Ракета' : 'Missile' },
+                        { id: 'cruise_missile', label: isUa ? 'Крилата ракета' : 'Cruise missile' },
+                        { id: 'ballistic', label: isUa ? 'Балістика' : 'Ballistic' },
+                        { id: 'other', label: isUa ? 'Інше' : 'Other' },
+                      ].map((item) => (
+                        <label key={item.id} className="flex items-center gap-2 min-w-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5">
+                          <span className="text-[10px] text-slate-300 w-20 shrink-0 truncate">{item.label}</span>
+                          <select aria-label={item.label} value={liveIconMapping[item.id] || ''}
+                            onChange={(event) => onUpdateLiveIconMapping?.(item.id, event.target.value)}
+                            className="min-w-0 w-full bg-slate-900 text-slate-100 text-[10px] rounded-md border border-white/10 px-1.5 py-1">
+                            <option value="">{isUa ? 'За замовчуванням' : 'Default'}</option>
+                            {[...MONITORWAR_ICON_TYPES, ...ICON_TYPES].map((icon) => (
+                              <option key={icon.id} value={icon.id}>{isUa ? icon.nameUa : icon.nameEn}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-[9px] leading-relaxed text-slate-400">
+                      {isUa ? 'Вибір застосовується до відповідного типу цілі та зберігається в налаштуваннях браузера.' : 'Selection applies to the matching target type and is saved in browser settings.'}
+                    </p>
+                  </div>
+                )}
+
+                {/* Side Messages Feed Toggle */}
                     <div className="flex items-center justify-between py-0.5">
                       <span className="text-[10px] text-slate-300">
                         {isUa ? 'Оперативна стрічка збоку' : 'Side Radar Feed'}
