@@ -233,6 +233,25 @@ export default function App() {
   };
 
   // Per-icon custom saved settings profile (color, size, rotation, label, zone, line endpoint, etc.)
+  const [liveIconMapping, setLiveIconMapping] = useState<Record<string, string>>(() => {
+    try {
+      const saved = localStorage.getItem('uamapper_live_icon_mapping');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const handleUpdateLiveIconMapping = useCallback((type: string, iconId: string) => {
+    setLiveIconMapping((previous) => {
+      const next = { ...previous };
+      if (iconId) next[type] = iconId;
+      else delete next[type];
+      localStorage.setItem('uamapper_live_icon_mapping', JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const [iconPresets, setIconPresets] = useState<Record<string, IconPreset>>(() => {
     const saved = localStorage.getItem('visicom_icon_presets');
     if (saved) {
@@ -2479,6 +2498,9 @@ export default function App() {
             isLiveMode={isLiveMode}
             liveThreats={liveThreats}
             showLiveTrails={showLiveTrails}
+            liveIconMapping={liveIconMapping}
+            iconPresets={iconPresets}
+            customLibrary={customLibrary}
           />
 
           {/* Floating Air Alerts Widget Panel */}
@@ -3062,6 +3084,8 @@ export default function App() {
               isLiveMode={isLiveMode}
               onToggleLiveMode={handleToggleLiveMode}
               liveThreats={liveThreats}
+              liveIconMapping={liveIconMapping}
+              onUpdateLiveIconMapping={handleUpdateLiveIconMapping}
               isLoadingLive={isLoadingLive}
               onRefreshLive={refreshLiveData}
               showLiveTrails={showLiveTrails}
