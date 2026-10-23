@@ -175,15 +175,13 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
       const html = `
         <div class="relative flex flex-col items-center justify-center cursor-pointer group select-none transition-transform hover:scale-115">
-          <!-- Pulsing Radar Ping Ring -->
-          <div class="absolute -inset-1.5 rounded-full pointer-events-none" style="background: radial-gradient(circle, ${visuals.color}22 35%, ${visuals.color}55 72%, ${visuals.color}aa 100%); border: 1.5px solid ${visuals.color}; box-shadow: 0 0 7px ${visuals.color}, 0 0 16px ${visuals.color}99, inset 0 0 7px ${visuals.color}66;"></div>
-          
+
           <!-- Direction course arrow indicator -->
           ${courseIndicatorHtml}
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
-          <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1"
-               style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);overflow:visible;">
+          <div class="relative rounded-full ring-2 ring-black/80 flex items-center justify-center text-white z-1"
+               style="width:${Math.min(48, Math.max(32, iconSize + 4))}px;height:${Math.min(48, Math.max(32, iconSize + 4))}px;background:rgba(5,10,22,.96);border:2px solid ${visuals.color};box-shadow:0 0 5px ${visuals.color},0 0 11px ${visuals.color}99,inset 0 0 4px ${visuals.color}55;overflow:visible;">
             <div style="${rotationTransform} transition: transform 0.3s ease;width:${Math.min(42, Math.max(24, iconSize))}px;height:${Math.min(42, Math.max(24, iconSize))}px;display:flex;align-items:center;justify-content:center;">
               ${iconSvg}
             </div>
