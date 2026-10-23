@@ -178,7 +178,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
           ${courseIndicatorHtml}
 
           <!-- Tactical Icon Core: high-contrast white ring + black rim so it pops even over red occupied territory -->
-          <div class="relative w-8 h-8 rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" 
+          <div class="relative rounded-full border-2 border-white ring-2 ring-black/80 shadow-[0_0_14px_rgba(0,0,0,0.9),0_0_6px_${visuals.color}] flex items-center justify-center text-white z-1" style="width:${Math.min(44, Math.max(28, iconSize))}px;height:${Math.min(44, Math.max(28, iconSize))}px;background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);" 
                style="background: radial-gradient(circle, ${visuals.color} 55%, #050505 100%);">
             <div style="${rotationTransform} transition: transform 0.3s ease;">
               ${iconSvg}
