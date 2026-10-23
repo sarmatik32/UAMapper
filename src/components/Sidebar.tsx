@@ -3357,7 +3357,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             onChange={(event) => onUpdateLiveIconMapping?.(item.id, event.target.value)}
                             className="min-w-0 w-full bg-slate-900 text-slate-100 text-[10px] rounded-md border border-white/10 px-1.5 py-1">
                             <option value="">{isUa ? 'За замовчуванням' : 'Default'}</option>
-                            {[...MONITORWAR_ICON_TYPES, ...ICON_TYPES].map((icon) => (
+                            {ICON_TYPES.map((icon) => (
                               <option key={icon.id} value={icon.id}>{isUa ? icon.nameUa : icon.nameEn}</option>
                             ))}
                           </select>
