@@ -128,11 +128,13 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       }
 
       const normalizedType = normalizeThreatType(threat.type);
+      const rawType = String(threat.type || '').trim().toLowerCase();
       const liveIconId = iconMapping[normalizedType]
-        || iconMapping[String(threat.type || '').trim().toLowerCase()]
+        || iconMapping[rawType]
         || DEFAULT_LIVE_ICON_MAPPING[normalizedType]
         || 'target';
-      const iconPreset = iconPresets[liveIconId] || iconPresets[normalizedType] || {};
+      const selectedIconPreset = iconPresets[liveIconId] || {};
+      const iconPreset = { ...selectedIconPreset };
       const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
       const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
       const iconSvg = renderLiveIconInnerHtml(
