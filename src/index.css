@@ -269,3 +269,24 @@ html, body {
 .leaflet-tooltip.deepstate-tactical-tooltip::before {
   border-top-color: rgba(15, 23, 42, 0.94) !important;
 }
+
+/* High-contrast frosted-glass Live target popup */
+.leaflet-popup.neptun-threat-popup { z-index: 10000 !important; }
+.leaflet-popup.neptun-threat-popup .leaflet-popup-content-wrapper {
+  background: rgba(7, 13, 28, 0.97) !important; color: #f8fafc !important;
+  border: 1px solid rgba(226, 232, 240, 0.32) !important; border-radius: 18px !important;
+  box-shadow: 0 20px 55px rgba(0,0,0,.68), 0 0 0 1px rgba(255,255,255,.05), inset 0 1px 0 rgba(255,255,255,.09) !important;
+  backdrop-filter: blur(28px) saturate(160%) !important; -webkit-backdrop-filter: blur(28px) saturate(160%) !important; padding: 0 !important;
+}
+.leaflet-popup.neptun-threat-popup .leaflet-popup-content { margin: 0 !important; min-width: 250px; max-width: min(340px, calc(100vw - 64px)); }
+.leaflet-popup.neptun-threat-popup .leaflet-popup-tip { background: rgba(7, 13, 28, .97) !important; border-color: rgba(226,232,240,.28) !important; }
+.neptun-live-target-card { box-sizing: border-box; padding: 15px; color:#f8fafc; font:12px/1.5 var(--map-font-family, Inter, sans-serif); overflow-wrap:anywhere; }
+.neptun-live-target-card__header { display:flex; align-items:center; justify-content:space-between; gap:10px; padding-bottom:11px; margin-bottom:11px; border-bottom:1px solid rgba(255,255,255,.14); }
+.neptun-live-target-card__title { color:#fff; font-size:15px; line-height:1.3; font-weight:800; }
+.neptun-live-target-card__badge { flex:none; color:#fecaca; background:rgba(239,68,68,.16); border:1px solid rgba(248,113,113,.32); border-radius:6px; padding:3px 7px; font-size:10px; font-weight:800; letter-spacing:.06em; }
+.neptun-live-target-card__location { display:flex; gap:7px; align-items:flex-start; margin-bottom:12px; color:#f1f5f9; font-size:12px; font-weight:650; }
+.neptun-live-target-card__grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:0 0 11px; padding:10px; border-radius:12px; border:1px solid rgba(255,255,255,.13); background:rgba(255,255,255,.055); }
+.neptun-live-target-card__label { display:block; margin-bottom:3px; color:#aab8cc; text-transform:uppercase; font-size:10px; font-weight:750; letter-spacing:.08em; }
+.neptun-live-target-card__value { display:block; color:#fff; font-size:12px; font-weight:750; }
+.neptun-live-target-card__description { color:#d0d9e7; font-size:12px; line-height:1.55; border-top:1px solid rgba(255,255,255,.12); padding-top:10px; }
+@media (max-width: 420px) { .leaflet-popup.neptun-threat-popup .leaflet-popup-content { min-width: 220px; max-width: calc(100vw - 56px); } .neptun-live-target-card { padding: 12px; } }
