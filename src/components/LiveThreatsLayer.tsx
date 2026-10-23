@@ -3,7 +3,6 @@ import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
 import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
 import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
-import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -13,9 +12,6 @@ interface LiveThreatsLayerProps {
   showTrails?: boolean;
   language: Language;
   onSelectThreat?: (threat: NeptunThreat) => void;
-  iconMapping?: Record<string, string>;
-  iconPresets?: Record<string, import('../types').IconPreset>;
-  customLibrary?: { id: string; name: string; dataUrl: string }[];
   iconMapping?: Record<string, string>;
   iconPresets?: Record<string, import('../types').IconPreset>;
   customLibrary?: { id: string; name: string; dataUrl: string }[];
@@ -125,7 +121,14 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
               fillOpacity: 1,
               weight: 1.5,
               interactive: false,
-              pane: 'liveThreat      const normalizedType = normalizeThreatType(threat.type);
+              pane: 'liveThreatsTrailsPane',
+            });
+            layerGroupRef.current?.addLayer(dot);
+          });
+        }
+      }
+
+      const normalizedType = normalizeThreatType(threat.type);
       const liveIconId = iconMapping[normalizedType] || iconMapping[threat.type] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || (
         threat.type === 'uav' ? 'monitorwar-drone-1'
         : threat.type === 'fpv' ? 'monitorwar-drone-2'
@@ -142,7 +145,6 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const iconAsset = customIcon?.dataUrl || MONITORWAR_ICON_ASSETS[liveIconId];
       const iconSvg = iconAsset
         ? `<img src="${iconAsset}" alt="" draggable="false" style="width:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
-        : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;idth:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
         : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
 
       // 3. Rotation style if heading is provided
