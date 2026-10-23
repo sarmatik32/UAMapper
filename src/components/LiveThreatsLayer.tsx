@@ -176,7 +176,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const html = `
         <div class="relative flex flex-col items-center justify-center cursor-pointer group select-none transition-transform hover:scale-115">
           <!-- Pulsing Radar Ping Ring -->
-          <div class="absolute -inset-2.5 rounded-full animate-ping opacity-75 pointer-events-none" style="background-color: ${visuals.color};"></div>
+          <div class="absolute -inset-1.5 rounded-full pointer-events-none" style="background: radial-gradient(circle, ${visuals.color}22 35%, ${visuals.color}55 72%, ${visuals.color}aa 100%); border: 1.5px solid ${visuals.color}; box-shadow: 0 0 7px ${visuals.color}, 0 0 16px ${visuals.color}99, inset 0 0 7px ${visuals.color}66;"></div>
           
           <!-- Direction course arrow indicator -->
           ${courseIndicatorHtml}
@@ -192,7 +192,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
           <!-- Bottom Label: dark pill with high-contrast text and border -->
           <div class="mt-1 px-1.5 py-0.5 rounded-md bg-black/95 backdrop-blur-md border border-white/40 ring-1 ring-black/70 text-white font-mono text-[9px] font-black tracking-tight whitespace-nowrap shadow-xl pointer-events-none flex items-center gap-1">
-            <span class="w-1.5 h-1.5 rounded-full animate-pulse" style="background-color: ${visuals.color};"></span>
+            <span class="w-1.5 h-1.5 rounded-full" style="background-color: ${visuals.color}; box-shadow: 0 0 5px ${visuals.color}, 0 0 9px ${visuals.color}99;"></span>
             <span>${localityLabel}${speedLabel}</span>
           </div>
         </div>
@@ -220,7 +220,7 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
         <div class="neptun-live-target-card">
           <div class="neptun-live-target-card__header">
             <div class="flex items-center gap-1.5">
-              <span class="w-2.5 h-2.5 rounded-full animate-pulse" style="background-color: ${visuals.color};"></span>
+              <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${visuals.color}; box-shadow: 0 0 6px ${visuals.color}, 0 0 12px ${visuals.color}99;"></span>
               <strong class="neptun-live-target-card__title">${threat.title}</strong>
               ${count ? `<span class="px-1.5 py-0.2 rounded-full bg-red-500/20 text-red-400 font-mono text-[10px] font-bold">${count}x</span>` : ''}
             </div>
