@@ -132,7 +132,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const normalizedType = normalizeThreatType(threat.type);
       const rawType = String(threat.type || '').trim().toLowerCase();
       const requestedIconId = iconMapping[normalizedType] || iconMapping[rawType] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
-      const migratedIconId = LEGACY_LIVE_ICON_ID_MAP[requestedIconId] || requestedIconId;
+      const requestedIsKnownIcon = ICON_TYPES.some((icon) => icon.id === requestedIconId) || MONITORWAR_ICON_TYPES.some((icon) => icon.id === requestedIconId) || customLibrary.some((icon) => icon.id === requestedIconId);
+      const migratedIconId = requestedIsKnownIcon ? requestedIconId : (LEGACY_LIVE_ICON_ID_MAP[requestedIconId] || requestedIconId);
       const knownBuiltinIcon = ICON_TYPES.some((icon) => icon.id === migratedIconId) || MONITORWAR_ICON_TYPES.some((icon) => icon.id === migratedIconId);
       const knownCustomIcon = customLibrary.some((icon) => icon.id === migratedIconId);
       const liveIconId = knownBuiltinIcon || knownCustomIcon ? migratedIconId : DEFAULT_LIVE_ICON_MAPPING[normalizedType] || DEFAULT_LIVE_ICON_MAPPING.other;
