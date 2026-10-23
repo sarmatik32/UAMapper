@@ -203,7 +203,10 @@ interface MapContainerProps {
   isLiveMode?: boolean;
   liveThreats?: NeptunThreat[];
   showLiveTrails?: boolean;
-}
+  liveIconMapping?: Record<string, string>;
+  iconPresets?: Record<string, IconPreset>;
+  customLibrary?: { id: string; name: string; dataUrl: string }[];
+
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   markers,
@@ -297,6 +300,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   isLiveMode = false,
   liveThreats = [],
   showLiveTrails = true,
+  liveIconMapping = {},
+  iconPresets = {},
+  customLibrary = [],
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -6657,6 +6663,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         threats={liveThreats}
         showTrails={showLiveTrails}
         language={language}
+        iconMapping={liveIconMapping}
+        iconPresets={iconPresets}
+        customLibrary={customLibrary}
       />
 
       {/* Floating Screenshot Feedback Banner (Rendered OUTSIDE of map-stage-wrapper) */}
