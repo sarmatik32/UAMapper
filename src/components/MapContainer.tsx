@@ -206,7 +206,7 @@ interface MapContainerProps {
   liveIconMapping?: Record<string, string>;
   iconPresets?: Record<string, IconPreset>;
   customLibrary?: { id: string; name: string; dataUrl: string }[];
-
+}
 
 export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   markers,
