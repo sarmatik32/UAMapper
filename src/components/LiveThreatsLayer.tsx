@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import L from '../leaflet-fix';
 import { NeptunThreat, Language } from '../types';
-import { MONITORWAR_ICON_ASSETS } from './IconLibrary';
-import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType } from '../utils/liveIconConfig';
+import { DEFAULT_LIVE_ICON_MAPPING, normalizeThreatType, renderLiveIconInnerHtml } from '../utils/liveIconConfig';
 import { getHeadingCompass, getThreatVisuals } from '../utils/neptunService';
 
 interface LiveThreatsLayerProps {
@@ -130,23 +129,27 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
 
       // Render LIVE objects with local silhouettes from the supplied icon archive.
       const normalizedType = normalizeThreatType(threat.type);
-      const liveIconId = iconMapping[normalizedType] || iconMapping[threat.type] || DEFAULT_LIVE_ICON_MAPPING[normalizedType] || (
-        threat.type === 'uav' ? 'monitorwar-drone-1'
-        : threat.type === 'fpv' ? 'monitorwar-drone-2'
-        : threat.type === 'mig31k' ? 'monitorwar-aircraft-1'
-        : threat.type === 'recon' ? 'monitorwar-aircraft-2'
-        : threat.type === 'missile' || threat.type === 'cruise_missile' ? 'monitorwar-missile-1'
-        : threat.type === 'ballistic' ? 'monitorwar-missile-2'
-        : 'monitorwar-target'
-      );
-      const customIcon = customLibrary.find((item) => item.id === liveIconId);
-      const iconPreset = iconPresets[liveIconId] || iconPresets[normalizedType] || {};
+      const rawType = String(threat.type || '').trim().toLowerCase();
+      const liveIconId = iconMapping[normalizedType]
+        || iconMapping[rawType]
+        || DEFAULT_LIVE_ICON_MAPPING[normalizedType]
+        || DEFAULT_LIVE_ICON_MAPPING.other;
+      const iconPreset = iconPresets[liveIconId] || {};
       const iconSize = Math.max(20, Math.min(96, Number(iconPreset.size) || 32));
       const iconRotation = Number.isFinite(Number(iconPreset.rotation)) ? Number(iconPreset.rotation) : 0;
-      const iconAsset = customIcon?.dataUrl || MONITORWAR_ICON_ASSETS[liveIconId];
-      const iconSvg = iconAsset
-        ? `<img src="${iconAsset}" alt="" draggable="false" style="width:${Math.min(32, iconSize)}px;height:${Math.min(32, iconSize)}px;object-fit:contain;display:block;filter:${customIcon ? 'none' : 'brightness(0) invert(1)'};" />`
-        : `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="9"/></svg>`;
+      const iconSvg = renderLiveIconInnerHtml(
+        liveIconId,
+        {
+          ...iconPreset,
+          size: iconSize,
+          rotation: iconRotation,
+          color: iconPreset.color || '#ffffff',
+          borderColor: iconPreset.borderColor || '#050505',
+          lineWidth: Number.isFinite(Number(iconPreset.lineWidth)) ? Number(iconPreset.lineWidth) : 1.5,
+        },
+        customLibrary,
+        '#ffffff'
+      );
 
       // 3. Rotation style if heading is provided
       const rotationTransform = `transform: rotate(${(heading ?? 0) + iconRotation}deg);`;
@@ -197,8 +200,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const divIcon = L.divIcon({
         html,
         className: 'neptun-live-threat-marker',
-        iconSize: [Math.max(36, Math.min(52, iconSize + 8)), 48],
-        iconAnchor: [Math.max(18, Math.min(26, (iconSize + 8) / 2)), 20],
+        iconSize: [Math.max(44, Math.min(84, iconSize + 20)), 60],
+        iconAnchor: [Math.max(22, Math.min(42, (iconSize + 20) / 2)), 28],
       });
 
       const marker = L.marker([threat.lat, threat.lon], {
