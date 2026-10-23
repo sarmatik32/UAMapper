@@ -215,8 +215,7 @@ interface SidebarProps {
   liveMessagesCount?: number;
   liveIconMapping?: Record<string, string>;
   onUpdateLiveIconMapping?: (type: string, iconId: string) => void;
-
-
+}
 
 export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
