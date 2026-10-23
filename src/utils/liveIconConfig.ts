@@ -69,16 +69,18 @@ export const DEFAULT_UPLOADED_ICONS = [
 ];
 
 export function normalizeThreatType(rawType: string): string {
-  const norm = String(rawType || '').trim().toLowerCase();
-  if (norm === 'cruise_missile' || norm === 'missile_cruise') return 'cruise_missile';
-  if (norm === 'ballistic' || norm === 'ballistic_missile') return 'ballistic';
-  if (norm === 'uav' || norm === 'shahed' || norm === 'geran') return 'uav';
-  if (norm === 'fpv') return 'fpv';
-  if (norm === 'mig31k' || norm === 'mig-31k' || norm === 'mig_31k') return 'mig31k';
-  if (norm === 'recon') return 'recon';
-  if (norm === 'aviation' || norm === 'plane' || norm === 'aircraft') return 'aviation';
-  if (norm === 'missile') return 'missile';
-  return norm || 'other';
+  const norm = String(rawType || '').trim().toLowerCase().replace(/[ё]/g, 'е');
+  const compact = norm.replace(/[\s_-]+/g, '');
+  if (['cruisemissile', 'missilecruise', 'крилатаракета', 'х101', 'калибр'].includes(compact) || norm === 'cruise_missile' || norm === 'missile_cruise') return 'cruise_missile';
+  if (['ballistic', 'ballisticmissile', 'балістика', 'баллистика', 'іскандер', 'искандер'].includes(compact) || norm === 'ballistic_missile') return 'ballistic';
+  if (['uav', 'shahed', 'geran', 'бпла', 'дрон', 'шахед', 'герань', 'камікадзе', 'камикадзе'].includes(compact)) return 'uav';
+  if (['fpv', 'fpvдрон', 'квадрокоптер'].includes(compact)) return 'fpv';
+  if (['mig31k', 'кинжал', 'кинджал'].includes(compact) || norm === 'mig-31k' || norm === 'mig_31k') return 'mig31k';
+  if (['recon', 'розвідник', 'разведчик', 'розвідувальнийбпла'].includes(compact)) return 'recon';
+  if (['aviation', 'plane', 'aircraft', 'літак', 'самолет', 'авіація', 'авиация'].includes(compact)) return 'aviation';
+  if (['missile', 'ракета', 'ракетаобщая'].includes(compact)) return 'missile';
+  if (!norm) return 'other';
+  return norm;
 }
 
 export function escapeAttr(value: string): string {
