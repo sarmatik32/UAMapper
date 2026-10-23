@@ -197,8 +197,8 @@ export const LiveThreatsLayer: React.FC<LiveThreatsLayerProps> = ({
       const divIcon = L.divIcon({
         html,
         className: 'neptun-live-threat-marker',
-        iconSize: [36, 48],
-        iconAnchor: [18, 20],
+        iconSize: [Math.max(36, Math.min(52, iconSize + 8)), 48],
+        iconAnchor: [Math.max(18, Math.min(26, (iconSize + 8) / 2)), 20],
       });
 
       const marker = L.marker([threat.lat, threat.lon], {
