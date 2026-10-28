@@ -466,7 +466,7 @@ export const AirAlertsPanel: React.FC<AirAlertsPanelProps> = ({
           <div className="p-2 bg-slate-950/90 border-t border-slate-800/60 text-[10px] text-slate-500 flex items-center justify-between">
             <span className="flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-              <span>alerts.in.ua</span>
+              <span>api.ukrainealarm.com</span>
             </span>
             <span>
               {lastUpdated
