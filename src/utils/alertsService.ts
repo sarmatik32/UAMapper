@@ -389,6 +389,63 @@ type UkraineAlarmAlertEvent = {
   startDate?: string;
   alertType?: { id?: number; name?: string } | string;
 };
+type UkraineAlarmRegion = {
+  regionId?: string;
+  regionType?: { id?: number; name?: string } | number | string;
+  regionName?: string;
+  regionEngName?: string;
+  lastUpdate?: string;
+  activeAlerts?: UkraineAlarmAlertEvent[];
+  regionChildIds?: UkraineAlarmRegion[];
+};
+
+function normalizeUkraineAlarmRegions(regions: UkraineAlarmRegion[]): AirAlert[] {
+  const output: AirAlert[] = [];
+  const visited = new Set<string>();
+
+  const walk = (items: UkraineAlarmRegion[], parentOblast = '') => {
+    for (const region of items) {
+      if (!region || typeof region !== 'object') continue;
+      const regionId = String(region.regionId || '');
+      const name = String(region.regionName || region.regionEngName || regionId || 'Регіон');
+      const regionType = region.regionType;
+      const typeName = typeof regionType === 'object'
+        ? String(regionType?.name || '')
+        : String(regionType ?? '');
+      const typeCode = typeof regionType === 'object' ? Number(regionType?.id) : Number(regionType);
+      const typeRaw = typeName.toLowerCase();
+      const locationType: AirAlert['location_type'] =
+        typeRaw.includes('область') || typeRaw.includes('oblast') || typeCode === 0 ? 'oblast' :
+        typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') || typeCode === 1 ? 'raion' :
+        typeRaw.includes('місто') || typeRaw.includes('city') || typeCode === 2 ? 'city' : 'hromada';
+
+      const events = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
+      for (const event of events) {
+        const key = `${regionId || name}:${event?.startDate || ''}:${JSON.stringify(event?.alertType ?? '')}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        const type = typeof event?.alertType === 'string' ? event.alertType : event?.alertType?.name;
+        output.push({
+          id: key,
+          location_title: name,
+          location_type: locationType,
+          started_at: event?.startDate || region.lastUpdate || new Date().toISOString(),
+          alert_type: 'air_raid',
+          alert_level: 'red',
+          location_uid: regionId || undefined,
+          location_oblast: parentOblast || (locationType === 'oblast' ? name : ''),
+          notes: type || undefined,
+        });
+      }
+
+      const children = Array.isArray(region.regionChildIds) ? region.regionChildIds : [];
+      if (children.length) walk(children, locationType === 'oblast' ? name : parentOblast);
+    }
+  };
+
+  walk(Array.isArray(regions) ? regions : []);
+  return output;
+}
 
 export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: string): Promise<AirAlertsResponse> {
   try {
@@ -397,54 +454,13 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
       cache: 'no-store',
     });
     if (!response.ok) throw new Error(`UkraineAlarm proxy returned HTTP ${response.status}`);
+
     const payload = await response.json();
     const raw = payload?.data;
     if (!Array.isArray(raw)) throw new Error('Unexpected UkraineAlarm alerts response format');
 
-    const activeAlerts: AirAlert[] = [];
-    const seen = new Set<string>();
-    const visit = (regions: any[], parentNames: string[] = []) => {
-      for (const region of regions) {
-        if (!region || typeof region !== 'object') continue;
-        const name = String(region.regionName || '');
-        const regionId = String(region.regionId || '');
-        const rawType = region.regionType;
-        const typeRaw = String(rawType?.name || rawType || '').toLowerCase();
-        const locationType: AirAlert['location_type'] =
-          typeRaw.includes('область') || typeRaw.includes('oblast') || typeRaw === '0' ? 'oblast' :
-          typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') || typeRaw === '1' ? 'raion' :
-          typeRaw.includes('місто') || typeRaw.includes('city') ? 'city' : 'hromada';
-
-        const events: UkraineAlarmAlertEvent[] = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
-        for (const event of events) {
-          const key = `${regionId || name}:${event.startDate || ''}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const alertTypeName = typeof event.alertType === 'string' ? event.alertType : event.alertType?.name;
-          activeAlerts.push({
-            id: key,
-            location_title: name || regionId || 'Регіон',
-            location_type: locationType,
-            started_at: event.startDate || region.lastUpdate || new Date().toISOString(),
-            alert_type: 'air_raid',
-            alert_level: 'red',
-            location_uid: regionId,
-            location_oblast: parentNames[0] || (locationType === 'oblast' ? name : ''),
-            notes: alertTypeName || undefined,
-          });
-        }
-
-        const children = Array.isArray(region.regionChildIds) ? region.regionChildIds : [];
-        if (children.length) {
-          const nextParents = locationType === 'oblast' ? [name, ...parentNames] : parentNames;
-          visit(children, nextParents);
-        }
-      }
-    };
-    visit(raw);
-
     const result: AirAlertsResponse = {
-      alerts: activeAlerts,
+      alerts: normalizeUkraineAlarmRegions(raw),
       last_updated_at: payload?.fetchedAt || new Date().toISOString(),
     };
     try { localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(result)); } catch {}
