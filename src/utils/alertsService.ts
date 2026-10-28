@@ -409,9 +409,7 @@ function normalizeUkraineAlarmRegions(regions: UkraineAlarmRegion[]): AirAlert[]
       const regionId = String(region.regionId || '');
       const name = String(region.regionName || region.regionEngName || regionId || 'Регіон');
       const regionType = region.regionType;
-      const typeName = typeof regionType === 'object'
-        ? String(regionType?.name || '')
-        : String(regionType ?? '');
+      const typeName = typeof regionType === 'object' ? String(regionType?.name || '') : String(regionType ?? '');
       const typeCode = typeof regionType === 'object' ? Number(regionType?.id) : Number(regionType);
       const typeRaw = typeName.toLowerCase();
       const locationType: AirAlert['location_type'] =
