@@ -384,7 +384,11 @@ export function formatTimeOnly(dateStr: string): string {
 
 export const DEFAULT_ALERTS_TOKEN = '';
 
-type UkraineAlarmAlertEvent = { regionId?: string; startDate?: string; alertType?: { id?: number; name?: string } };
+type UkraineAlarmAlertEvent = {
+  regionId?: string;
+  startDate?: string;
+  alertType?: { id?: number; name?: string } | string;
+};
 
 export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: string): Promise<AirAlertsResponse> {
   try {
@@ -397,7 +401,7 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
     const raw = payload?.data;
     if (!Array.isArray(raw)) throw new Error('Unexpected UkraineAlarm alerts response format');
 
-    const alerts: AirAlert[] = [];
+    const activeAlerts: AirAlert[] = [];
     const seen = new Set<string>();
     const visit = (regions: any[], parentNames: string[] = []) => {
       for (const region of regions) {
@@ -411,12 +415,13 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
           typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') || typeRaw === '1' ? 'raion' :
           typeRaw.includes('місто') || typeRaw.includes('city') ? 'city' : 'hromada';
 
-        const activeEvents: UkraineAlarmAlertEvent[] = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
-        for (const event of activeEvents) {
+        const events: UkraineAlarmAlertEvent[] = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
+        for (const event of events) {
           const key = `${regionId || name}:${event.startDate || ''}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          alerts.push({
+          const alertTypeName = typeof event.alertType === 'string' ? event.alertType : event.alertType?.name;
+          activeAlerts.push({
             id: key,
             location_title: name || regionId || 'Регіон',
             location_type: locationType,
@@ -425,7 +430,7 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
             alert_level: 'red',
             location_uid: regionId,
             location_oblast: parentNames[0] || (locationType === 'oblast' ? name : ''),
-            notes: event.alertType?.name || undefined,
+            notes: alertTypeName || undefined,
           });
         }
 
@@ -439,7 +444,7 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
     visit(raw);
 
     const result: AirAlertsResponse = {
-      alerts,
+      alerts: activeAlerts,
       last_updated_at: payload?.fetchedAt || new Date().toISOString(),
     };
     try { localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(result)); } catch {}
