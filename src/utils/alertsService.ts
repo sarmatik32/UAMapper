@@ -398,32 +398,42 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
     if (!Array.isArray(raw)) throw new Error('Unexpected UkraineAlarm alerts response format');
 
     const alerts: AirAlert[] = [];
-    const visit = (nodes: any[], parents: string[] = []) => {
-      for (const region of nodes) {
+    const seen = new Set<string>();
+    const visit = (regions: any[], parentNames: string[] = []) => {
+      for (const region of regions) {
         if (!region || typeof region !== 'object') continue;
         const name = String(region.regionName || '');
         const regionId = String(region.regionId || '');
-        const typeRaw = String(region.regionType?.name || region.regionType || '').toLowerCase();
+        const rawType = region.regionType;
+        const typeRaw = String(rawType?.name || rawType || '').toLowerCase();
         const locationType: AirAlert['location_type'] =
-          typeRaw.includes('область') || typeRaw.includes('oblast') ? 'oblast' :
-          typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') ? 'raion' :
+          typeRaw.includes('область') || typeRaw.includes('oblast') || typeRaw === '0' ? 'oblast' :
+          typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') || typeRaw === '1' ? 'raion' :
           typeRaw.includes('місто') || typeRaw.includes('city') ? 'city' : 'hromada';
+
         const activeEvents: UkraineAlarmAlertEvent[] = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
         for (const event of activeEvents) {
+          const key = `${regionId || name}:${event.startDate || ''}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
           alerts.push({
-            id: `${regionId || name}:${event.startDate || alerts.length}`,
+            id: key,
             location_title: name || regionId || 'Регіон',
             location_type: locationType,
             started_at: event.startDate || region.lastUpdate || new Date().toISOString(),
             alert_type: 'air_raid',
             alert_level: 'red',
             location_uid: regionId,
-            location_oblast: parents[0] || (locationType === 'oblast' ? name : ''),
+            location_oblast: parentNames[0] || (locationType === 'oblast' ? name : ''),
             notes: event.alertType?.name || undefined,
           });
         }
+
         const children = Array.isArray(region.regionChildIds) ? region.regionChildIds : [];
-        if (children.length) visit(children, locationType === 'oblast' ? [name] : parents);
+        if (children.length) {
+          const nextParents = locationType === 'oblast' ? [name, ...parentNames] : parentNames;
+          visit(children, nextParents);
+        }
       }
     };
     visit(raw);
