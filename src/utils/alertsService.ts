@@ -382,7 +382,7 @@ export function formatTimeOnly(dateStr: string): string {
   }
 }
 
-export const DEFAULT_ALERTS_TOKEN = '3a0222c65a8814cbf1c92f1ce831c62e24d51f63ab2203';
+export const DEFAULT_ALERTS_TOKEN = '';
 
 export async function fetchActiveAlerts(customToken?: string, customApiUrl?: string): Promise<AirAlertsResponse> {
   const token = customToken || localStorage.getItem('uamapper_alerts_token') || DEFAULT_ALERTS_TOKEN;
@@ -391,10 +391,7 @@ export async function fetchActiveAlerts(customToken?: string, customApiUrl?: str
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };
-  if (token) {
-    headers['X-Alerts-Token'] = token;
-    headers['Authorization'] = `Bearer ${token}`;
-  }
+  // Credentials must be kept on the server. Do not send API tokens from browser storage.
 
   // 1. Try configured endpoint (default: /api/alerts)
   try {
@@ -433,8 +430,8 @@ export async function fetchActiveAlerts(customToken?: string, customApiUrl?: str
     // Silently continue to fallback strategy
   }
 
-  // 2. If /api/alerts failed or returned non-JSON, try direct alerts.in.ua query if token is present
-  if (token) {
+  // 2. Legacy fallback to direct alerts.in.ua is intentionally disabled to avoid exposing credentials in the browser.
+  if (false) {
     try {
       const directUrl = `https://api.alerts.in.ua/v1/alerts/active.json?token=${encodeURIComponent(token)}`;
       const directResp = await fetch(directUrl, { headers: { Accept: 'application/json' } });
