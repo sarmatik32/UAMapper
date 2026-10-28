@@ -384,95 +384,70 @@ export function formatTimeOnly(dateStr: string): string {
 
 export const DEFAULT_ALERTS_TOKEN = '';
 
-export async function fetchActiveAlerts(customToken?: string, customApiUrl?: string): Promise<AirAlertsResponse> {
-  const token = customToken || localStorage.getItem('uamapper_alerts_token') || DEFAULT_ALERTS_TOKEN;
-  const endpoint = customApiUrl || localStorage.getItem('uamapper_alerts_custom_url') || '/api/alerts';
-
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-  };
-  // Credentials must be kept on the server. Do not send API tokens from browser storage.
-
-  // 1. Try configured endpoint (default: /api/alerts)
+export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: string): Promise<AirAlertsResponse> {
   try {
-    const url = endpoint.includes('?')
-      ? `${endpoint}&t=${Date.now()}`
-      : `${endpoint}?t=${Date.now()}`;
-
-    const response = await fetch(url, {
-      headers,
+    const response = await fetch('/api/ukrainealarm?resource=alerts', {
+      headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
+    if (!response.ok) throw new Error(`UkraineAlarm proxy returned HTTP ${response.status}`);
+    const payload = await response.json();
+    const raw = payload?.data;
 
-    if (response.ok) {
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        const data = await response.json();
-        if (data && Array.isArray(data.alerts)) {
-          try {
-            localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(data));
-          } catch {
-            // storage quota
-          }
-          return data;
+    // Convert the official API's region alarm tree into the app's existing alert contract.
+    const flattened: any[] = [];
+    const visit = (value: any, parentName = '', parentId = '') => {
+      if (Array.isArray(value)) {
+        value.forEach((entry) => visit(entry, parentName, parentId));
+        return;
+      }
+      if (!value || typeof value !== 'object') return;
+      const name = value.regionName || value.region_name || value.name || value.title || parentName;
+      const id = value.regionId || value.region_id || value.id || parentId;
+      const status = value.activeAlerts ?? value.active_alerts ?? value.alerts ?? value.isAlertActive ?? value.is_alert_active ?? value.active ?? value.alert;
+      if (typeof status === 'boolean' && status && name) {
+        flattened.push({
+          id: String(id || name),
+          location_title: String(name),
+          location_type: /область|обл\.?/i.test(String(name)) ? 'oblast' : /район/i.test(String(name)) ? 'raion' : 'hromada',
+          started_at: value.lastUpdate || value.last_update || value.startedAt || value.started_at || new Date().toISOString(),
+          alert_type: 'air_raid',
+          alert_level: 'red',
+          location_uid: id,
+          location_oblast: value.parentRegionName || value.parent_region_name || '',
+        });
+      }
+      for (const [key, nested] of Object.entries(value)) {
+        if (nested && typeof nested === 'object' && !['lastUpdate', 'last_update', 'updatedAt'].includes(key)) {
+          visit(nested, String(name || parentName), String(id || parentId));
         }
       }
-      // If server returned index.html (SPA 404 rewrite)
-      const text = await response.text();
-      if (text.trim().startsWith('{')) {
-        const data = JSON.parse(text);
-        if (data && Array.isArray(data.alerts)) {
-          return data;
-        }
-      }
-    }
-  } catch (err) {
-    // Silently continue to fallback strategy
-  }
-
-  // 2. Legacy fallback to direct alerts.in.ua is intentionally disabled to avoid exposing credentials in the browser.
-  if (false) {
+    };
+    visit(raw);
+    const alerts = flattened.filter((alert, index, arr) =>
+      arr.findIndex((candidate) => String(candidate.id) === String(alert.id)) === index
+    );
+    const result: AirAlertsResponse = {
+      alerts,
+      last_updated_at: payload?.fetchedAt || new Date().toISOString(),
+    };
+    try { localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(result)); } catch {}
+    return result;
+  } catch (error) {
+    console.warn('[UkraineAlarm] Failed to load alerts:', error);
     try {
-      const directUrl = `https://api.alerts.in.ua/v1/alerts/active.json?token=${encodeURIComponent(token)}`;
-      const directResp = await fetch(directUrl, { headers: { Accept: 'application/json' } });
-      if (directResp.ok) {
-        const data = await directResp.json();
-        if (data && Array.isArray(data.alerts)) {
-          try {
-            localStorage.setItem('uamapper_last_cached_alerts', JSON.stringify(data));
-          } catch {
-            // storage quota
-          }
-          return data;
-        }
+      const cached = localStorage.getItem('uamapper_last_cached_alerts');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && Array.isArray(parsed.alerts)) return { ...parsed, cached: true };
       }
-    } catch {
-      // Direct browser fetch blocked by CORS or network
-    }
+    } catch {}
+    return {
+      alerts: [],
+      last_updated_at: new Date().toISOString(),
+      disclaimer: 'UkraineAlarm API недоступний. Перевір токен та з’єднання.',
+    };
   }
-
-  // 3. Fallback to localStorage cache if previously saved
-  try {
-    const cached = localStorage.getItem('uamapper_last_cached_alerts');
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (parsed && Array.isArray(parsed.alerts)) {
-        return {
-          ...parsed,
-          cached: true,
-        };
-      }
-    }
-  } catch {
-    // Ignore JSON parse error
-  }
-
-  // 4. Return safe empty alerts structure
-  return {
-    alerts: [],
-    last_updated_at: new Date().toISOString(),
-    disclaimer: 'Alerts service currently offline or updating',
-  };
 }
 
 /**
