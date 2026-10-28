@@ -384,6 +384,8 @@ export function formatTimeOnly(dateStr: string): string {
 
 export const DEFAULT_ALERTS_TOKEN = '';
 
+type UkraineAlarmAlertEvent = { regionId?: string; startDate?: string; alertType?: { id?: number; name?: string } };
+
 export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: string): Promise<AirAlertsResponse> {
   try {
     const response = await fetch('/api/ukrainealarm?resource=alerts', {
@@ -393,59 +395,39 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
     if (!response.ok) throw new Error(`UkraineAlarm proxy returned HTTP ${response.status}`);
     const payload = await response.json();
     const raw = payload?.data;
+    if (!Array.isArray(raw)) throw new Error('Unexpected UkraineAlarm alerts response format');
 
-    const flattened: any[] = [];
-    const visit = (value: any, inheritedName = '', inheritedId = '', inheritedType = 'hromada', inheritedOblast = '') => {
-      if (Array.isArray(value)) {
-        value.forEach((entry) => visit(entry, inheritedName, inheritedId, inheritedType, inheritedOblast));
-        return;
-      }
-      if (!value || typeof value !== 'object') return;
-
-      const name = String(value.regionName || value.region_name || value.name || value.title || inheritedName || '');
-      const id = String(value.regionId || value.region_id || value.regionID || value.id || inheritedId || name);
-      const rawType = String(value.regionType || value.region_type || value.type || inheritedType).toLowerCase();
-      const normalizedType =
-        rawType.includes('oblast') || rawType.includes('область') ? 'oblast' :
-        rawType.includes('raion') || rawType.includes('район') || rawType.includes('district') ? 'raion' :
-        rawType.includes('city') || rawType.includes('місто') ? 'city' : 'hromada';
-      const parentOblast = String(value.oblast || value.parentRegionName || value.parent_region_name || inheritedOblast || '');
-      const statusValue = value.activeAlerts ?? value.active_alerts ?? value.isAlertActive ?? value.is_alert_active ?? value.active ?? value.alert;
-      const alertsValue = value.alerts;
-      const isActive = typeof statusValue === 'boolean'
-        ? statusValue
-        : Array.isArray(alertsValue)
-          ? alertsValue.length > 0
-          : typeof alertsValue === 'boolean'
-            ? alertsValue
-            : typeof statusValue === 'number'
-              ? statusValue > 0
-              : false;
-
-      if (isActive && name) {
-        flattened.push({
-          id,
-          location_title: name,
-          location_type: normalizedType,
-          started_at: String(value.lastUpdate || value.last_update || value.startedAt || value.started_at || payload?.fetchedAt || new Date().toISOString()),
-          alert_type: 'air_raid',
-          alert_level: 'red',
-          location_uid: id,
-          location_oblast: parentOblast,
-        });
-      }
-
-      for (const [key, nested] of Object.entries(value)) {
-        if (nested && typeof nested === 'object' && !['lastUpdate', 'last_update', 'updatedAt'].includes(key)) {
-          visit(nested, name || inheritedName, id || inheritedId, normalizedType, parentOblast);
+    const alerts: AirAlert[] = [];
+    const visit = (nodes: any[], parents: string[] = []) => {
+      for (const region of nodes) {
+        if (!region || typeof region !== 'object') continue;
+        const name = String(region.regionName || '');
+        const regionId = String(region.regionId || '');
+        const typeRaw = String(region.regionType?.name || region.regionType || '').toLowerCase();
+        const locationType: AirAlert['location_type'] =
+          typeRaw.includes('область') || typeRaw.includes('oblast') ? 'oblast' :
+          typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') ? 'raion' :
+          typeRaw.includes('місто') || typeRaw.includes('city') ? 'city' : 'hromada';
+        const activeEvents: UkraineAlarmAlertEvent[] = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
+        for (const event of activeEvents) {
+          alerts.push({
+            id: `${regionId || name}:${event.startDate || alerts.length}`,
+            location_title: name || regionId || 'Регіон',
+            location_type: locationType,
+            started_at: event.startDate || region.lastUpdate || new Date().toISOString(),
+            alert_type: 'air_raid',
+            alert_level: 'red',
+            location_uid: regionId,
+            location_oblast: parents[0] || (locationType === 'oblast' ? name : ''),
+            notes: event.alertType?.name || undefined,
+          });
         }
+        const children = Array.isArray(region.regionChildIds) ? region.regionChildIds : [];
+        if (children.length) visit(children, locationType === 'oblast' ? [name] : parents);
       }
     };
-
     visit(raw);
-    const alerts = flattened.filter((alert, index, list) =>
-      list.findIndex((candidate) => String(candidate.id) === String(alert.id)) === index
-    );
+
     const result: AirAlertsResponse = {
       alerts,
       last_updated_at: payload?.fetchedAt || new Date().toISOString(),
