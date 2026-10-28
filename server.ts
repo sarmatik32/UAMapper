@@ -8,7 +8,7 @@ import { createServer as createViteServer } from "vite";
 dotenv.config();
 
 const PORT = 3000;
-const DEFAULT_ALERTS_TOKEN = "3a0222c65a8814cbf1c92f1ce831c62e24d51f63ab2203";
+const DEFAULT_ALERTS_TOKEN = "";
 
 interface CachedAlerts {
   data: any;
