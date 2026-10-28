@@ -413,9 +413,9 @@ function normalizeUkraineAlarmRegions(regions: UkraineAlarmRegion[]): AirAlert[]
       const typeCode = typeof regionType === 'object' ? Number(regionType?.id) : Number(regionType);
       const typeRaw = typeName.toLowerCase();
       const locationType: AirAlert['location_type'] =
-        typeRaw.includes('область') || typeRaw.includes('oblast') || typeCode === 0 ? 'oblast' :
-        typeRaw.includes('район') || typeRaw.includes('raion') || typeRaw.includes('district') || typeCode === 1 ? 'raion' :
-        typeRaw.includes('місто') || typeRaw.includes('city') || typeCode === 2 ? 'city' : 'hromada';
+        typeRaw.includes('state') || typeRaw.includes('область') || typeRaw.includes('oblast') || typeCode === 0 ? 'oblast' :
+        typeRaw.includes('district') || typeRaw.includes('район') || typeRaw.includes('raion') || typeCode === 1 ? 'raion' :
+        typeRaw.includes('city') || typeRaw.includes('місто') ? 'city' : 'hromada';
 
       const events = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
       for (const event of events) {
