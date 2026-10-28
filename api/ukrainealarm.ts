@@ -32,7 +32,7 @@ export default async function handler(req: Request, res: Response): Promise<void
     res.end(JSON.stringify({ error: "Method not allowed" })); return;
   }
 
-  const token = process.env.UKRAINEALARM_API_TOKEN?.trim();
+  const token = process.env.UKRAINEALARM_API_TOKEN?.trim() || process.env.ALERTS_IN_UA_TOKEN?.trim();
   if (!token) {
     res.statusCode = 503;
     res.end(JSON.stringify({ error: "UkraineAlarm token is not configured", setup: "Set UKRAINEALARM_API_TOKEN in Vercel Environment Variables and redeploy." }));
