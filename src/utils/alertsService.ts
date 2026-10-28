@@ -394,38 +394,57 @@ export async function fetchActiveAlerts(_customToken?: string, _customApiUrl?: s
     const payload = await response.json();
     const raw = payload?.data;
 
-    // Convert the official API's region alarm tree into the app's existing alert contract.
     const flattened: any[] = [];
-    const visit = (value: any, parentName = '', parentId = '') => {
+    const visit = (value: any, inheritedName = '', inheritedId = '', inheritedType = 'hromada', inheritedOblast = '') => {
       if (Array.isArray(value)) {
-        value.forEach((entry) => visit(entry, parentName, parentId));
+        value.forEach((entry) => visit(entry, inheritedName, inheritedId, inheritedType, inheritedOblast));
         return;
       }
       if (!value || typeof value !== 'object') return;
-      const name = value.regionName || value.region_name || value.name || value.title || parentName;
-      const id = value.regionId || value.region_id || value.id || parentId;
-      const status = value.activeAlerts ?? value.active_alerts ?? value.alerts ?? value.isAlertActive ?? value.is_alert_active ?? value.active ?? value.alert;
-      if (typeof status === 'boolean' && status && name) {
+
+      const name = String(value.regionName || value.region_name || value.name || value.title || inheritedName || '');
+      const id = String(value.regionId || value.region_id || value.regionID || value.id || inheritedId || name);
+      const rawType = String(value.regionType || value.region_type || value.type || inheritedType).toLowerCase();
+      const normalizedType =
+        rawType.includes('oblast') || rawType.includes('область') ? 'oblast' :
+        rawType.includes('raion') || rawType.includes('район') || rawType.includes('district') ? 'raion' :
+        rawType.includes('city') || rawType.includes('місто') ? 'city' : 'hromada';
+      const parentOblast = String(value.oblast || value.parentRegionName || value.parent_region_name || inheritedOblast || '');
+      const statusValue = value.activeAlerts ?? value.active_alerts ?? value.isAlertActive ?? value.is_alert_active ?? value.active ?? value.alert;
+      const alertsValue = value.alerts;
+      const isActive = typeof statusValue === 'boolean'
+        ? statusValue
+        : Array.isArray(alertsValue)
+          ? alertsValue.length > 0
+          : typeof alertsValue === 'boolean'
+            ? alertsValue
+            : typeof statusValue === 'number'
+              ? statusValue > 0
+              : false;
+
+      if (isActive && name) {
         flattened.push({
-          id: String(id || name),
-          location_title: String(name),
-          location_type: /область|обл\.?/i.test(String(name)) ? 'oblast' : /район/i.test(String(name)) ? 'raion' : 'hromada',
-          started_at: value.lastUpdate || value.last_update || value.startedAt || value.started_at || new Date().toISOString(),
+          id,
+          location_title: name,
+          location_type: normalizedType,
+          started_at: String(value.lastUpdate || value.last_update || value.startedAt || value.started_at || payload?.fetchedAt || new Date().toISOString()),
           alert_type: 'air_raid',
           alert_level: 'red',
           location_uid: id,
-          location_oblast: value.parentRegionName || value.parent_region_name || '',
+          location_oblast: parentOblast,
         });
       }
+
       for (const [key, nested] of Object.entries(value)) {
         if (nested && typeof nested === 'object' && !['lastUpdate', 'last_update', 'updatedAt'].includes(key)) {
-          visit(nested, String(name || parentName), String(id || parentId));
+          visit(nested, name || inheritedName, id || inheritedId, normalizedType, parentOblast);
         }
       }
     };
+
     visit(raw);
-    const alerts = flattened.filter((alert, index, arr) =>
-      arr.findIndex((candidate) => String(candidate.id) === String(alert.id)) === index
+    const alerts = flattened.filter((alert, index, list) =>
+      list.findIndex((candidate) => String(candidate.id) === String(alert.id)) === index
     );
     const result: AirAlertsResponse = {
       alerts,
