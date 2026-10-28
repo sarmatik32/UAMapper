@@ -390,6 +390,106 @@ async function startServer() {
     }
   });
 
+  // Official UkraineAlarm API proxy. Keep its credential server-side only.
+  const ukraineAlarmCache = new Map<string, { data: unknown; at: number }>();
+  app.get("/api/ukrainealarm", async (req, res) => {
+    if (req.method !== "GET") {
+      res.setHeader("Allow", "GET");
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const token = process.env.UKRAINEALARM_API_TOKEN?.trim() || process.env.ALERTS_IN_UA_TOKEN?.trim();
+    if (!token) {
+      return res.status(503).json({
+        error: "UkraineAlarm token is not configured",
+        setup: "Set UKRAINEALARM_API_TOKEN in Vercel Environment Variables or in the local server environment, then restart/redeploy.",
+      });
+    }
+
+    const resource = String(req.query.resource || "alerts");
+    const regionId = typeof req.query.regionId === "string" ? req.query.regionId : "";
+    let upstreamPath: string;
+
+    switch (resource) {
+      case "alerts":
+        upstreamPath = "/alerts";
+        break;
+      case "regions":
+        upstreamPath = "/regions";
+        break;
+      case "status":
+        upstreamPath = "/alerts/status";
+        break;
+      case "history":
+        upstreamPath = "/alerts/regionHistory";
+        break;
+      case "region":
+        if (!/^[a-zA-Z0-9_-]{1,100}$/.test(regionId)) {
+          return res.status(400).json({ error: "Valid regionId is required" });
+        }
+        upstreamPath = `/alerts/${encodeURIComponent(regionId)}`;
+        break;
+      default:
+        return res.status(400).json({
+          error: "Unsupported resource",
+          allowed: ["alerts", "regions", "status", "history", "region"],
+        });
+    }
+
+    const cacheKey = `${resource}:${regionId}`;
+    const now = Date.now();
+    const cached = ukraineAlarmCache.get(cacheKey);
+    if (cached && now - cached.at < 10_000) {
+      res.setHeader("Cache-Control", "private, max-age=5");
+      return res.json({ data: cached.data, cached: true, cacheAgeMs: now - cached.at });
+    }
+
+    try {
+      const upstream = await fetch(`https://api.ukrainealarm.com/api/v3${upstreamPath}`, {
+        headers: {
+          Authorization: token,
+          Accept: "application/json",
+          "User-Agent": "UAMapper/1.0",
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!upstream.ok) {
+        const error = new Error(`UkraineAlarm upstream HTTP ${upstream.status}`) as Error & { statusCode?: number };
+        error.statusCode = upstream.status;
+        throw error;
+      }
+
+      const data = await upstream.json();
+      ukraineAlarmCache.set(cacheKey, { data, at: Date.now() });
+      if (ukraineAlarmCache.size > 30) {
+        const firstKey = ukraineAlarmCache.keys().next().value;
+        if (firstKey) ukraineAlarmCache.delete(firstKey);
+      }
+
+      res.setHeader("Cache-Control", "private, max-age=5");
+      return res.json({ data, cached: false, fetchedAt: new Date().toISOString() });
+    } catch (cause) {
+      const error = cause as Error & { statusCode?: number };
+      console.error("[UkraineAlarm API]", error.message);
+      const statusCode = error.statusCode === 401 || error.statusCode === 403
+        ? error.statusCode
+        : error.statusCode === 429
+          ? 429
+          : 502;
+
+      return res.status(statusCode).json({
+        error: "UkraineAlarm API request failed",
+        statusCode,
+        message: statusCode === 401 || statusCode === 403
+          ? "Перевір токен UKRAINEALARM_API_TOKEN у налаштуваннях середовища."
+          : statusCode === 429
+            ? "Перевищено ліміт API. Повтори пізніше."
+            : "Офіційний API тимчасово недоступний.",
+      });
+    }
+  });
+
   // DeepStateMap Occupied Territories API Proxy
   interface CachedDeepStateData {
     data: any;
