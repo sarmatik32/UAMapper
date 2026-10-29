@@ -110,6 +110,25 @@ export function getAlertVisuals(
   const alertLevel = alertObj?.alert_level?.toLowerCase();
   const threats = alertObj?.threats || [];
 
+  // Explicit level from the API takes precedence over the generic AIR event type.
+  // In the official API, active alert levels are separate from the alert event type.
+  if (alertLevel === 'yellow' || threats.some((t) => t.level === 'yellow')) {
+    const sourceMsg = threats.find((t) => t.level === 'yellow')?.source_message || alertObj?.notes;
+    return {
+      title: sourceMsg || (isUa ? 'Жовтий рівень тривоги' : 'Yellow-level alert'),
+      color: '#f59e0b',
+      fillColor: '#d97706',
+      glowColor: 'rgba(245, 158, 11, 0.75)',
+      badgeBg: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      iconName: 'AlertTriangle',
+      icon: '🛸',
+      level: 'yellow',
+      levelTitle: isUa ? 'Жовтий рівень' : 'Yellow Level',
+      threatType: threats.find((t) => t.level === 'yellow')?.threat_type || 'air_raid',
+      sourceMessage: sourceMsg || undefined,
+    };
+  }
+
   // 1. Check for special alert_types: artillery, urban fights, chemical, nuclear
   if (alertTypeStr === 'artillery_shelling') {
     return {
