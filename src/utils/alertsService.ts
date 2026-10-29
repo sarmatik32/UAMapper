@@ -388,6 +388,11 @@ type UkraineAlarmAlertEvent = {
   regionId?: string;
   startDate?: string;
   alertType?: { id?: number; name?: string } | string;
+  type?: string;
+  alertLevel?: string;
+  alert_level?: string;
+  level?: string;
+  activeAlertLevels?: Array<{ alertLevel?: string; level?: string; type?: string; reason?: string }>;
 };
 type UkraineAlarmRegion = {
   regionId?: string;
@@ -396,48 +401,118 @@ type UkraineAlarmRegion = {
   regionEngName?: string;
   lastUpdate?: string;
   activeAlerts?: UkraineAlarmAlertEvent[];
-  regionChildIds?: UkraineAlarmRegion[];
+  // In UkraineAlarm v3 this field can contain child region IDs rather than full objects.
+  regionChildIds?: Array<UkraineAlarmRegion | string | number>;
 };
 
 function normalizeUkraineAlarmRegions(regions: UkraineAlarmRegion[]): AirAlert[] {
   const output: AirAlert[] = [];
   const visited = new Set<string>();
 
+  const normalizeRegionType = (region: UkraineAlarmRegion): AirAlert['location_type'] => {
+    const value = region.regionType;
+    const name = typeof value === 'object' ? String(value?.name || '') : String(value ?? '');
+    const code = typeof value === 'object' ? Number(value?.id) : Number(value);
+    const raw = name.toLowerCase();
+    if (raw.includes('state') || raw.includes('область') || raw.includes('oblast') || code === 0) return 'oblast';
+    if (raw.includes('district') || raw.includes('район') || raw.includes('raion') || raw.includes('district') || code === 1) return 'raion';
+    if (raw.includes('city') || raw.includes('місто') || raw.includes('city')) return 'city';
+    if (raw.includes('community') || raw.includes('громад') || raw.includes('hromada') || code === 2) return 'hromada';
+    // The API's documented numeric type mapping may evolve; do not classify an unknown type as oblast.
+    return 'hromada';
+  };
+
+  const normalizeAlertType = (event: UkraineAlarmAlertEvent): { type: string; level?: string; label?: string } => {
+    const rawValue = event.alertType ?? event.type;
+    const rawName = typeof rawValue === 'string' ? rawValue : String(rawValue?.name || '');
+    const rawId = typeof rawValue === 'object' ? Number(rawValue?.id) : NaN;
+    const raw = rawName.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    const typeById: Record<number, string> = {
+      0: 'unknown',
+      1: 'air_raid',
+      2: 'artillery_shelling',
+      3: 'urban_fights',
+      4: 'chemical',
+      5: 'nuclear',
+      6: 'info',
+    };
+    const map: Record<string, string> = {
+      air: 'air_raid',
+      air_raid: 'air_raid',
+      airraid: 'air_raid',
+      'повітряна_тривога': 'air_raid',
+      artillery: 'artillery_shelling',
+      artillery_shelling: 'artillery_shelling',
+      'артилерійська_загроза': 'artillery_shelling',
+      urban_fights: 'urban_fights',
+      urban_fight: 'urban_fights',
+      'вуличні_бої': 'urban_fights',
+      chemical: 'chemical',
+      chemical_threat: 'chemical',
+      'хімічна_загроза': 'chemical',
+      nuclear: 'nuclear',
+      nuclear_threat: 'nuclear',
+      radiation: 'nuclear',
+      info: 'info',
+      information: 'info',
+      unknown: 'unknown',
+    };
+    const type = map[raw] || typeById[rawId] || 'unknown';
+    const nested = Array.isArray(event.activeAlertLevels) ? event.activeAlertLevels : [];
+    const rawLevel = event.alertLevel || event.alert_level || event.level
+      || nested.find((item) => item && (item.alertLevel || item.level))?.alertLevel
+      || nested.find((item) => item && (item.alertLevel || item.level))?.level;
+    const normalized = String(rawLevel || '').toLowerCase();
+    const level = ['red', 'yellow', 'orange', 'purple', 'lime', 'cyan', 'maroon'].includes(normalized) ? normalized : undefined;
+    return { type, level, label: rawName || undefined };
+  };
+
   const walk = (items: UkraineAlarmRegion[], parentOblast = '') => {
     for (const region of items) {
       if (!region || typeof region !== 'object') continue;
       const regionId = String(region.regionId || '');
-      const name = String(region.regionName || region.regionEngName || regionId || 'Регіон');
-      const regionType = region.regionType;
-      const typeName = typeof regionType === 'object' ? String(regionType?.name || '') : String(regionType ?? '');
-      const typeCode = typeof regionType === 'object' ? Number(regionType?.id) : Number(regionType);
-      const typeRaw = typeName.toLowerCase();
-      const locationType: AirAlert['location_type'] =
-        typeRaw.includes('state') || typeRaw.includes('область') || typeRaw.includes('oblast') || typeCode === 0 ? 'oblast' :
-        typeRaw.includes('district') || typeRaw.includes('район') || typeRaw.includes('raion') || typeCode === 1 ? 'raion' :
-        typeRaw.includes('city') || typeRaw.includes('місто') ? 'city' : 'hromada';
-
+      const name = String(region.regionName || region.regionEngName || regionId || '');
+      if (!name) continue;
+      const locationType = normalizeRegionType(region);
       const events = Array.isArray(region.activeAlerts) ? region.activeAlerts : [];
+
       for (const event of events) {
-        const key = `${regionId || name}:${event?.startDate || ''}:${JSON.stringify(event?.alertType ?? '')}`;
+        if (!event || typeof event !== 'object') continue;
+        const normalized = normalizeAlertType(event);
+        const eventDate = event.startDate || region.lastUpdate || new Date().toISOString();
+        const key = `${regionId || name}:${eventDate}:${normalized.type}:${normalized.level || ''}`;
         if (visited.has(key)) continue;
         visited.add(key);
-        const type = typeof event?.alertType === 'string' ? event.alertType : event?.alertType?.name;
+
         output.push({
           id: key,
           location_title: name,
           location_type: locationType,
-          started_at: event?.startDate || region.lastUpdate || new Date().toISOString(),
-          alert_type: 'air_raid',
-          alert_level: 'red',
+          started_at: eventDate,
+          updated_at: region.lastUpdate || eventDate,
+          alert_type: normalized.type,
+          ...(normalized.level ? { alert_level: normalized.level } : {}),
+          threats: [{
+            threat_type: normalized.type,
+            ...(normalized.level ? { level: normalized.level } : {}),
+            started_at: eventDate,
+            source_message: normalized.label || 'UkraineAlarm API v3',
+          }],
           location_uid: regionId || undefined,
           location_oblast: parentOblast || (locationType === 'oblast' ? name : ''),
-          notes: type || undefined,
+          notes: normalized.label,
+          country: 'UA',
         });
       }
 
       const children = Array.isArray(region.regionChildIds) ? region.regionChildIds : [];
-      if (children.length) walk(children, locationType === 'oblast' ? name : parentOblast);
+      const objectChildren = children.filter((child): child is UkraineAlarmRegion =>
+        !!child && typeof child === 'object' && !Array.isArray(child)
+      );
+      // Some API responses include full child objects; only recurse when records actually contain objects.
+      if (objectChildren.length) {
+        walk(objectChildren, locationType === 'oblast' ? name : parentOblast);
+      }
     }
   };
 
