@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
+import { setWorkerUrl } from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+setWorkerUrl(workerUrl);
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat } from '../types';
@@ -306,7 +312,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
+  const tileLayerInstanceRef = useRef<L.Layer | null>(null);
   const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   // Avoid resetting the moving marker's DOM/icon on every persisted position update.
@@ -3084,7 +3090,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map || !isMapReady) return;
 
-    // Remove existing tile layer if any
+    // Remove previous base layer; both raster and vector styles use the same Leaflet layer ref.
     if (tileLayerInstanceRef.current) {
       map.removeLayer(tileLayerInstanceRef.current);
       tileLayerInstanceRef.current = null;
@@ -3096,11 +3102,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Format tile URL and retina parameters
     let url = activeTileLayer.url;
-    // War Monitor uses the same OpenFreeMap vector basemap as its public map.
-    // This Leaflet project renders its raster-compatible style endpoint as a tile base.
-    if (activeTileLayer.id === 'war_monitor_base') {
-      url = 'https://tiles.openfreemap.org/styles/liberty/{z}/{x}/{y}.png';
-    }
     if (activeTileLayer.id === 'deepstatemap') {
       const langSuffix = language === 'en' ? 'En' : 'Uk';
       const themeSuffix = theme === 'dark' ? 'Dark' : '';
@@ -3111,6 +3112,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
     if (url.includes('{r}')) {
       url = url.replace('{r}', L.Browser.retina ? '@2x' : '');
+    }
+
+    if (activeTileLayer.id === 'war_monitor_base') {
+      const vectorLayer = maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        attribution: '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors',
+        interactive: true,
+      });
+      vectorLayer.addTo(map);
+      tileLayerInstanceRef.current = vectorLayer;
+      map.invalidateSize();
+      return;
     }
 
     // Create Leaflet TileLayer with crisp 1:1 pixel rendering
@@ -3167,7 +3180,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     const timer = setTimeout(() => {
       map.invalidateSize();
-      if (tileLayerInstanceRef.current) {
+      if (tileLayerInstanceRef.current instanceof L.TileLayer) {
         tileLayerInstanceRef.current.redraw();
       }
     }, 50);
