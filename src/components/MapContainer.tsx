@@ -3102,11 +3102,6 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     // Format tile URL and retina parameters
     let url = activeTileLayer.url;
-    // War Monitor uses the same OpenFreeMap vector basemap as its public map.
-    // This Leaflet project renders its raster-compatible style endpoint as a tile base.
-    if (activeTileLayer.id === 'war_monitor_base') {
-      url = 'https://tiles.openfreemap.org/styles/liberty/{z}/{x}/{y}.png';
-    }
     if (activeTileLayer.id === 'deepstatemap') {
       const langSuffix = language === 'en' ? 'En' : 'Uk';
       const themeSuffix = theme === 'dark' ? 'Dark' : '';
