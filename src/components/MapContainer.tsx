@@ -312,7 +312,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 }, ref) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  const tileLayerInstanceRef = useRef<L.TileLayer | null>(null);
+  const tileLayerInstanceRef = useRef<L.Layer | null>(null);
   const tileOverlayInstanceRef = useRef<L.TileLayer | null>(null);
   const markersRef = useRef<{ [id: string]: L.Marker }>({});
   // Avoid resetting the moving marker's DOM/icon on every persisted position update.
@@ -3121,7 +3121,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         interactive: true,
       });
       vectorLayer.addTo(map);
-      tileLayerInstanceRef.current = vectorLayer as unknown as L.TileLayer;
+      tileLayerInstanceRef.current = vectorLayer;
       map.invalidateSize();
       return;
     }
@@ -3180,7 +3180,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
     const timer = setTimeout(() => {
       map.invalidateSize();
-      if (tileLayerInstanceRef.current) {
+      if (tileLayerInstanceRef.current instanceof L.TileLayer) {
         tileLayerInstanceRef.current.redraw();
       }
     }, 50);
