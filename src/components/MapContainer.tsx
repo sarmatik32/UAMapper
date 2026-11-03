@@ -1,5 +1,11 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import L from '../leaflet-fix';
+import { maplibreGL } from '@maplibre/maplibre-gl-leaflet';
+import { setWorkerUrl } from 'maplibre-gl';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+import 'maplibre-gl/dist/maplibre-gl.css';
+
+setWorkerUrl(workerUrl);
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat } from '../types';
@@ -3084,7 +3090,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     const map = mapInstanceRef.current;
     if (!map || !isMapReady) return;
 
-    // Remove existing tile layer if any
+    // Remove previous base layer; both raster and vector styles use the same Leaflet layer ref.
     if (tileLayerInstanceRef.current) {
       map.removeLayer(tileLayerInstanceRef.current);
       tileLayerInstanceRef.current = null;
@@ -3111,6 +3117,18 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
     if (url.includes('{r}')) {
       url = url.replace('{r}', L.Browser.retina ? '@2x' : '');
+    }
+
+    if (activeTileLayer.id === 'war_monitor_base') {
+      const vectorLayer = maplibreGL({
+        style: 'https://tiles.openfreemap.org/styles/liberty',
+        attribution: '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors',
+        interactive: true,
+      });
+      vectorLayer.addTo(map);
+      tileLayerInstanceRef.current = vectorLayer as unknown as L.TileLayer;
+      map.invalidateSize();
+      return;
     }
 
     // Create Leaflet TileLayer with crisp 1:1 pixel rendering
