@@ -19,19 +19,6 @@ import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
   {
-    id: 'war_monitor_base',
-    nameEn: 'War Monitor — Map',
-    nameUa: 'War Monitor — карта',
-    url: 'https://tiles.openfreemap.org/styles/liberty/{z}/{x}/{y}.png',
-    tms: false,
-    subdomains: '',
-    minZoom: 2,
-    maxZoom: 19,
-    attribution: '© monitor / War Monitor · © OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors',
-    requiresKey: false,
-    isDark: true,
-  },
-  {
     id: 'carto_dark',
     nameEn: 'Dark Canvas (Clean)',
     nameUa: 'Темна (Чиста, без водяних знаків)',
