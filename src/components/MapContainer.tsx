@@ -3115,6 +3115,9 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     }
 
     if (activeTileLayer.id === 'war_monitor_base') {
+      // War Monitor's published map uses OpenFreeMap as its basemap.
+      // This layer intentionally renders the same public basemap style; the
+      // official dynamic threat and alert data remains served by War Monitor.
       const vectorLayer = maplibreGL({
         style: 'https://tiles.openfreemap.org/styles/liberty',
         attribution: '© OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors',
