@@ -149,7 +149,7 @@ export async function handleAppleTile(req: IncomingMessage & { url?: string; met
   const x = Number(parts.at(-2));
   const tile = parts.at(-1) || "";
   const retina = /@2x|@3x/.test(tile);
-  const y = Number(tile.replace(/@\\d+x/gi, "").replace(/\\.(png|jpe?g|webp)$/i, ""));
+  const y = Number(tile.replace(/@\d+x/gi, "").replace(/\.(png|jpe?g|webp)$/i, ""));
   if (![z, x, y].every(Number.isInteger) || z < 1 || z > 22 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
     send(res, 400, "Invalid tile coordinates", "text/plain; charset=utf-8");
     return;
