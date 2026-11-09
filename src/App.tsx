@@ -556,13 +556,8 @@ export default function App() {
 
   const [activeTileLayer, setActiveTileLayer] = useState<TileLayerConfig>(() => {
     const savedId = localStorage.getItem('visicom_active_layer');
-    if (savedId === 'esri_light_gray') {
-      const light = TILE_LAYERS.find((l) => l.id === 'carto_light' || l.id === 'apple_maps');
-      if (light) return light;
-    }
-    if (savedId === 'esri_dark_gray') {
-      const dark = TILE_LAYERS.find((l) => l.id === 'carto_dark');
-      if (dark) return dark;
+    if (savedId === 'esri_light_gray' || savedId === 'esri_dark_gray' || savedId === 'carto_dark' || savedId === 'carto_light') {
+      return TILE_LAYERS.find((l) => l.id === 'war_monitor_base') || TILE_LAYERS[0];
     }
     if (savedId === 'esri_topo') {
       const deepstate = TILE_LAYERS.find((l) => l.id === 'deepstatemap');
