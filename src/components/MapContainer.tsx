@@ -330,6 +330,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
   const endEtaMarkersRef = useRef<{ [id: string]: L.Marker }>({});
   const completedMovementTargetsRef = useRef<Set<string>>(new Set());
   const settlementLayerRef = useRef<L.LayerGroup | null>(null);
+  const watermarkElementRef = useRef<HTMLDivElement | null>(null);
   const kryvyiRihRaionLayerRef = useRef<L.GeoJSON | null>(null);
   const kryvyiRihCityLayerRef = useRef<L.GeoJSON | null>(null);
   const ukraineBoundaryLayerRef = useRef<L.GeoJSON | null>(null);
@@ -5548,6 +5549,32 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
 
   const watermarkUrl = `url("data:image/svg+xml;utf8,${encodeURIComponent(watermarkSvg)}")`;
 
+  // Keep the tiled watermark inside Leaflet's pane stack, below settlement labels.
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapReady) return;
+
+    let pane = map.getPane('watermarkPane');
+    if (!pane) pane = map.createPane('watermarkPane');
+    pane.style.zIndex = '630';
+    pane.style.pointerEvents = 'none';
+
+    let watermark = watermarkElementRef.current;
+    if (!watermark || watermark.parentElement !== pane) {
+      watermark = document.createElement('div');
+      watermark.className = 'uamapper-map-watermark';
+      watermark.style.position = 'absolute';
+      watermark.style.inset = '0';
+      watermark.style.pointerEvents = 'none';
+      watermark.style.backgroundRepeat = 'repeat';
+      pane.appendChild(watermark);
+      watermarkElementRef.current = watermark;
+    }
+
+    watermark.style.backgroundImage = watermarkUrl;
+    watermark.style.backgroundSize = `${bgTileWidth}px ${bgTileHeight}px`;
+  }, [isMapReady, watermarkUrl, bgTileWidth, bgTileHeight]);
+
   const fontCssValue = getMapFontFamilyCss(mapFont);
 
   return (
@@ -5880,15 +5907,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           </div>
         )}
 
-        {/* Tiled watermark */}
-        <div 
-          className="absolute inset-0 pointer-events-none z-[12]" 
-          style={{ 
-            backgroundImage: watermarkUrl,
-            backgroundRepeat: 'repeat',
-            backgroundSize: `${bgTileWidth}px ${bgTileHeight}px`
-          }} 
-        />
+        {/* Tiled watermark is rendered in Leaflet's watermarkPane below settlement labels. */}
 
         {/* Tactical Conventional Signs Legend ("УМОВНІ ПОЗНАЧЕННЯ:") */}
         {mapLegendConfig && mapLegendConfig.enabled && (
