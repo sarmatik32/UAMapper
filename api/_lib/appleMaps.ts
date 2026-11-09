@@ -86,12 +86,12 @@ function buildTileUrl(cfg: AppleConfig, layer: LayerType, z: number, x: number, 
   const size = retina ? 2 : 1;
   const shard = (Math.abs(x + y) % 4) + 1;
   const replace = (template: string) => template
-    .replace(/\\{\\{tileSizeIndex\\}\\}/g, String(size))
-    .replace(/\\{\\{resolution\\}\\}/g, String(scale))
-    .replace(/\\{\\{lang\\}\\}/g, "uk")
-    .replace(/\\{\\{z\\}\\}/g, String(z))
-    .replace(/\\{\\{x\\}\\}/g, String(x))
-    .replace(/\\{\\{y\\}\\}/g, String(y));
+    .replace(/\{\{tileSizeIndex\}\}/g, String(size))
+    .replace(/\{\{resolution\}\}/g, String(scale))
+    .replace(/\{\{lang\}\}/g, "uk")
+    .replace(/\{\{z\}\}/g, String(z))
+    .replace(/\{\{x\}\}/g, String(x))
+    .replace(/\{\{y\}\}/g, String(y));
   if (layer === "satellite") {
     const template = cfg.satellitePath || "/tile?style=7&size={{tileSizeIndex}}&scale={{resolution}}&z={{z}}&x={{x}}&y={{y}}";
     const domain = cfg.satelliteDomain.replace("sat-cdn.", `sat-cdn${shard}.`);
