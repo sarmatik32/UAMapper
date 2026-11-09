@@ -1978,9 +1978,15 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         p.style.zIndex = '230';
         p.style.pointerEvents = 'none';
       }
+      // Settlement labels sit above every map/data overlay, while tactical
+      // and alert icons remain above the labels.
+      const defaultMarkerPane = map.getPane('markerPane');
+      if (defaultMarkerPane) defaultMarkerPane.style.zIndex = '700';
       if (!map.getPane('airAlertsMarkersPane')) {
         const p = map.createPane('airAlertsMarkersPane');
-        p.style.zIndex = '240';
+        p.style.zIndex = '660';
+      } else {
+        map.getPane('airAlertsMarkersPane')!.style.zIndex = '660';
       }
       if (!map.getPane('deepStatePane')) {
         const p = map.createPane('deepStatePane');
@@ -1996,7 +2002,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
       if (!map.getPane('settlementPane')) {
         const p = map.createPane('settlementPane');
-        p.style.zIndex = '380';
+        p.style.zIndex = '640';
       }
       if (!map.getPane('drawnLinesPane')) {
         const p = map.createPane('drawnLinesPane');
@@ -2004,7 +2010,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
       if (!map.getPane('userMarkersPane')) {
         const p = map.createPane('userMarkersPane');
-        p.style.zIndex = '600';
+        p.style.zIndex = '670';
       }
       if (!map.getPane('liveThreatsTrailsPane')) {
         const p = map.createPane('liveThreatsTrailsPane');
@@ -2013,7 +2019,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
       }
       if (!map.getPane('liveThreatsMarkersPane')) {
         const p = map.createPane('liveThreatsMarkersPane');
-        p.style.zIndex = '650';
+        p.style.zIndex = '680';
       }
 
       // Handle map clicks based on active interaction mode
