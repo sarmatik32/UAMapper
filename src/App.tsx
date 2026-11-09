@@ -569,6 +569,10 @@ export default function App() {
       if (deepstate) return deepstate;
     }
     const matched = TILE_LAYERS.find((l) => l.id === savedId);
+    // Migrate IDs of removed basemaps and avoid restoring obsolete saved selections.
+    if (savedId === 'carto_dark' || savedId === 'carto_light') {
+      return TILE_LAYERS.find((l) => l.id === 'war_monitor_base') || TILE_LAYERS[0];
+    }
     return matched || TILE_LAYERS.find((l) => l.id === 'deepstatemap') || TILE_LAYERS[0];
   });
 
