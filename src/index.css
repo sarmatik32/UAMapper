@@ -84,11 +84,8 @@ html, body {
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Ensure leaflet doesn't overlap text labels incorrectly */
-.leaflet-pane {
-  z-index: 1 !important;
-}
-
+/* Keep Leaflet's native pane z-index values.
+   Custom pane ordering is controlled in MapContainer.tsx. */
 .leaflet-top, .leaflet-bottom {
   z-index: 2 !important;
 }
