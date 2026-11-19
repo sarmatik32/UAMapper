@@ -71,6 +71,20 @@ export default async function handler(
     return;
   }
 
+  const latestPath = path.join(process.cwd(), "public/data/deepstate/latest.geojson");
+  try {
+    if (fs.existsSync(latestPath)) {
+      const snapshot = JSON.parse(fs.readFileSync(latestPath, "utf8"));
+      if (snapshot?.type === "FeatureCollection" && Array.isArray(snapshot.features) && snapshot.features.length > 0) {
+        res.statusCode = 200;
+        res.end(JSON.stringify({ ...snapshot, cached: true, source: "daily-github-actions-snapshot" }));
+        return;
+      }
+    }
+  } catch (snapshotError) {
+    console.warn("DeepState daily snapshot is unavailable; falling back to upstream API.", snapshotError);
+  }
+
   const now = Date.now();
   if (cachedDeepState && now - cachedDeepState.timestamp < CACHE_TTL_MS) {
     res.statusCode = 200;
