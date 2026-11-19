@@ -233,7 +233,10 @@ export interface BoundaryStyleConfig {
   strokeStyle?: BoundaryStrokeStyle;
 }
 
+export type DeepStateZoneType = 'liberated' | 'liberated_recent' | 'gray' | 'occupied' | 'crimea_ordlo' | 'foreign_occupied';
+
 export interface DeepStateOccupiedConfig {
+  categories?: Partial<Record<DeepStateZoneType, boolean>>;
   enabled: boolean;
   
   // Fill settings
