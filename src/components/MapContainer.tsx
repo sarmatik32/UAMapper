@@ -2792,7 +2792,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const labels: Record<string, [string, string]> = {
             liberated: ['Звільнена територія', 'Liberated territory'],
             liberated_recent: ['Звільнена за останні 2 тижні', 'Liberated in the last 2 weeks'],
-            gray: ['Сіра зона / потребує уточнення', 'Gray zone / needs clarification'],
+            gray: ['Сіра зона', 'Gray zone'],
             occupied: ['Окупована територія', 'Occupied territory'],
             crimea_ordlo: ['Крим та ОРДЛО', 'Crimea and ORDLO'],
             foreign_occupied: ['Окуповані території інших держав', 'Occupied territories of other states'],
