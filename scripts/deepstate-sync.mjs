@@ -33,10 +33,22 @@ function toHsl(hex) {
   const l = (max + min) / 2;
   return { h, s: delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1)), l };
 }
+const EXACT_FILL_TYPES = {
+  '#0f9d58': 'liberated',
+  '#0288d1': 'liberated_recent',
+  '#01579b': 'liberated_recent',
+  '#bcaaa4': 'gray',
+  '#bdbdbd': 'gray',
+  '#a52714': 'occupied',
+  '#880e4f': 'crimea_ordlo',
+  '#ff5252': 'foreign_occupied',
+};
 function classify(feature) {
   const p = feature?.properties ?? {};
   const name = String(p.name ?? '').toLowerCase();
-  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
+  const fill = normalizeColor(p.fill ?? p.originalFill);
+  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск|тузла|tuzla/.test(name)) return 'crimea_ordlo';
+  if (EXACT_FILL_TYPES[fill]) return EXACT_FILL_TYPES[fill];
   if (/придністров|трансністр|transnistria|абхаз|abkhazia|цхінвал|south ossetia|куриль|kuril|карелі|karelia|петсамо|petsamo|саатсе|естон|estonia|латві|latvia/.test(name)) return 'foreign_occupied';
   const hsl = toHsl(normalizeColor(p.fill ?? p.originalFill));
   if (!hsl) return null;
