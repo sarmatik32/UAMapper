@@ -37,14 +37,14 @@ function classify(feature) {
   const p = feature?.properties ?? {};
   const name = String(p.name ?? '').toLowerCase();
   if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
-  if (/придністров|трансністр|абхаз|цхінвал|куриль|карелі|петсамо|саатсе|естон|латві/.test(name)) return 'foreign_occupied';
+  if (/придністров|трансністр|transnistria|абхаз|abkhazia|цхінвал|south ossetia|куриль|kuril|карелі|karelia|петсамо|petsamo|саатсе|естон|estonia|латві|latvia/.test(name)) return 'foreign_occupied';
   const hsl = toHsl(normalizeColor(p.fill ?? p.originalFill));
   if (!hsl) return null;
   if (hsl.s < 0.20) return 'gray';
   if (hsl.h >= 80 && hsl.h <= 165) return 'liberated';
   if (hsl.h >= 175 && hsl.h <= 235) return 'liberated_recent';
   if (hsl.h >= 245 && hsl.h <= 315) return 'crimea_ordlo';
-  if (hsl.h >= 316 && hsl.h <= 349) return 'foreign_occupied';
+  if ((hsl.h >= 316 && hsl.h <= 349) || ((hsl.h <= 18 || hsl.h >= 350) && hsl.l > 0.58)) return 'foreign_occupied';
   if (hsl.h <= 18 || hsl.h >= 350) return 'occupied';
   return null;
 }
