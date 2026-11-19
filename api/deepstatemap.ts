@@ -37,14 +37,14 @@ function classifyFeature(feature: any): ZoneType | null {
   const name = String(props.name ?? '').toLowerCase();
   const fill = normalizeColor(props.fill ?? props.originalFill);
   if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
-  if (/придністров|трансністр|абхаз|цхінвал|куриль|карелі|петсамо|саатсе|естон|латві|окупован.{0,30}(держав|територ)/.test(name)) return 'foreign_occupied';
+  if (/придністров|трансністр|transnistria|абхаз|abkhazia|цхінвал|south ossetia|куриль|kuril|карелі|karelia|петсамо|petsamo|саатсе|естон|estonia|латві|latvia|окупован.{0,30}(держав|територ)/.test(name)) return 'foreign_occupied';
   const hsl = colorToHsl(fill);
   if (!hsl) return null;
   if (hsl.s < 0.20) return 'gray';
   if (hsl.h >= 80 && hsl.h <= 165) return 'liberated';
   if (hsl.h >= 175 && hsl.h <= 235) return 'liberated_recent';
   if (hsl.h >= 245 && hsl.h <= 315) return 'crimea_ordlo';
-  if (hsl.h >= 316 && hsl.h <= 349) return 'foreign_occupied';
+  if ((hsl.h >= 316 && hsl.h <= 349) || ((hsl.h <= 18 || hsl.h >= 350) && hsl.l > 0.58)) return 'foreign_occupied';
   if (hsl.h <= 18 || hsl.h >= 350) return 'occupied';
   return null;
 }
