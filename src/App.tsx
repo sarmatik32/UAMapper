@@ -759,6 +759,7 @@ export default function App() {
   const [deepStateOccupiedConfig, setDeepStateOccupiedConfig] = useState<DeepStateOccupiedConfig>(() => {
     const defaultCfg: DeepStateOccupiedConfig = {
       enabled: true,
+      categories: { liberated: true, liberated_recent: true, gray: true, occupied: true, crimea_ordlo: true, foreign_occupied: true },
       fillColor: '#b91c1c',
       fillOpacity: 0.35,
       fillPattern: 'solid',

@@ -8,6 +8,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 setWorkerUrl(workerUrl);
 import { toBlob } from 'html-to-image';
 import { Check, Loader2, Search, X, MapPin, Ruler, ShieldAlert, PenTool, Hand, Trash2, Layers, Building2, Plus, Spline, Sparkles, Star, RotateCcw, Undo2, Compass, ArrowRightLeft, Navigation, ChevronDown, ChevronUp } from 'lucide-react';
+import { getDeepStateAreaKm2 } from '../utils/deepState';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, MapLegendConfig, MeasureTrack, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat } from '../types';
 import { createMarkerHtml } from './IconLibrary';
 import { SETTLEMENTS, Settlement, SettlementCategory, getSettlementCategory } from '../data/settlements';
@@ -2707,16 +2708,16 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     
     // On touch devices or when in drawing/measurement modes, always use interactive: false
     // On desktop mouse when in pan mode, allow hover tooltips without blocking clicks
-    const isInteractive = !isTouchDevice && interactionMode === 'pan';
+    const isInteractive = interactionMode === 'pan';
 
     try {
       const geoLayer = L.geoJSON(deepStateGeoJson, {
         pane: 'deepStatePane',
         interactive: isInteractive,
         filter: (feature: any) => {
-          if (feature?.properties?.zoneType === 'gray') {
-            return Boolean(deepStateOccupiedConfig.includeGrayZone);
-          }
+          const zoneType = feature?.properties?.zoneType;
+          if (zoneType && deepStateOccupiedConfig.categories && deepStateOccupiedConfig.categories[zoneType] === false) return false;
+          if (zoneType === 'gray' && deepStateOccupiedConfig.categories?.gray === undefined) return Boolean(deepStateOccupiedConfig.includeGrayZone);
           return true;
         },
         style: (feature: any) => {
@@ -2748,10 +2749,12 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
             } as L.PathOptions;
           }
 
+          const zoneColor = String(feature?.properties?.originalFill || feature?.properties?.fill || deepStateOccupiedConfig.fillColor || '#a52714');
+          const zoneStroke = String(feature?.properties?.originalStroke || deepStateOccupiedConfig.strokeColor || '#7f1d1d');
           const pattern = deepStateOccupiedConfig.fillPattern || 'solid';
-          const isPat = pattern !== 'solid';
+          const isPat = pattern !== 'solid' && (!feature?.properties?.zoneType || feature.properties.zoneType === 'occupied');
 
-          let strokeColor = deepStateOccupiedConfig.strokeColor || '#7f1d1d';
+          let strokeColor = zoneStroke;
           let strokeWidth = deepStateOccupiedConfig.strokeWidth ?? 1.5;
           let strokeOpacity = deepStateOccupiedConfig.strokeOpacity ?? 0.9;
           let dash: string | undefined = undefined;
@@ -2769,8 +2772,8 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           return {
             renderer: dsRenderer,
             className: 'deepstate-tactical-polygon',
-            fillColor: isPat ? 'url(#ds-pattern-occ)' : (deepStateOccupiedConfig.fillColor || '#b91c1c'),
-            fillOpacity: isPat ? 1 : (deepStateOccupiedConfig.fillOpacity ?? 0.35),
+            fillColor: isPat ? 'url(#ds-pattern-occ)' : zoneColor,
+            fillOpacity: isPat ? 1 : (feature?.properties?.zoneType ? 0.32 : (deepStateOccupiedConfig.fillOpacity ?? 0.35)),
             color: strokeColor,
             weight: strokeWidth,
             opacity: strokeOpacity,
@@ -2783,19 +2786,37 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
         onEachFeature: (feature: any, layer: any) => {
           if (!isInteractive) return;
 
-          const isGray = feature?.properties?.zoneType === 'gray';
+          const zoneType = String(feature?.properties?.zoneType || 'occupied');
+          const isGray = zoneType === 'gray';
           const name = language === 'en' ? (feature?.properties?.nameEn || feature?.properties?.name) : feature?.properties?.name;
-          const statusLabel = isGray
-            ? (language === 'en' ? 'Contested / Gray Zone' : 'Сіра зона (статус невідомий)')
-            : (language === 'en' ? 'Temporarily Occupied Territory' : 'Тимчасово окупована територія');
-          
+          const labels: Record<string, [string, string]> = {
+            liberated: ['Звільнена територія', 'Liberated territory'],
+            liberated_recent: ['Звільнена за останні 2 тижні', 'Liberated in the last 2 weeks'],
+            gray: ['Сіра зона', 'Gray zone'],
+            occupied: ['Окупована територія', 'Occupied territory'],
+            crimea_ordlo: ['Крим та ОРДЛО', 'Crimea and ORDLO'],
+            foreign_occupied: ['Окуповані території інших держав', 'Occupied territories of other states'],
+          };
+          const statusLabel = labels[zoneType]?.[language === 'en' ? 1 : 0] || labels.occupied[language === 'en' ? 1 : 0];
+          const areaKm2 = getDeepStateAreaKm2(feature);
+          const dateValue = feature?.properties?.snapshotDate || deepStateGeoJson?.properties?.snapshotDate || deepStateGeoJson?.updatedAt;
+          const dateLabel = dateValue && !Number.isNaN(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString(language === 'en' ? 'en-GB' : 'uk-UA') : (deepStateGeoJson?.datetime || '—');
+          const updateDescription = String(feature?.properties?.updateDescription || deepStateGeoJson?.properties?.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
+          const escapeTooltipText = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+          const safeName = escapeTooltipText(name || statusLabel);
+          const safeStatus = escapeTooltipText(statusLabel);
+          const safeDate = escapeTooltipText(dateLabel);
+          const safeDescription = escapeTooltipText(updateDescription);
+          const sourceColor = String(feature?.properties?.originalFill || '#e2e8f0');
+          const safeColor = /^#[0-9a-f]{6}$/i.test(sourceColor) ? sourceColor : '#e2e8f0';
           const tooltipContent = `
-            <div style="font-family: inherit;" class="p-1 min-w-[140px]">
-              <div class="text-[12px] font-black ${isGray ? 'text-slate-200' : 'text-rose-400'} leading-tight">${name || statusLabel}</div>
-              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${statusLabel}</div>
-              <div class="text-[9px] text-slate-400 mt-1 flex items-center gap-1 border-t border-slate-700/60 pt-1">
-                <span>🇺🇦 DeepStateMap Live</span>
-              </div>
+            <div style="font-family: inherit;" class="p-1 min-w-[180px]">
+              <div class="text-[12px] font-black leading-tight" style="color: ${safeColor}">${safeName}</div>
+              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${safeStatus}</div>
+              <div class="text-[10px] text-slate-300 mt-1">${language === 'en' ? 'Area' : 'Площа'}: <b>${areaKm2 === null ? '—' : areaKm2.toLocaleString(language === 'en' ? 'en-GB' : 'uk-UA', { maximumFractionDigits: 2 }) + ' km²'}</b></div>
+              <div class="text-[9px] text-slate-400 mt-0.5">${language === 'en' ? 'Map update' : 'Оновлення карти'}: ${safeDate}</div>
+              ${safeDescription ? `<div class="text-[9px] text-slate-400 mt-1 border-t border-slate-700/60 pt-1">${language === 'en' ? 'Latest map note' : 'Опис останнього оновлення'}: ${safeDescription}</div>` : ''}
+              <div class="text-[9px] text-slate-400 mt-1 border-t border-slate-700/60 pt-1">DeepStateMap.live</div>
             </div>
           `;
           layer.bindTooltip(tooltipContent, {
