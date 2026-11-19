@@ -100,6 +100,7 @@ const snapshot = {
     source: 'DeepStateMap.live',
     sourceUrl: 'https://deepstatemap.live/',
     historyId: last.id,
+    classifierVersion: 2,
     updatedAt: last.updatedAt || last.createdAt || new Date().toISOString(),
     snapshotDate: last.createdAt || last.updatedAt || new Date().toISOString(),
     datetime: last.datetime || '',
@@ -115,7 +116,7 @@ const date = new Date(snapshot.properties.snapshotDate).toISOString().slice(0, 1
 const latestPath = join(OUTPUT, 'latest.geojson');
 let previous = null;
 try { previous = JSON.parse(await readFile(latestPath, 'utf8')); } catch {}
-if (previous?.properties?.historyId === last.id) {
+if (previous?.properties?.historyId === last.id && previous?.properties?.classifierVersion === 2) {
   console.log(`No new DeepState history record (${last.id}); snapshot unchanged.`);
 } else {
   const datedPath = join(OUTPUT, `${date}-${last.id}.geojson`);
