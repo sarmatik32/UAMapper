@@ -11,11 +11,24 @@ export const DEEPSTATE_ZONES: Record<DeepStateZoneType, { label: string; labelEn
 
 export const DEEPSTATE_ZONE_ORDER: DeepStateZoneType[] = ['liberated', 'liberated_recent', 'gray', 'occupied', 'crimea_ordlo', 'foreign_occupied'];
 
+const EXACT_FILL_TYPES: Record<string, DeepStateZoneType> = {
+  '#0f9d58': 'liberated',
+  '#0288d1': 'liberated_recent',
+  '#01579b': 'liberated_recent',
+  '#bcaaa4': 'gray',
+  '#bdbdbd': 'gray',
+  '#a52714': 'occupied',
+  '#880e4f': 'crimea_ordlo',
+  '#ff5252': 'foreign_occupied',
+};
+
 export function classifyDeepStateFeature(feature: any): DeepStateZoneType | null {
   const props = feature?.properties ?? {};
   const name = String(props.name ?? '').toLowerCase();
   const raw = String(props.fill ?? props.originalFill ?? '').trim().toLowerCase();
   const fill = /^#[0-9a-f]{3}$/.test(raw) ? '#' + raw.slice(1).split('').map((c) => c + c).join('') : raw;
+  if (EXACT_FILL_TYPES[fill]) return EXACT_FILL_TYPES[fill];
+  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск|тузла|tuzla/.test(name)) return 'crimea_ordlo';
   if (/^#[0-9a-f]{6}$/.test(fill)) {
     const r = parseInt(fill.slice(1, 3), 16) / 255;
     const g = parseInt(fill.slice(3, 5), 16) / 255;
