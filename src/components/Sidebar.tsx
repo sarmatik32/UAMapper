@@ -4606,12 +4606,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="space-y-1.5">
                           <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{isUa ? 'Категорії територій' : 'Territory categories'}</div>
                           {([
-                            ['liberated', '#58a65c', isUa ? 'Звільнена територія' : 'Liberated territory'],
-                            ['liberated_recent', '#2196d2', isUa ? 'Звільнена за останні 2 тижні' : 'Liberated in the last 2 weeks'],
-                            ['gray', '#bdbdbd', isUa ? 'Сіра зона' : 'Gray zone'],
+                            ['liberated', '#0f9d58', isUa ? 'Звільнена територія' : 'Liberated territory'],
+                            ['liberated_recent', '#0288d1', isUa ? 'Звільнена за останні 2 тижні' : 'Liberated in the last 2 weeks'],
+                            ['gray', '#bcaaa4', isUa ? 'Сіра зона' : 'Gray zone'],
                             ['occupied', '#a52714', isUa ? 'Окупована територія' : 'Occupied territory'],
-                            ['crimea_ordlo', '#6a1b9a', isUa ? 'Крим та ОРДЛО' : 'Crimea and ORDLO'],
-                            ['foreign_occupied', '#e91e63', isUa ? 'Окуповані території інших держав' : 'Occupied territories of other states'],
+                            ['crimea_ordlo', '#880e4f', isUa ? 'Крим та ОРДЛО' : 'Crimea and ORDLO'],
+                            ['foreign_occupied', '#ff5252', isUa ? 'Окуповані території інших держав' : 'Occupied territories of other states'],
                           ] as const).map(([key, color, label]) => (
                             <label key={key} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/40 cursor-pointer">
                               <span className="flex items-center gap-2 text-[10px] text-slate-700 dark:text-slate-200">
