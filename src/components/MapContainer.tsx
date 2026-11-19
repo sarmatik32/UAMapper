@@ -2801,12 +2801,21 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const areaKm2 = getDeepStateAreaKm2(feature);
           const dateValue = feature?.properties?.snapshotDate || deepStateGeoJson?.properties?.snapshotDate || deepStateGeoJson?.updatedAt;
           const dateLabel = dateValue && !Number.isNaN(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString(language === 'en' ? 'en-GB' : 'uk-UA') : (deepStateGeoJson?.datetime || '—');
+          const updateDescription = String(feature?.properties?.updateDescription || deepStateGeoJson?.properties?.description || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 220);
+          const escapeTooltipText = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+          const safeName = escapeTooltipText(name || statusLabel);
+          const safeStatus = escapeTooltipText(statusLabel);
+          const safeDate = escapeTooltipText(dateLabel);
+          const safeDescription = escapeTooltipText(updateDescription);
+          const sourceColor = String(feature?.properties?.originalFill || '#e2e8f0');
+          const safeColor = /^#[0-9a-f]{6}$/i.test(sourceColor) ? sourceColor : '#e2e8f0';
           const tooltipContent = `
-            <div style="font-family: inherit;" class="p-1 min-w-[170px]">
-              <div class="text-[12px] font-black leading-tight" style="color: ${String(feature?.properties?.originalFill || '#e2e8f0')}">${name || statusLabel}</div>
-              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${statusLabel}</div>
+            <div style="font-family: inherit;" class="p-1 min-w-[180px]">
+              <div class="text-[12px] font-black leading-tight" style="color: ${safeColor}">${safeName}</div>
+              <div class="text-[10px] text-slate-300 font-medium mt-0.5">${safeStatus}</div>
               <div class="text-[10px] text-slate-300 mt-1">${language === 'en' ? 'Area' : 'Площа'}: <b>${areaKm2 === null ? '—' : areaKm2.toLocaleString(language === 'en' ? 'en-GB' : 'uk-UA', { maximumFractionDigits: 2 }) + ' km²'}</b></div>
-              <div class="text-[9px] text-slate-400 mt-0.5">${language === 'en' ? 'Map update' : 'Оновлення карти'}: ${dateLabel}</div>
+              <div class="text-[9px] text-slate-400 mt-0.5">${language === 'en' ? 'Map update' : 'Оновлення карти'}: ${safeDate}</div>
+              ${safeDescription ? `<div class="text-[9px] text-slate-400 mt-1 border-t border-slate-700/60 pt-1">${language === 'en' ? 'Latest map note' : 'Опис останнього оновлення'}: ${safeDescription}</div>` : ''}
               <div class="text-[9px] text-slate-400 mt-1 border-t border-slate-700/60 pt-1">DeepStateMap.live</div>
             </div>
           `;
