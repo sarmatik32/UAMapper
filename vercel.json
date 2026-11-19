@@ -17,7 +17,8 @@
   ],
   "functions": {
     "api/deepstatemap.ts": {
-      "includeFiles": "public/data/deepstate/latest.geojson"
+      "includeFiles": "public/data/deepstate/latest.geojson",
+      "maxDuration": 60
     }
   }
 }
