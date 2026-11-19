@@ -32,11 +32,22 @@ function colorToHsl(hex: string): { h: number; s: number; l: number } | null {
   const s = delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1));
   return { h, s, l };
 }
+const EXACT_FILL_TYPES: Record<string, ZoneType> = {
+  '#0f9d58': 'liberated',
+  '#0288d1': 'liberated_recent',
+  '#01579b': 'liberated_recent',
+  '#bcaaa4': 'gray',
+  '#bdbdbd': 'gray',
+  '#a52714': 'occupied',
+  '#880e4f': 'crimea_ordlo',
+  '#ff5252': 'foreign_occupied',
+};
 function classifyFeature(feature: any): ZoneType | null {
   const props = feature?.properties ?? {};
   const name = String(props.name ?? '').toLowerCase();
   const fill = normalizeColor(props.fill ?? props.originalFill);
-  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
+  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск|тузла|tuzla/.test(name)) return 'crimea_ordlo';
+  if (EXACT_FILL_TYPES[fill]) return EXACT_FILL_TYPES[fill];
   if (/придністров|трансністр|transnistria|абхаз|abkhazia|цхінвал|south ossetia|куриль|kuril|карелі|karelia|петсамо|petsamo|саатсе|естон|estonia|латві|latvia|окупован.{0,30}(держав|територ)/.test(name)) return 'foreign_occupied';
   const hsl = colorToHsl(fill);
   if (!hsl) return null;
