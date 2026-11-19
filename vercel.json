@@ -14,5 +14,10 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/deepstatemap.ts": {
+      "includeFiles": "public/data/deepstate/latest.geojson"
+    }
+  }
 }
