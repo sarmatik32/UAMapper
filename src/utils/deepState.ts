@@ -1,12 +1,12 @@
 export type DeepStateZoneType = 'liberated' | 'liberated_recent' | 'gray' | 'occupied' | 'crimea_ordlo' | 'foreign_occupied';
 
 export const DEEPSTATE_ZONES: Record<DeepStateZoneType, { label: string; labelEn: string; color: string; aliases: string[] }> = {
-  liberated: { label: 'Звільнена територія', labelEn: 'Liberated territory', color: '#0f9d58', aliases: ['#0f9d58', '#0f9d58', '#0f9d58', '#0f9d58', '#0f9d58'] },
-  liberated_recent: { label: 'Звільнена за останні 2 тижні', labelEn: 'Liberated in the last 2 weeks', color: '#0288d1', aliases: ['#0288d1', '#0288d1', '#0288d1', '#0288d1', '#0288d1'] },
-  gray: { label: 'Сіра зона', labelEn: 'Gray zone', color: '#bcaaa4', aliases: ['#bcaaa4', '#bcaaa4', '#bcaaa4'] },
-  occupied: { label: 'Окупована територія', labelEn: 'Occupied territory', color: '#a52714', aliases: ['#a52714', '#c62828', '#b71c1c', '#d32f2f'] },
-  crimea_ordlo: { label: 'Крим та ОРДЛО', labelEn: 'Crimea and ORDLO', color: '#880e4f', aliases: ['#880e4f', '#880e4f', '#880e4f', '#880e4f'] },
-  foreign_occupied: { label: 'Окуповані території інших держав', labelEn: 'Occupied territories of other states', color: '#ff5252', aliases: ['#ff5252', '#ff5252', '#ff5252', '#ff5252'] },
+  liberated: { label: 'Звільнена територія', labelEn: 'Liberated territory', color: '#0f9d58', aliases: ['#0f9d58'] },
+  liberated_recent: { label: 'Звільнена за останні 2 тижні', labelEn: 'Liberated in the last 2 weeks', color: '#0288d1', aliases: ['#0288d1', '#01579b'] },
+  gray: { label: 'Сіра зона', labelEn: 'Gray zone', color: '#bcaaa4', aliases: ['#bcaaa4', '#bdbdbd'] },
+  occupied: { label: 'Окупована територія', labelEn: 'Occupied territory', color: '#a52714', aliases: ['#a52714'] },
+  crimea_ordlo: { label: 'Крим та ОРДЛО', labelEn: 'Crimea and ORDLO', color: '#880e4f', aliases: ['#880e4f'] },
+  foreign_occupied: { label: 'Окуповані території інших держав', labelEn: 'Occupied territories of other states', color: '#ff5252', aliases: ['#ff5252'] },
 };
 
 export const DEEPSTATE_ZONE_ORDER: DeepStateZoneType[] = ['liberated', 'liberated_recent', 'gray', 'occupied', 'crimea_ordlo', 'foreign_occupied'];
@@ -16,7 +16,7 @@ const EXACT_FILL_TYPES: Record<string, DeepStateZoneType> = {
   '#0288d1': 'liberated_recent',
   '#01579b': 'liberated_recent',
   '#bcaaa4': 'gray',
-  '#bcaaa4': 'gray',
+  '#bdbdbd': 'gray',
   '#a52714': 'occupied',
   '#880e4f': 'crimea_ordlo',
   '#ff5252': 'foreign_occupied',
