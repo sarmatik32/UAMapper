@@ -3,33 +3,49 @@ import { dirname, join } from 'node:path';
 
 const BASE = 'https://deepstatemap.live/api';
 const OUTPUT = join(process.cwd(), 'public/data/deepstate');
-const COLORS = {
-  liberated: ['#58a65c', '#4caf50', '#66bb6a', '#5aa469', '#70ad47'],
-  liberated_recent: ['#2196d2', '#2196f3', '#03a9f4', '#29b6f6', '#00a8ff'],
-  gray: ['#bdbdbd', '#9e9e9e', '#a6a6a6'],
-  occupied: ['#a52714', '#c62828', '#b71c1c', '#d32f2f'],
-  crimea_ordlo: ['#6a1b9a', '#7b1fa2', '#512da8', '#4a148c'],
-  foreign_occupied: ['#e91e63', '#ec407a', '#f06292', '#ff69b4'],
-};
+const ZONE_TYPES = ['liberated', 'liberated_recent', 'gray', 'occupied', 'crimea_ordlo', 'foreign_occupied'];
 const LABELS = {
   liberated: ['Звільнена територія', 'Liberated territory'],
   liberated_recent: ['Звільнена за останні 2 тижні', 'Liberated in the last 2 weeks'],
-  gray: ['Сіра зона / потребує уточнення', 'Gray zone / needs clarification'],
+  gray: ['Сіра зона', 'Gray zone'],
   occupied: ['Окупована територія', 'Occupied territory'],
   crimea_ordlo: ['Крим та ОРДЛО', 'Crimea and ORDLO'],
   foreign_occupied: ['Окуповані території інших держав', 'Occupied territories of other states'],
 };
+function normalizeColor(value) {
+  const raw = String(value ?? '').trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(raw)) return '#' + raw.slice(1).split('').map((c) => c + c).join('');
+  return /^#[0-9a-f]{6}$/.test(raw) ? raw : '';
+}
+function toHsl(hex) {
+  if (!hex) return null;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+  let h = 0;
+  if (delta) {
+    if (max === r) h = 60 * (((g - b) / delta) % 6);
+    else if (max === g) h = 60 * ((b - r) / delta + 2);
+    else h = 60 * ((r - g) / delta + 4);
+  }
+  if (h < 0) h += 360;
+  const l = (max + min) / 2;
+  return { h, s: delta === 0 ? 0 : delta / (1 - Math.abs(2 * l - 1)), l };
+}
 function classify(feature) {
   const p = feature?.properties ?? {};
-  const fill = String(p.fill ?? '').toLowerCase();
   const name = String(p.name ?? '').toLowerCase();
-  for (const [type, colors] of Object.entries(COLORS)) if (colors.includes(fill)) return type;
-  if (/крим|crimea|ордло|донецк.{0,12}луганск|севастопол/.test(name)) return 'crimea_ordlo';
-  if (/придністров|трансністр|абхаз|цхінвал|окупован.{0,20}(держав|територ)/.test(name)) return 'foreign_occupied';
-  if (/невідом|сіра зона|gray|unknown/.test(name)) return 'gray';
-  if (/звільнен.{0,20}(2 тиж|14 д|recent)|liberated.{0,20}(2 week|14 day)/.test(name)) return 'liberated_recent';
-  if (/звільнен|liberated|під контролем україни/.test(name)) return 'liberated';
-  if (/окупован|occupied/.test(name)) return 'occupied';
+  if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
+  if (/придністров|трансністр|абхаз|цхінвал|куриль|карелі|петсамо|саатсе|естон|латві/.test(name)) return 'foreign_occupied';
+  const hsl = toHsl(normalizeColor(p.fill ?? p.originalFill));
+  if (!hsl) return null;
+  if (hsl.s < 0.20) return 'gray';
+  if (hsl.h >= 80 && hsl.h <= 165) return 'liberated';
+  if (hsl.h >= 175 && hsl.h <= 235) return 'liberated_recent';
+  if (hsl.h >= 245 && hsl.h <= 315) return 'crimea_ordlo';
+  if (hsl.h >= 316 && hsl.h <= 349) return 'foreign_occupied';
+  if (hsl.h <= 18 || hsl.h >= 350) return 'occupied';
   return null;
 }
 const response = await fetch(`${BASE}/history/public`, { headers: { accept: 'application/json', 'user-agent': 'KRRIG-Alerts-DeepState-Sync/1.0' }, signal: AbortSignal.timeout(20000) });
@@ -54,7 +70,7 @@ const features = raw.features.flatMap((feature, index) => {
       name: name || LABELS[zoneType][0],
       nameEn: nameEn || LABELS[zoneType][1],
       zoneType,
-      originalFill: feature.properties?.fill || COLORS[zoneType][0],
+      originalFill: normalizeColor(feature.properties?.fill) || '#808080',
       originalStroke: feature.properties?.stroke || '#333333',
       source: 'DeepStateMap.live',
       historyId: last.id,
@@ -78,7 +94,7 @@ const snapshot = {
     description: last.description || '',
     descriptionEn: last.descriptionEn || '',
     featureCount: features.length,
-    categories: Object.fromEntries(Object.keys(COLORS).map((key) => [key, features.filter((f) => f.properties.zoneType === key).length])),
+    categories: Object.fromEntries(ZONE_TYPES.map((key) => [key, features.filter((f) => f.properties.zoneType === key).length])),
   },
   features,
 };
