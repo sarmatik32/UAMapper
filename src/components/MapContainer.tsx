@@ -2801,7 +2801,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
           const areaKm2 = getDeepStateAreaKm2(feature);
           const dateValue = feature?.properties?.snapshotDate || deepStateGeoJson?.properties?.snapshotDate || deepStateGeoJson?.updatedAt;
           const dateLabel = dateValue && !Number.isNaN(Date.parse(dateValue)) ? new Date(dateValue).toLocaleString(language === 'en' ? 'en-GB' : 'uk-UA') : (deepStateGeoJson?.datetime || '—');
-          const updateDescription = String(feature?.properties?.updateDescription || deepStateGeoJson?.properties?.description || '').replace(/<[^>]*>/g, ' ').replace(/\\s+/g, ' ').trim().slice(0, 220);
+          const updateDescription = String(feature?.properties?.updateDescription || deepStateGeoJson?.properties?.description || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 220);
           const escapeTooltipText = (value: unknown) => String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
           const safeName = escapeTooltipText(name || statusLabel);
           const safeStatus = escapeTooltipText(statusLabel);
