@@ -4608,7 +4608,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           {([
                             ['liberated', '#58a65c', isUa ? 'Звільнена територія' : 'Liberated territory'],
                             ['liberated_recent', '#2196d2', isUa ? 'Звільнена за останні 2 тижні' : 'Liberated in the last 2 weeks'],
-                            ['gray', '#bdbdbd', isUa ? 'Сіра зона / потребує уточнення' : 'Gray zone / needs clarification'],
+                            ['gray', '#bdbdbd', isUa ? 'Сіра зона' : 'Gray zone'],
                             ['occupied', '#a52714', isUa ? 'Окупована територія' : 'Occupied territory'],
                             ['crimea_ordlo', '#6a1b9a', isUa ? 'Крим та ОРДЛО' : 'Crimea and ORDLO'],
                             ['foreign_occupied', '#e91e63', isUa ? 'Окуповані території інших держав' : 'Occupied territories of other states'],
