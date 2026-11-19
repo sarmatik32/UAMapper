@@ -34,11 +34,11 @@ export function classifyDeepStateFeature(feature: any): DeepStateZoneType | null
     if (h >= 80 && h <= 165) return 'liberated';
     if (h >= 175 && h <= 235) return 'liberated_recent';
     if (h >= 245 && h <= 315) return 'crimea_ordlo';
-    if (h >= 316 && h <= 349) return 'foreign_occupied';
+    if ((h >= 316 && h <= 349) || ((h <= 18 || h >= 350) && l > 0.58)) return 'foreign_occupied';
     if (h <= 18 || h >= 350) return 'occupied';
   }
   if (/крим|crimea|севастопол|ордло|донецк.{0,20}луганск/.test(name)) return 'crimea_ordlo';
-  if (/придністров|трансністр|абхаз|цхінвал|куриль|карелі|петсамо|саатсе|естон|латві/.test(name)) return 'foreign_occupied';
+  if (/придністров|трансністр|transnistria|абхаз|abkhazia|цхінвал|south ossetia|куриль|kuril|карелі|karelia|петсамо|petsamo|саатсе|естон|estonia|латві|latvia/.test(name)) return 'foreign_occupied';
   return null;
 }
 
