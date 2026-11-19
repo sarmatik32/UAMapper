@@ -4603,6 +4603,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     {/* Expandable Settings when Enabled */}
                     {deepStateOccupiedConfig?.enabled && (
                       <div className="pt-2 border-t border-slate-200/60 dark:border-slate-700/50 space-y-3 animate-in fade-in duration-200">
+                        <div className="space-y-1.5">
+                          <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500">{isUa ? 'Категорії територій' : 'Territory categories'}</div>
+                          {([
+                            ['liberated', '#58a65c', isUa ? 'Звільнена територія' : 'Liberated territory'],
+                            ['liberated_recent', '#2196d2', isUa ? 'Звільнена за останні 2 тижні' : 'Liberated in the last 2 weeks'],
+                            ['gray', '#bdbdbd', isUa ? 'Сіра зона / потребує уточнення' : 'Gray zone / needs clarification'],
+                            ['occupied', '#a52714', isUa ? 'Окупована територія' : 'Occupied territory'],
+                            ['crimea_ordlo', '#6a1b9a', isUa ? 'Крим та ОРДЛО' : 'Crimea and ORDLO'],
+                            ['foreign_occupied', '#e91e63', isUa ? 'Окуповані території інших держав' : 'Occupied territories of other states'],
+                          ] as const).map(([key, color, label]) => (
+                            <label key={key} className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-white/60 dark:bg-slate-900/40 border border-slate-200/60 dark:border-slate-700/40 cursor-pointer">
+                              <span className="flex items-center gap-2 text-[10px] text-slate-700 dark:text-slate-200">
+                                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: color }} />
+                                {label}
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={deepStateOccupiedConfig.categories?.[key] ?? (key === 'gray' ? Boolean(deepStateOccupiedConfig.includeGrayZone) : true)}
+                                onChange={(e) => onUpdateDeepStateOccupiedConfig?.({ categories: { ...deepStateOccupiedConfig.categories, [key]: e.target.checked } })}
+                                className="accent-rose-600"
+                              />
+                            </label>
+                          ))}
+                        </div>
                         {/* Sub-Tabs: Заливка / Обводка / Сіра зона */}
                         <div className="grid grid-cols-3 gap-1 bg-slate-200/70 dark:bg-slate-900/60 p-1 rounded-lg text-[10px] font-semibold text-center select-none">
                           <button
