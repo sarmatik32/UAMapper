@@ -2708,7 +2708,7 @@ export const MapContainer = forwardRef<MapContainerRef, MapContainerProps>(({
     
     // On touch devices or when in drawing/measurement modes, always use interactive: false
     // On desktop mouse when in pan mode, allow hover tooltips without blocking clicks
-    const isInteractive = !isTouchDevice && interactionMode === 'pan';
+    const isInteractive = interactionMode === 'pan';
 
     try {
       const geoLayer = L.geoJSON(deepStateGeoJson, {
