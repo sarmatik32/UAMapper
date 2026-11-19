@@ -28,7 +28,7 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install dependencies
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: npm install --no-audit --no-fund
       - name: TypeScript validation
         run: npm run lint
       - name: Unit tests
