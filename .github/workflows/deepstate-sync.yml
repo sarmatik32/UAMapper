@@ -1,6 +1,9 @@
 name: DeepState territory sync
 
 on:
+  push:
+    branches:
+      - feat/deepstate-territory-layers
   schedule:
     - cron: '30 1 * * *'
   workflow_dispatch:
