@@ -5589,6 +5589,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <option value="bottom-left">{isUa ? 'Знизу ліворуч' : 'Bottom-Left'}</option>
                           <option value="bottom-right">{isUa ? 'Знизу праворуч' : 'Bottom-Right'}</option>
                           <option value="top-left">{isUa ? 'Зверху ліворуч' : 'Top-Left'}</option>
+                          <option value="top-right">{isUa ? 'Зверху праворуч' : 'Top-Right'}</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div className="w-full py-1.5 px-2 bg-blue-500/10 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5">
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>{isUa ? 'Автоматична синхронізація з картою' : 'Automatically synced with map'}</span>
