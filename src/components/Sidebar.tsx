@@ -218,7 +218,7 @@ interface SidebarProps {
 }
 
 
-  const buildMapLegendItems = ((
+  const buildMapLegendItems = (
     sourceMarkers: CustomMarker[],
     sourceLines: DrawnLine[],
     currentLanguage: Language,
