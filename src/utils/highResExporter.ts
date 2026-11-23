@@ -375,7 +375,6 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
   // 1. Calculate Viewport & Canvas Dimensions
   const fontCssFamily = getMapFontFamilyCss(mapFont);
   const canvasFontFamily = `"${fontCssFamily.split(',')[0].replace(/["']/g, '')}", Arial, sans-serif`;
-  const applyCanvasFont = (weight: string, size: number) => `${weight} ${size}px ${canvasFontFamily}`;
   const screenWidth = Math.max(mapContainer.clientWidth, 320);
   const screenHeight = Math.max(mapContainer.clientHeight, 240);
   const aspect = screenHeight / screenWidth;
