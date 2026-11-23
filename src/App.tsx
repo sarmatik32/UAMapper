@@ -333,7 +333,7 @@ export default function App() {
         ...presetUpdates,
       };
       const next = { ...prev, [iconType]: updated };
-      localStorage.setItem('visicom_icon_presets', JSON.stringify(next));
+      safeSetItem('visicom_icon_presets', JSON.stringify(next));
       return next;
     });
   }, []);
