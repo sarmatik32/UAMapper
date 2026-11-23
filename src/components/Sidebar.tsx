@@ -843,44 +843,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return language === 'uk' ? 'Маркер' : 'Marker';
   };
 
-  const generateLegendItemsFromMap = (): MapLegendItem[] =>
-    (
-    sourceMarkers: CustomMarker[],
-    sourceLines: DrawnLine[],
-    currentLanguage: Language,
-    currentCustomIconTitles: Record<string, string>,
-    previousItems: MapLegendItem[] = []
-  ): MapLegendItem[] => {
-    const itemsByKey = new Map<string, MapLegendItem>();
-    const getDefaultName = (iconType: string) => {
-      const icon = ICON_TYPES.find((item) => item.id === iconType);
-      return icon
-        ? (currentLanguage === 'uk' ? icon.nameUa : icon.nameEn)
-        : (currentLanguage === 'uk' ? 'Маркер' : 'Marker');
-    };
-    const add = (key: string, item: MapLegendItem) => {
-      const existing = itemsByKey.get(key);
+  const generateLegendItemsFromMap = (): MapLegendItem[] => {
+    const itemsMap = new Map<string, MapLegendItem>();
+
+    const addItem = (key: string, item: MapLegendItem) => {
+      const existing = itemsMap.get(key);
       if (existing) {
         const count = Number.parseInt(existing.countText || existing.count || '0', 10) || 0;
         existing.countText = `${count + 1} шт`;
         existing.count = existing.countText;
-      } else {
-        const previous = previousItems.find((candidate) => candidate.id === key);
-        itemsByKey.set(key, {
-          ...item,
-          name: previous?.name || previous?.title || item.name,
-          title: previous?.title || previous?.name || item.title,
-          visible: previous?.visible !== false,
-        });
+        return;
       }
+      const previous = mapLegendConfig?.items?.find((candidate) => candidate.id === key);
+      itemsMap.set(key, {
+        ...item,
+        name: previous?.name || previous?.title || item.name,
+        title: previous?.title || previous?.name || item.title,
+        visible: previous?.visible !== false,
+      });
     };
 
-    sourceMarkers.forEach((marker) => {
+    markers.forEach((marker) => {
       const iconType = marker.iconType || 'pin';
       const color = marker.color || '#ef4444';
       const key = `marker:${iconType}:${color.toLowerCase()}:${marker.customIconUrl || ''}`;
-      const name = marker.title || currentCustomIconTitles[iconType] || getDefaultName(iconType);
-      add(key, {
+      const icon = ICON_TYPES.find((entry) => entry.id === iconType);
+      const name = marker.title || customIconTitles[iconType] || (icon ? (language === 'uk' ? icon.nameUa : icon.nameEn) : (language === 'uk' ? 'Маркер' : 'Marker'));
+      addItem(key, {
         id: key,
         iconType,
         customIconUrl: marker.customIconUrl,
@@ -893,35 +882,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
       });
     });
 
-    sourceLines.forEach((line) => {
+    drawnLines.forEach((line) => {
       const color = line.color || '#ef4444';
       if (line.startPointStyle === 'custom_icon' && line.startCustomIconUrl) {
-        const name = currentLanguage === 'uk' ? 'Початок маршруту' : 'Route Start';
+        const name = language === 'uk' ? 'Початок маршруту' : 'Route Start';
         const key = `line-start:${line.startCustomIconUrl}:${color}`;
-        add(key, {
+        addItem(key, {
           id: key, iconType: 'pin', customIconUrl: line.startCustomIconUrl,
           color, name, title: name, countText: '1 шт', count: '1 шт', visible: true,
         });
       }
       if (line.endPointStyle === 'custom_icon' && line.endCustomIconUrl) {
-        const name = currentLanguage === 'uk' ? 'Кінець маршруту' : 'Route End';
+        const name = language === 'uk' ? 'Кінець маршруту' : 'Route End';
         const key = `line-end:${line.endCustomIconUrl}:${color}`;
-        add(key, {
+        addItem(key, {
           id: key, iconType: 'pin', customIconUrl: line.endCustomIconUrl,
           color, name, title: name, countText: '1 шт', count: '1 шт', visible: true,
         });
       } else if (line.endPointStyle === 'explosion') {
-        const name = currentLanguage === 'uk' ? 'Ураження / Вибух' : 'Impact / Explosion';
+        const name = language === 'uk' ? 'Ураження / Вибух' : 'Impact / Explosion';
         const key = `line-explosion:${color}`;
-        add(key, {
+        addItem(key, {
           id: key, iconType: 'explosion', color, name, title: name,
           countText: '1 шт', count: '1 шт', visible: true,
         });
       }
     });
 
-    return Array.from(itemsByKey.values());
-  };(markers, drawnLines, language, customIconTitles, mapLegendConfig?.items || []);
+    return Array.from(itemsMap.values());
+  };
   const synchronizedLegendItems = generateLegendItemsFromMap();
 
   const handleSelectIconType = (iconTypeId: string) => {
