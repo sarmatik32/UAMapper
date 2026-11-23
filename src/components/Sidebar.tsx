@@ -845,84 +845,93 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const generateLegendItemsFromMap = (): MapLegendItem[] => {
     const itemsMap = new Map<string, MapLegendItem>();
 
-    markers.forEach((m) => {
-      const key = `${m.iconType}_${m.color}_${m.customIconUrl || ''}`;
-      if (!itemsMap.has(key)) {
-        const title = m.title || customIconTitles[m.iconType] || getDefaultIconName(m.iconType);
-        itemsMap.set(key, {
-          id: `marker_${key}`,
-          iconType: m.iconType,
-          customIconUrl: m.customIconUrl,
-          color: m.color,
-          name: title,
-          title,
+    const addItem = (key: string, item: MapLegendItem) => {
+      const existing = itemsMap.get(key);
+      if (existing) {
+        const count = Number.parseInt(existing.countText || existing.count || '0', 10) || 0;
+        existing.countText = `${count + 1} шт`;
+        existing.count = existing.countText;
+        return;
+      }
+      itemsMap.set(key, item);
+    };
+
+    markers.forEach((marker) => {
+      const iconType = marker.iconType || 'pin';
+      const color = marker.color || '#ef4444';
+      const key = `marker:${iconType}:${color.toLowerCase()}:${marker.customIconUrl || ''}`;
+      const title = marker.title || customIconTitles[iconType] || getDefaultIconName(iconType);
+      addItem(key, {
+        id: key,
+        iconType,
+        customIconUrl: marker.customIconUrl,
+        color,
+        name: title,
+        title,
+        countText: '1 шт',
+        count: '1 шт',
+        visible: true,
+      });
+    });
+
+    drawnLines.forEach((line) => {
+      const color = line.color || '#ef4444';
+      if (line.startPointStyle === 'custom_icon' && line.startCustomIconUrl) {
+        const key = `line-start:${line.startCustomIconUrl}:${color}`;
+        addItem(key, {
+          id: key,
+          iconType: 'pin',
+          customIconUrl: line.startCustomIconUrl,
+          color,
+          name: isUa ? 'Початок маршруту' : 'Route Start',
+          title: isUa ? 'Початок маршруту' : 'Route Start',
           countText: '1 шт',
           count: '1 шт',
           visible: true,
         });
-      } else {
-        const existing = itemsMap.get(key)!;
-        const currentCountNum = parseInt(existing.countText || existing.count || '1', 10);
-        const newCount = isNaN(currentCountNum) ? 2 : currentCountNum + 1;
-        existing.count = `${newCount} шт`;
-        existing.countText = `${newCount} шт`;
       }
-    });
-
-    drawnLines.forEach((l) => {
-      if (l.startPointStyle === 'custom_icon' && l.startCustomIconUrl) {
-        const key = `line_start_${l.startCustomIconUrl}_${l.color}`;
-        if (!itemsMap.has(key)) {
-          const t = isUa ? 'Початок маршруту' : 'Route Start';
-          itemsMap.set(key, {
-            id: key,
-            iconType: 'pin',
-            customIconUrl: l.startCustomIconUrl,
-            color: l.color,
-            name: t,
-            title: t,
-            countText: '1 шт',
-            count: '1 шт',
-            visible: true,
-          });
-        }
-      }
-      if (l.endPointStyle === 'custom_icon' && l.endCustomIconUrl) {
-        const key = `line_end_${l.endCustomIconUrl}_${l.color}`;
-        if (!itemsMap.has(key)) {
-          const t = isUa ? 'Кінець маршруту' : 'Route End';
-          itemsMap.set(key, {
-            id: key,
-            iconType: 'pin',
-            customIconUrl: l.endCustomIconUrl,
-            color: l.color,
-            name: t,
-            title: t,
-            countText: '1 шт',
-            count: '1 шт',
-            visible: true,
-          });
-        }
-      } else if (l.endPointStyle === 'explosion') {
-        const key = `line_explosion_${l.color}`;
-        if (!itemsMap.has(key)) {
-          const t = isUa ? 'Ураження / Вибух' : 'Impact / Explosion';
-          itemsMap.set(key, {
-            id: key,
-            iconType: 'crosshair',
-            color: '#ef4444',
-            name: t,
-            title: t,
-            countText: '1 шт',
-            count: '1 шт',
-            visible: true,
-          });
-        }
+      if (line.endPointStyle === 'custom_icon' && line.endCustomIconUrl) {
+        const key = `line-end:${line.endCustomIconUrl}:${color}`;
+        addItem(key, {
+          id: key,
+          iconType: 'pin',
+          customIconUrl: line.endCustomIconUrl,
+          color,
+          name: isUa ? 'Кінець маршруту' : 'Route End',
+          title: isUa ? 'Кінець маршруту' : 'Route End',
+          countText: '1 шт',
+          count: '1 шт',
+          visible: true,
+        });
+      } else if (line.endPointStyle === 'explosion') {
+        const key = `line-explosion:${color}`;
+        addItem(key, {
+          id: key,
+          iconType: 'explosion',
+          color,
+          name: isUa ? 'Ураження / Вибух' : 'Impact / Explosion',
+          title: isUa ? 'Ураження / Вибух' : 'Impact / Explosion',
+          countText: '1 шт',
+          count: '1 шт',
+          visible: true,
+        });
       }
     });
 
     return Array.from(itemsMap.values());
   };
+
+  const synchronizedLegendItems = generateLegendItemsFromMap().map((generatedItem) => {
+    const previous = mapLegendConfig?.items?.find((item) => item.id === generatedItem.id);
+    return previous
+      ? {
+          ...generatedItem,
+          name: previous.name || previous.title || generatedItem.name,
+          title: previous.title || previous.name || generatedItem.title,
+          visible: previous.visible !== false,
+        }
+      : generatedItem;
+  });
 
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
@@ -5537,14 +5546,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           position: 'bottom-left',
                           items: []
                         };
-                        let items = cur.items;
-                        if (isEn && (!items || items.length === 0)) {
-                          items = generateLegendItemsFromMap();
-                        }
                         onUpdateMapLegendConfig({
                           ...cur,
                           enabled: isEn,
-                          items
+                          items: generateLegendItemsFromMap()
                         });
                       }}
                       className="sr-only peer" 
@@ -5584,21 +5589,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <option value="bottom-left">{isUa ? 'Знизу ліворуч' : 'Bottom-Left'}</option>
                           <option value="bottom-right">{isUa ? 'Знизу праворуч' : 'Bottom-Right'}</option>
                           <option value="top-left">{isUa ? 'Зверху ліворуч' : 'Top-Left'}</option>
-                          <option value="top-right">{isUa ? 'Зверху праворуч' : 'Top-Right'}</option>
-                        </select>
-                      </div>
+                    <div className="w-full py-1.5 px-2 bg-blue-500/10 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>{isUa ? 'Автоматична синхронізація з картою' : 'Automatically synced with map'}</span>
                     </div>
-
-                    {/* Sync button */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const newItems = generateLegendItemsFromMap();
-                        onUpdateMapLegendConfig?.({
-                          ...mapLegendConfig,
-                          items: newItems
-                        });
-                      }}
                       className="w-full py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -5607,7 +5601,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
                     {/* Items List */}
                     <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
-                      {mapLegendConfig.items.map((item, idx) => (
+                      {synchronizedLegendItems.map((item, idx) => (
                         <div
                           key={item.id}
                           className={`p-2 rounded-xl border flex flex-col gap-1.5 ${
@@ -5621,7 +5615,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               style={{ backgroundColor: `${item.color}22`, borderColor: item.color }}
                             >
                               {item.customIconUrl ? (
-                                <img src={item.customIconUrl} className="w-5 h-5 object-contain" alt={item.title} />
+                                <div className="w-5 h-5" style={{ backgroundColor: item.color, WebkitMaskImage: `url('${item.customIconUrl}')`, maskImage: `url('${item.customIconUrl}')`, WebkitMaskSize: 'contain', maskSize: 'contain', WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskPosition: 'center' }} />
                               ) : (
                                 <div
                                   className="w-4 h-4"
@@ -5635,7 +5629,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               type="text"
                               value={item.name || item.title || ''}
                               onChange={(e) => {
-                                const next = [...mapLegendConfig.items];
+                                const next = [...synchronizedLegendItems];
                                 next[idx] = { ...next[idx], name: e.target.value, title: e.target.value };
                                 onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
                               }}
@@ -5649,7 +5643,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                const next = mapLegendConfig.items.filter((_, i) => i !== idx);
+                                const next = synchronizedLegendItems.filter((_, i) => i !== idx);
                                 onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
                               }}
                               className="text-slate-400 hover:text-red-400 p-1"
@@ -5668,7 +5662,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               type="text"
                               value={item.countText || item.count || ''}
                               onChange={(e) => {
-                                const next = [...mapLegendConfig.items];
+                                const next = [...synchronizedLegendItems];
                                 next[idx] = { ...next[idx], countText: e.target.value, count: e.target.value };
                                 onUpdateMapLegendConfig?.({ ...mapLegendConfig, items: next });
                               }}
@@ -5681,9 +5675,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         </div>
                       ))}
 
-                      {mapLegendConfig.items.length === 0 && (
+                      {synchronizedLegendItems.length === 0 && (
                         <p className="text-[10px] text-slate-400 italic text-center py-2">
-                          {isUa ? 'Немає елементів у легенді. Натисніть "Оновити з карти" вище.' : 'No legend items. Click "Sync from map elements" above.'}
+                          {isUa ? 'На карті поки немає об’єктів для легенди.' : 'There are no map objects to show in the legend yet.'}
                         </p>
                       )}
                     </div>
