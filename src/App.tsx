@@ -3131,6 +3131,7 @@ export default function App() {
               lineDrawMethod={lineDrawMethod}
               onChangeLineDrawMethod={handleSetLineDrawMethod}
               mapLegendConfig={mapLegendConfig}
+              buildMapLegendItems={buildMapLegendItems}
               onUpdateMapLegendConfig={handleUpdateMapLegendConfig}
               activeAlerts={activeAlerts}
               showAlerts={showAlerts}
