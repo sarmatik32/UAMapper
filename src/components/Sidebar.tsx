@@ -184,6 +184,7 @@ interface SidebarProps {
   // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
   mapLegendConfig?: MapLegendConfig;
   onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
+  buildMapLegendItems: (markers: CustomMarker[], lines: DrawnLine[], language: Language, customIconTitles: Record<string, string>, previousItems?: MapLegendItem[]) => MapLegendItem[];
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -458,7 +459,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   // Map Legend
   mapLegendConfig,
-  buildMapLegendItems,
   onUpdateMapLegendConfig,
   buildMapLegendItems,
 }) => {
