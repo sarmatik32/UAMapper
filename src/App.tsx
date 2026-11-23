@@ -556,7 +556,7 @@ export default function App() {
     });
 
     return Array.from(itemsByKey.values());
-  }, [ICON_TYPES]);
+  }, []);
 
 
   const [mapLegendConfig, setMapLegendConfig] = useState<MapLegendConfig>(() => {
