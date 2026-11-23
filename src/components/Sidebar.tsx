@@ -835,14 +835,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     input.click();
   };
 
-  const getDefaultIconName = (iconType: string) => {
-    const found = ICON_TYPES.find((t) => t.id === iconType);
-    if (found) {
-      return language === 'uk' ? found.nameUa : found.nameEn;
-    }
-    return language === 'uk' ? 'Маркер' : 'Marker';
-  };
-
   const generateLegendItemsFromMap = (): MapLegendItem[] => {
     const itemsMap = new Map<string, MapLegendItem>();
 
