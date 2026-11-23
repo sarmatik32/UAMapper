@@ -5541,7 +5541,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         onUpdateMapLegendConfig({
                           ...cur,
                           enabled: isEn,
-                          items: generateLegendItemsFromMap()
+                          items: synchronizedLegendItems
                         });
                       }}
                       className="sr-only peer" 
