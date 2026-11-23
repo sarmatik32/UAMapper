@@ -374,6 +374,8 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
 
   // 1. Calculate Viewport & Canvas Dimensions
   const fontCssFamily = getMapFontFamilyCss(mapFont);
+  const canvasFontFamily = `"${fontCssFamily.split(',')[0].replace(/["']/g, '')}", Arial, sans-serif`;
+  const applyCanvasFont = (weight: string, size: number) => `${weight} ${size}px ${canvasFontFamily}`;
   const screenWidth = Math.max(mapContainer.clientWidth, 320);
   const screenHeight = Math.max(mapContainer.clientHeight, 240);
   const aspect = screenHeight / screenWidth;
@@ -1201,7 +1203,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       ctx.stroke();
 
       // Text Badge
-      ctx.font = `${isBold ? 'bold ' : ''}${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `${isBold ? 'bold ' : ''}${fontSize}px ${canvasFontFamily}`;
       const text = isDistrict ? item.name.toUpperCase() : item.name;
       const textMetrics = ctx.measureText(text);
       const padX = Math.round(7 * visualScale);
@@ -1362,7 +1364,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
   } else if (watermarkType === 'text' && watermarkText) {
     ctx.save();
     const wmFontSize = Math.round((watermarkSize || 14) * visualScale * 1.3);
-    ctx.font = `bold ${wmFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.font = `bold ${wmFontSize}px ${canvasFontFamily}`;
     ctx.fillStyle = theme === 'light' ? '#000000' : '#ffffff';
     ctx.globalAlpha = Math.max(0.04, Math.min(0.8, watermarkOpacity || 0.10));
 
@@ -1682,12 +1684,12 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
               ctx.fill();
             }
           } else if (item.iconType === 'explosion') {
-            ctx.font = `${Math.round(iconBoxSize * 0.85)}px sans-serif`;
+            ctx.font = `${Math.round(iconBoxSize * 0.85)}px ${canvasFontFamily}`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('💥', renderIconCenterX, itemMidY);
           } else if (item.iconType === 'arrow') {
-            ctx.font = `bold ${Math.round(iconBoxSize * 0.85)}px sans-serif`;
+            ctx.font = `bold ${Math.round(iconBoxSize * 0.85)}px ${canvasFontFamily}`;
             ctx.fillStyle = item.color || '#ef4444';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
