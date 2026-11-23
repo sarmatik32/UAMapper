@@ -924,6 +924,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     return Array.from(itemsMap.values());
   })();
+  const generateLegendItemsFromMap = (): MapLegendItem[] => synchronizedLegendItems;
 
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
