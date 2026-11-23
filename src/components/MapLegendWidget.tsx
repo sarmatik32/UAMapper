@@ -72,8 +72,8 @@ export const MapLegendWidget: React.FC<MapLegendWidgetProps> = ({
             className="w-5 h-5"
             style={{
               backgroundColor: color,
-              WebkitMaskImage: `url('${item.customIconUrl}')`,
-              maskImage: `url('${item.customIconUrl}')`,
+              WebkitMaskImage: `url("${item.customIconUrl}")`,
+              maskImage: `url("${item.customIconUrl}")`,
               WebkitMaskSize: 'contain',
               maskSize: 'contain',
               WebkitMaskRepeat: 'no-repeat',
