@@ -5593,11 +5593,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <RefreshCw className="w-3.5 h-3.5" />
                       <span>{isUa ? 'Автоматична синхронізація з картою' : 'Automatically synced with map'}</span>
                     </div>
-                      className="w-full py-1.5 px-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-500 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>{isUa ? 'Оновити з карти (автозбір іконок)' : 'Sync from map elements'}</span>
-                    </button>
 
                     {/* Items List */}
                     <div className="space-y-1.5 max-h-56 overflow-y-auto pr-0.5">
