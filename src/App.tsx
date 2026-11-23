@@ -555,7 +555,6 @@ export default function App() {
       }
     });
 
-    sourceMarkers, sourceLines, currentLanguage, currentCustomIconTitles, previousItems
     return Array.from(itemsByKey.values());
   }, []);
 
