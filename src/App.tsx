@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import JSZip from 'jszip';
-import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat, NeptunMessage } from './types';
+import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, DeepStateOccupiedConfig, UkraineBoundaryConfig, BoundaryStyleConfig, NeptunThreat, NeptunMessage } from './types';
 import { MapContainer, MapContainerRef } from './components/MapContainer';
 import { Sidebar } from './components/Sidebar';
 import { AddSettlementModal } from './components/AddSettlementModal';
@@ -15,7 +15,6 @@ import { Settlement, SettlementCategory, SETTLEMENTS } from './data/settlements'
 import { safeSetItem } from './utils/storage';
 import { preloadFontEmbedCSS } from './utils/mapFonts';
 import { RotateCw, Compass, Sparkles, AlertCircle, Sliders, PenTool, Hand, RotateCcw, Trash2, Check, Camera, Sun, Moon, Spline, Ruler, ShieldAlert, Building2, Edit2, X, Radio, Bell, PanelRightOpen, PanelRightClose, Copy } from 'lucide-react';
-import { ICON_TYPES } from './components/IconLibrary';
 
 const TILE_LAYERS: TileLayerConfig[] = [
   {
