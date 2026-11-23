@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CustomMarker, TileLayerConfig, Language, InteractionMode, DrawnLine, LineEndpointType, LineDrawMethod, WatermarkType, AirAlert, MapFontFamily, IconPreset, MapLegendConfig, MapLegendItem, DeepStateOccupiedConfig, DeepStatePatternType, DeepStateStrokeStyle, UkraineBoundaryConfig, UkraineBoundaryStrokeStyle, BoundaryStyleConfig, BoundaryStrokeStyle, NeptunThreat } from '../types';
 import { Settlement, SettlementCategory, SETTLEMENT_CATEGORY_CONFIG } from '../data/settlements';
 import { ICON_TYPES, MONITORWAR_ICON_TYPES, MONITORWAR_ICON_ASSETS, PRESET_COLORS, getIconSvgContent } from './IconLibrary';
+const getDefaultIconName = (iconType: string, language: Language): string => {
+  const icon = ICON_TYPES.find((item) => item.id === iconType);
+  if (icon) return language === 'uk' ? icon.nameUa : icon.nameEn;
+  return language === 'uk' ? 'Маркер' : 'Marker';
+};
+
 import { safeSetItem, optimizeIconDataUrl } from '../utils/storage';
 import { MAP_FONT_CONFIGS } from '../utils/mapFonts';
 import { simplifyLatLngPath } from '../utils/smoothing';
@@ -1096,7 +1102,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     if (selectedMarker) {
       const newUpdates = { ...updates };
       if (updates.iconType && updates.iconType !== selectedMarker.iconType) {
-        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType, language);
       }
       onUpdateMarker({
         ...selectedMarker,
@@ -1105,7 +1111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     } else {
       const newUpdates = { ...updates };
       if (updates.iconType && updates.iconType !== activeStyle.iconType) {
-        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType);
+        newUpdates.title = iconPresets[updates.iconType]?.title || customIconTitles[updates.iconType] || getDefaultIconName(updates.iconType, language);
       }
       onUpdateActiveStyle((prev) => ({
         ...prev,
@@ -2238,7 +2244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate">
                           {activeCustomItem 
                             ? activeCustomItem.name 
-                            : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                            : (customIconTitles[activeIconType] || getDefaultIconName(activeIconType, language))}
                         </div>
                         <div className="text-[9px] text-blue-600 dark:text-blue-400 font-medium flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
@@ -2574,7 +2580,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </span>
                   <input
                     type="text"
-                    value={selectedMarker ? activeTitle : (activeStyle.title || customIconTitles[activeIconType] || getDefaultIconName(activeIconType))}
+                    value={selectedMarker ? activeTitle : (activeStyle.title || customIconTitles[activeIconType] || getDefaultIconName(activeIconType, language))}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (selectedMarker) {
