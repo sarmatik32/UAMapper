@@ -184,6 +184,7 @@ interface SidebarProps {
   // Map Legend ("УМОВНІ ПОЗНАЧЕННЯ:")
   mapLegendConfig?: MapLegendConfig;
   onUpdateMapLegendConfig?: (config: MapLegendConfig) => void;
+  buildMapLegendItems?: (markers: CustomMarker[], lines: DrawnLine[], language: Language, customIconTitles: Record<string, string>, previousItems?: MapLegendItem[]) => MapLegendItem[];
 
   // Air Alerts Props
   activeAlerts?: AirAlert[];
@@ -380,6 +381,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   // Map Legend
   mapLegendConfig,
   onUpdateMapLegendConfig,
+  buildMapLegendItems,
 }) => {
   const [importError, setImportError] = useState<string | null>(null);
   const [customTileUrl, setCustomTileUrl] = useState('');
@@ -842,96 +844,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return language === 'uk' ? 'Маркер' : 'Marker';
   };
 
-  const generateLegendItemsFromMap = (): MapLegendItem[] => {
-    const itemsMap = new Map<string, MapLegendItem>();
+  const generateLegendItemsFromMap = (): MapLegendItem[] =>
+    buildMapLegendItems
+      ? buildMapLegendItems(markers, drawnLines, language, customIconTitles, mapLegendConfig?.items || [])
+      : [];
 
-    const addItem = (key: string, item: MapLegendItem) => {
-      const existing = itemsMap.get(key);
-      if (existing) {
-        const count = Number.parseInt(existing.countText || existing.count || '0', 10) || 0;
-        existing.countText = `${count + 1} шт`;
-        existing.count = existing.countText;
-        return;
-      }
-      itemsMap.set(key, item);
-    };
-
-    markers.forEach((marker) => {
-      const iconType = marker.iconType || 'pin';
-      const color = marker.color || '#ef4444';
-      const key = `marker:${iconType}:${color.toLowerCase()}:${marker.customIconUrl || ''}`;
-      const title = marker.title || customIconTitles[iconType] || getDefaultIconName(iconType);
-      addItem(key, {
-        id: key,
-        iconType,
-        customIconUrl: marker.customIconUrl,
-        color,
-        name: title,
-        title,
-        countText: '1 шт',
-        count: '1 шт',
-        visible: true,
-      });
-    });
-
-    drawnLines.forEach((line) => {
-      const color = line.color || '#ef4444';
-      if (line.startPointStyle === 'custom_icon' && line.startCustomIconUrl) {
-        const key = `line-start:${line.startCustomIconUrl}:${color}`;
-        addItem(key, {
-          id: key,
-          iconType: 'pin',
-          customIconUrl: line.startCustomIconUrl,
-          color,
-          name: isUa ? 'Початок маршруту' : 'Route Start',
-          title: isUa ? 'Початок маршруту' : 'Route Start',
-          countText: '1 шт',
-          count: '1 шт',
-          visible: true,
-        });
-      }
-      if (line.endPointStyle === 'custom_icon' && line.endCustomIconUrl) {
-        const key = `line-end:${line.endCustomIconUrl}:${color}`;
-        addItem(key, {
-          id: key,
-          iconType: 'pin',
-          customIconUrl: line.endCustomIconUrl,
-          color,
-          name: isUa ? 'Кінець маршруту' : 'Route End',
-          title: isUa ? 'Кінець маршруту' : 'Route End',
-          countText: '1 шт',
-          count: '1 шт',
-          visible: true,
-        });
-      } else if (line.endPointStyle === 'explosion') {
-        const key = `line-explosion:${color}`;
-        addItem(key, {
-          id: key,
-          iconType: 'explosion',
-          color,
-          name: isUa ? 'Ураження / Вибух' : 'Impact / Explosion',
-          title: isUa ? 'Ураження / Вибух' : 'Impact / Explosion',
-          countText: '1 шт',
-          count: '1 шт',
-          visible: true,
-        });
-      }
-    });
-
-    return Array.from(itemsMap.values());
-  };
-
-  const synchronizedLegendItems = generateLegendItemsFromMap().map((generatedItem) => {
-    const previous = mapLegendConfig?.items?.find((item) => item.id === generatedItem.id);
-    return previous
-      ? {
-          ...generatedItem,
-          name: previous.name || previous.title || generatedItem.name,
-          title: previous.title || previous.name || generatedItem.title,
-          visible: previous.visible !== false,
-        }
-      : generatedItem;
-  });
+  const synchronizedLegendItems = generateLegendItemsFromMap();
 
   const handleSelectIconType = (iconTypeId: string) => {
     // 1. Automatically expand the styles/settings section when an icon is selected!
