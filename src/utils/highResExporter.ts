@@ -975,7 +975,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         ctx.lineWidth = Math.max(1, 1.5 * visualScale);
         ctx.stroke();
       } else if (line.startPointStyle === 'explosion') {
-        ctx.font = `${Math.round(startSize * 0.85)}px sans-serif`;
+        ctx.font = `${Math.round(startSize * 0.85)}px ${canvasFontFamily}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('💥', first.x, first.y);
@@ -1023,7 +1023,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
         ctx.lineWidth = Math.max(1, 1.5 * visualScale);
         ctx.stroke();
       } else if (line.endPointStyle === 'explosion') {
-        ctx.font = `${Math.round(endSize * 0.85)}px sans-serif`;
+        ctx.font = `${Math.round(endSize * 0.85)}px ${canvasFontFamily}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('💥', last.x, last.y);
@@ -1047,7 +1047,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       const midIdx = Math.floor(canvasPoints.length / 2);
       const midPoint = canvasPoints[midIdx];
       const lSize = Math.round(Math.max(10, (line.labelSize || 11)) * visualScale);
-      ctx.font = `bold ${lSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `bold ${lSize}px ${canvasFontFamily}`;
       const metrics = ctx.measureText(line.label);
       const pad = Math.round(5 * visualScale);
       const bw = metrics.width + pad * 2;
@@ -1093,7 +1093,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       ctx.stroke();
 
       if (m.endPointStyle === 'explosion') {
-        ctx.font = `${Math.round(24 * visualScale)}px sans-serif`;
+        ctx.font = `${Math.round(24 * visualScale)}px ${canvasFontFamily}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('💥', pEnd.x, pEnd.y);
@@ -1307,7 +1307,7 @@ export async function renderHighResMapToBlob(options: HighResExportOptions): Pro
       ctx.save();
       const rawSize = m.labelFontSize && m.labelFontSize > 0 ? m.labelFontSize : 11.5;
       const labelFontSize = Math.round(rawSize * visualScale);
-      ctx.font = `bold ${labelFontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+      ctx.font = `bold ${labelFontSize}px ${canvasFontFamily}`;
       const labelMetrics = ctx.measureText(m.title);
       const lPadX = Math.round(Math.max(4, rawSize * 0.55) * visualScale);
       const lPadY = Math.round(Math.max(2, rawSize * 0.25) * visualScale);
